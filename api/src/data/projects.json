@@ -1,0 +1,19 @@
+[
+  {
+    "id": "p1",
+    "slug": "smart-vision",
+    "title": "Smart Vision",
+    "summary": "Hackathon-winning computer vision app.",
+    "description": "Detects objects in realtime on device.",
+    "techStack": ["Next.js", "FastAPI", "vLLM"],
+    "status": "prototype",
+    "demoUrl": "https://demo.example.com",
+    "images": [],
+    "tags": ["cv", "ai"],
+    "members": [
+      { "memberId": "1", "role": "Frontend" },
+      { "memberId": "2", "role": "ML" }
+    ],
+    "event": { "slug": "hack-munich-2025", "name": "Hack Munich 2025" }
+  }
+]

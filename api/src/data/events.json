@@ -1,0 +1,14 @@
+[
+  {
+    "id": "e1",
+    "slug": "hack-munich-2025",
+    "name": "Hack Munich 2025",
+    "dateStart": "2025-05-12",
+    "dateEnd": "2025-05-14",
+    "locationName": "Munich, DE",
+    "lat": 48.1351,
+    "lng": 11.582,
+    "description": "48h hackathon",
+    "photos": []
+  }
+]

@@ -1,0 +1,28 @@
+[
+  {
+    "id": "1",
+    "slug": "alice-smith",
+    "name": "Alice Smith",
+    "avatarUrl": "",
+    "shortBio": "Full-stack dev",
+    "longBio": "",
+    "skills": ["frontend", "backend"],
+    "techStack": ["TypeScript", "Next.js", "NestJS"],
+    "badges": ["Team Atlas"],
+    "links": { "github": "https://github.com/alice" },
+    "projects": [{ "projectId": "p1", "role": "Frontend", "contribution": "UI and SSR" }]
+  },
+  {
+    "id": "2",
+    "slug": "bob-lee",
+    "name": "Bob Lee",
+    "avatarUrl": "",
+    "shortBio": "ML/AI",
+    "longBio": "",
+    "skills": ["ml", "ai"],
+    "techStack": ["Python", "PyTorch"],
+    "badges": ["Team Atlas"],
+    "links": { "github": "https://github.com/bob" },
+    "projects": [{ "projectId": "p1", "role": "ML", "contribution": "Vision model" }]
+  }
+]
