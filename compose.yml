@@ -1,0 +1,17 @@
+services:
+  web:
+    image: ghcr.io/${GITHUB_OWNER}/${REPO_NAME}-web:latest
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+    networks: [pum]
+    expose: [ "3000" ]
+
+  api:
+    image: ghcr.io/${GITHUB_OWNER}/${REPO_NAME}-api:latest
+    restart: unless-stopped
+    networks: [pum]
+    expose: [ "3001" ]
+
+networks:
+  pum: {}
