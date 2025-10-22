@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": ["ES2023","DOM","DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "preserve",
@@ -10,11 +10,8 @@
     "resolveJsonModule": true,
     "incremental": true,
     "baseUrl": ".",
-    "paths": {
-      "@/*": ["./*"],
-      "@/components/*": ["components/*"]
-    }
+    "paths": { "@/*": ["./*"], "@/components/*": ["components/*"] }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "include": ["next-env.d.ts","**/*.ts","**/*.tsx"],
   "exclude": ["node_modules"]
 }

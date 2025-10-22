@@ -2,47 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
-/* --- Global black & white theme --- */
+/* --- Black & White base --- */
 :root {
   --bg: #000;
   --fg: #fff;
-  --muted: #9ca3af; /* slate-400-ish */
+  --muted: #a3a3a3;
 }
-html, body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+html, body { background: var(--bg); color: var(--fg); font-family: var(--font-inter), ui-sans-serif, system-ui; }
+
+/* Section rhythm */
+.section { @apply py-16 md:py-24; }
+
+/* Card + hairline borders */
+.card { @apply rounded-3xl border border-white/10 bg-white/[0.03] shadow-[0_8px_60px_rgba(255,255,255,0.06)]; }
+
+/* Subtle grid background helper */
+.grid-bg {
+  background-image:
+          linear-gradient(to bottom, rgba(255,255,255,.05) 1px, transparent 1px),
+          linear-gradient(to right, rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
-/* Utility “cards” in B/W */
-.card {
-  @apply rounded-2xl border border-white/10 bg-white/5 shadow-[0_8px_40px_rgba(255,255,255,0.05)];
+/* Animations */
+@keyframes floatY { 0%{transform:translateY(0)} 50%{transform:translateY(-12px)} 100%{transform:translateY(0)} }
+@keyframes fadeUp { 0%{opacity:.0; transform:translateY(12px)} 100%{opacity:1; transform:none} }
+
+.float-slow   { animation: floatY 16s ease-in-out infinite; }
+.fade-up      { animation: fadeUp .7s both; }
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .float-slow, .fade-up { animation: none !important; }
 }
 
-/* --- Animations --- */
-@keyframes floatY {
-  0%   { transform: translateY(0) rotate(0deg); }
-  50%  { transform: translateY(-12px) rotate(1deg); }
-  100% { transform: translateY(0) rotate(0deg); }
-}
-@keyframes fadeUp {
-  0% { opacity: 0; transform: translateY(8px) }
-  100% { opacity: 1; transform: translateY(0) }
-}
-@keyframes marquee {
-  0% { transform: translateX(0) }
-  100% { transform: translateX(-50%) }
-}
-
-.float-slow  { animation: floatY 14s ease-in-out infinite; }
-.float-slower{ animation: floatY 18s ease-in-out infinite; }
-.fade-up     { animation: fadeUp .7s both; }
-
-.marquee {
-  display: flex; gap: 4rem; white-space: nowrap; will-change: transform;
-  animation: marquee 18s linear infinite;
-}
-.marquee:hover { animation-play-state: paused; }
-
-/* Black & white image treatment */
+/* BW treatment for images */
 img, .bw { filter: grayscale(100%); }
+
+/* Big type */
+.display { @apply text-4xl md:text-7xl font-black leading-[1.02] tracking-tight; }
+.kicker  { @apply text-xs tracking-[0.25em] text-white/60; }
+
+/* Buttons */
+.btn      { @apply inline-flex items-center justify-center rounded-xl font-semibold transition-colors; }
+.btn-solid{ @apply btn bg-white text-black px-5 py-3 hover:bg-white/90; }
+.btn-ghost{ @apply btn border border-white/20 px-5 py-3 hover:bg-white hover:text-black; }
