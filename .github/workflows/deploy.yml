@@ -1,11 +1,12 @@
 name: CI/CD
+
 on:
   push:
     branches: [ "main" ]
 
 permissions:
   contents: read
-  packages: write
+  packages: write   # needed to push to GHCR with GITHUB_TOKEN
 
 jobs:
   build-and-push:
@@ -13,39 +14,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set lowercase image names
+      # Compute lowercase owner/repo and export image names for later steps
+      - name: Set image names (lowercase)
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO:  ${{ github.repository }}
         run: |
-          echo "OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
-          NAME="${GITHUB_REPOSITORY##*/}"
-          echo "NAME_LC=${NAME,,}" >> $GITHUB_ENV
-          echo "IMAGE_WEB=ghcr.io/${OWNER_LC}/${NAME_LC}-web" >> $GITHUB_ENV
-          echo "IMAGE_API=ghcr.io/${OWNER_LC}/${NAME_LC}-api" >> $GITHUB_ENV
+          OWNER_LC=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          REPO_LC=$(echo "${REPO##*/}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_WEB=ghcr.io/${OWNER_LC}/${REPO_LC}-web" >> $GITHUB_ENV
+          echo "IMAGE_API=ghcr.io/${OWNER_LC}/${REPO_LC}-api" >> $GITHUB_ENV
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}  # recommended for pushing from Actions
-          # GitHub recommends GITHUB_TOKEN with packages:write for GHCR pushes.
+          password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Build & push the WEB image
       - name: Build & push WEB
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: web/Dockerfile
+          context: ./web
           push: true
           tags: |
             ${{ env.IMAGE_WEB }}:latest
             ${{ env.IMAGE_WEB }}:${{ github.sha }}
 
+      # Build & push the API image
       - name: Build & push API
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: api/Dockerfile
+          context: ./api
           push: true
           tags: |
             ${{ env.IMAGE_API }}:latest
@@ -64,6 +69,7 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd /opt/pum
+            # login only needed if your GHCR packages are private
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
             docker compose pull
             docker compose up -d --remove-orphans

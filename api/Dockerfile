@@ -1,7 +1,7 @@
 FROM node:20-alpine
 WORKDIR /srv
-COPY api/package.json api/package-lock.json* ./
+COPY package*.json ./
 RUN npm ci
-COPY api/. .
+COPY . .
 EXPOSE 3001
 CMD ["node","src/index.js"]

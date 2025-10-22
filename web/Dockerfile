@@ -1,13 +1,12 @@
-# Next.js minimal image
 FROM node:20-alpine AS deps
 WORKDIR /app
-COPY web/package.json web/package-lock.json* ./
+COPY package*.json ./
 RUN npm ci
 
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY web/. .
+COPY . .
 RUN npm run build
 
 FROM node:20-alpine AS runner
