@@ -1,34 +1,39 @@
+import TypedHeadline from "@/components/TypedHeadline";
+import FloatingGallery from "@/components/FloatingGallery";
+import StatsStrip from "@/components/StatsStrip";
+import LogosMarquee from "@/components/LogosMarquee";
+import CTASection from "@/components/CTASection";
+
 export default function Home() {
   return (
-    <section className="grid md:grid-cols-2 gap-8 items-center">
-      <div>
-        <h1 className="text-4xl md:text-5xl font-extrabold leading-tight">
-          PUM — Projects of United Minds
-        </h1>
-        <p className="mt-4 text-slate-300">
-          We’re a group of ~50 initiative TUM students hacking at 20+ hackathons and building startups.
-        </p>
-        <div className="mt-6 grid grid-cols-3 gap-3">
-          <div className="card p-4 text-center">
-            <div className="text-3xl font-bold">50+</div>
-            <div className="text-xs text-slate-400">Members</div>
+      <div className="relative">
+        {/* HERO */}
+        <section className="pt-10 md:pt-16 grid md:grid-cols-2 gap-10 items-center">
+          <div>
+            <p className="text-white/60 tracking-widest text-xs">PROJECTS OF UNITED MINDS</p>
+            <h1 className="mt-3 text-4xl md:text-6xl font-extrabold leading-[1.05]">
+              We build <span className="underline decoration-white/20">ridiculously fast</span> products for{" "}
+              <span className="whitespace-nowrap"><TypedHeadline /></span>.
+            </h1>
+            <p className="mt-5 text-white/70 max-w-xl">
+              A collective of TUM makers shipping prototypes, startups and research demos at speed.
+              Code that speaks for itself — secure, performant, and production-minded.
+            </p>
+
+            <div className="mt-8 flex gap-4">
+              <a href="/projects" className="px-5 py-3 bg-white text-black rounded-xl font-semibold">Explore projects</a>
+              <a href="/members"  className="px-5 py-3 border border-white/20 rounded-xl font-semibold">Meet the team</a>
+            </div>
           </div>
-          <div className="card p-4 text-center">
-            <div className="text-3xl font-bold">20+</div>
-            <div className="text-xs text-slate-400">Hackathons</div>
+
+          <div className="fade-up">
+            <FloatingGallery />
           </div>
-          <div className="card p-4 text-center">
-            <div className="text-3xl font-bold">∞</div>
-            <div className="text-xs text-slate-400">Ideas</div>
-          </div>
-        </div>
+        </section>
+
+        <StatsStrip />
+        <LogosMarquee />
+        <CTASection />
       </div>
-      <div className="card p-6">
-        <h3 className="font-semibold mb-2">What we do</h3>
-        <p className="text-sm text-slate-300">
-          Projects, startups and fun. Browse members and projects or get in touch.
-        </p>
-      </div>
-    </section>
   );
 }
