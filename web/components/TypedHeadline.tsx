@@ -9,6 +9,7 @@ export default function TypedHeadline() {
     const rm = useReducedMotion();
     useEffect(() => { const id = setInterval(() => setI(v => (v + 1) % WORDS.length), 2000); return () => clearInterval(id); }, []);
     const word = WORDS[i];
+
     return (
         <span className="relative inline-flex items-center">
       <AnimatePresence mode="popLayout">
@@ -23,7 +24,7 @@ export default function TypedHeadline() {
           {word}
         </motion.span>
       </AnimatePresence>
-      <span className="ml-1 inline-block w-[1ch] h-[1.2em] align-middle bg-white/90 animate-pulse" aria-hidden />
+      <span className="ml-1 caret" aria-hidden />
     </span>
     );
 }

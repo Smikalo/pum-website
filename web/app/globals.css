@@ -8,10 +8,10 @@
   --fg: #fff;
   --muted: #a3a3a3;
 }
-html, body { background: var(--bg); color: var(--fg); font-family: var(--font-inter), ui-sans-serif, system-ui; }
+html, body { background: var(--bg); color: var(--fg); font-family: var(--font-inter, ui-sans-serif), system-ui; }
 
-/* Section rhythm */
-.section { @apply py-16 md:py-24; }
+/* Section rhythm (tighter for less vertical length) */
+.section { @apply py-12 md:py-16; }
 
 /* Card + hairline borders */
 .card { @apply rounded-3xl border border-white/10 bg-white/[0.03] shadow-[0_8px_60px_rgba(255,255,255,0.06)]; }
@@ -22,14 +22,16 @@ html, body { background: var(--bg); color: var(--fg); font-family: var(--font-in
           linear-gradient(to bottom, rgba(255,255,255,.05) 1px, transparent 1px),
           linear-gradient(to right, rgba(255,255,255,.05) 1px, transparent 1px);
   background-size: 40px 40px;
+  border-radius: 2rem;
 }
 
 /* Animations */
-@keyframes floatY { 0%{transform:translateY(0)} 50%{transform:translateY(-12px)} 100%{transform:translateY(0)} }
-@keyframes fadeUp { 0%{opacity:.0; transform:translateY(12px)} 100%{opacity:1; transform:none} }
+@keyframes floatY { 0%{transform:translateY(0)} 50%{transform:translateY(-10px)} 100%{transform:translateY(0)} }
+@keyframes fadeUp { 0%{opacity:0; transform:translateY(12px)} 100%{opacity:1; transform:none} }
+@keyframes caretBlink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
 
 .float-slow   { animation: floatY 16s ease-in-out infinite; }
-.fade-up      { animation: fadeUp .7s both; }
+.fade-up      { animation: fadeUp .6s both; }
 
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
@@ -43,7 +45,64 @@ img, .bw { filter: grayscale(100%); }
 .display { @apply text-4xl md:text-7xl font-black leading-[1.02] tracking-tight; }
 .kicker  { @apply text-xs tracking-[0.25em] text-white/60; }
 
-/* Buttons */
-.btn      { @apply inline-flex items-center justify-center rounded-xl font-semibold transition-colors; }
-.btn-solid{ @apply btn bg-white text-black px-5 py-3 hover:bg-white/90; }
-.btn-ghost{ @apply btn border border-white/20 px-5 py-3 hover:bg-white hover:text-black; }
+/* Buttons: hover lift + active settle + focus ring */
+.btn      { @apply inline-flex items-center justify-center rounded-xl font-semibold transition-colors
+transition-transform duration-200 will-change-transform focus:outline-none
+focus-visible:ring-2 focus-visible:ring-white/60; }
+.btn-solid{ @apply btn bg-white text-black px-5 py-3 hover:bg-white/90 hover:-translate-y-0.5 active:translate-y-0; }
+.btn-ghost{ @apply btn border border-white/20 px-5 py-3 hover:bg-white hover:text-black hover:-translate-y-0.5 active:translate-y-0; }
+
+/* Typed caret — thin modern bar */
+.caret { width: 2px; height: 1.1em; display: inline-block; background: rgba(255,255,255,.9); animation: caretBlink 1s step-end infinite; }
+
+/* ---- Logos (white, non-stretched, hover brighten) ---- */
+.logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 0.75rem;   /* spacing between logos */
+  padding-block: 0.25rem;    /* vertical breathing room so hover-lift isn’t clipped */
+  flex-shrink: 0;
+}
+.logo-img {
+  display: block;
+  height: 34px;
+  width: auto;               /* keep aspect ratio */
+  object-fit: contain;
+  filter: brightness(0) invert(1);  /* force white while preserving alpha */
+  opacity: .72;
+  transition: opacity .2s ease, transform .2s ease;
+  will-change: transform;
+}
+.logo-wrap:hover .logo-img { opacity: 1; transform: translateY(-2px); }
+@media (max-width: 768px) { .logo-img { height: 30px; } }
+
+/* ===================== Seamless ticker (JS-powered) ===================== */
+.ticker {
+  --gap: 3rem;
+  position: relative;
+  overflow: hidden;                 /* we still hide the horizontal overflow */
+  overflow-clip-margin: 8px;        /* <- allow a few px outside the box so hover-lift isn’t clipped */ /* MDN: overflow is clipped at the padding box; this extends the clip edge slightly */
+  padding-block: 0.5rem;            /* a bit more top/bottom room to clear the section border */
+  user-select: none;
+}
+.ticker__track {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap);
+  /* removed `contain: content` to avoid paint containment clipping descendants */ /* MDN: paint containment clips to the border box */
+  backface-visibility: hidden;
+  transform: translate3d(0,0,0);
+  will-change: transform;
+}
+.ticker:hover .ticker__track { animation-play-state: paused; }
+
+/* Edge fades */
+.ticker__fade {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 8rem;
+  pointer-events: none;
+}
+.ticker__fade--left  { left: 0;  background: linear-gradient(to right, var(--bg) 0%, transparent 100%); }
+.ticker__fade--right { right: 0; background: linear-gradient(to left,  var(--bg) 0%, transparent 100%); }

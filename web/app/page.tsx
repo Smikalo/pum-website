@@ -13,7 +13,7 @@ export default function Home() {
                     <p className="kicker">PROJECTS OF UNITED MINDS</p>
                     <h1 className="display">
                         We build <span className="underline decoration-white/20">ridiculously fast</span> products for{" "}
-                        <span className="whitespace-nowrap"><TypedHeadline /></span>.
+                        <span className="whitespace-nowrap"><TypedHeadline /></span>
                     </h1>
                     <p className="text-white/70 max-w-xl">
                         A collective of TUM makers shipping prototypes, startups and research demos at speed.
