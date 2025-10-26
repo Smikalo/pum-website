@@ -3,6 +3,7 @@ import Link from "next/link";
 import { API_BASE } from "../../lib/config";
 import MembersSearchBar from "@/components/MembersSearchBar";
 import EventsMap from "@/components/EventsMap";
+import { SEED_EVENTS } from "@/data/events.seed";
 
 type Event = {
     id: string;
@@ -25,10 +26,7 @@ function formatDateRange(a?: string, b?: string) {
     if (!a && b) return new Date(b).toLocaleDateString();
     const da = new Date(a!);
     const db = new Date(b!);
-    const sameMonth = da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth();
-    const opts: Intl.DateTimeFormatOptions = sameMonth
-        ? { year: "numeric", month: "short", day: "numeric" }
-        : { year: "numeric", month: "short", day: "numeric" };
+    const opts: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" };
     return `${da.toLocaleDateString(undefined, opts)} – ${db.toLocaleDateString(undefined, opts)}`;
 }
 
@@ -47,15 +45,45 @@ function highlight(text: string | undefined, q: string) {
     );
 }
 
+function matchesQuery(e: Event, q: string) {
+    if (!q) return true;
+    const n = q.toLowerCase();
+    const fields = [
+        e.name || "",
+        e.locationName || "",
+        e.description || "",
+        ...(e.tags || []),
+    ];
+    return fields.some((f) => f.toLowerCase().includes(n));
+}
+
+function parseYear(s?: string) {
+    if (!s) return undefined;
+    const y = Number(s.slice(0, 4));
+    return Number.isFinite(y) ? y : undefined;
+}
+
 // --- data ---
-async function fetchEvents(params: Record<string, string | number | undefined> = {}) {
+async function fetchAllEventsFromApi(): Promise<Event[]> {
+    // Grab everything from the API, we'll filter locally so seed + api behave the same.
     const url = new URL("/api/events", API_BASE);
-    Object.entries(params).forEach(([k, v]) => {
-        if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
-    });
+    url.searchParams.set("size", "999");
     const res = await fetch(url.toString(), { cache: "no-store" });
-    if (!res.ok) throw new Error("Failed to load events");
-    return res.json() as Promise<{ items: Event[]; total?: number }>;
+    if (!res.ok) return [];
+    const json = (await res.json()) as { items?: Event[] };
+    return json.items || [];
+}
+
+function dedupeBySlug(list: Event[]): Event[] {
+    const seen = new Set<string>();
+    const out: Event[] = [];
+    for (const e of list) {
+        const key = e.slug;
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(e);
+    }
+    return out;
 }
 
 export default async function EventsPage({
@@ -66,15 +94,12 @@ export default async function EventsPage({
     const q = searchParams?.q || "";
     const year = searchParams?.year || "";
 
-    // We grab all events for year chips, and filtered ones for map/list.
-    const [allRes, filteredRes] = await Promise.all([
-        fetchEvents(),
-        fetchEvents({ q, year }),
-    ]);
+    const apiEvents = await fetchAllEventsFromApi();
 
-    const allEvents = allRes.items || [];
-    const events = filteredRes.items || [];
+    // Merge API + seed to ensure rich coverage (Munich, Regensburg, Potsdam, Vienna, multiple years)
+    const allEvents = dedupeBySlug([...(apiEvents || []), ...SEED_EVENTS]);
 
+    // Build year chips from all events
     const years = Array.from(
         new Set(
             allEvents
@@ -82,6 +107,13 @@ export default async function EventsPage({
                 .filter(Boolean)
         )
     ).sort((a, b) => Number(b) - Number(a));
+
+    // Filter (query also matches tags)
+    const filtered = allEvents.filter((e) => {
+        const byQ = matchesQuery(e, q);
+        const byYear = year ? parseYear(e.dateStart) === Number(year) : true;
+        return byQ && byYear;
+    });
 
     return (
         <section className="section">
@@ -98,7 +130,7 @@ export default async function EventsPage({
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
                 <div className="flex-1">
                     <MembersSearchBar
-                        placeholder="Search events by name or location…"
+                        placeholder="Search events by name, location, or tag…"
                         paramKey="q"
                     />
                 </div>
@@ -109,16 +141,16 @@ export default async function EventsPage({
 
             {/* Map */}
             <div className="mb-8">
-                <EventsMap events={events} />
+                <EventsMap events={filtered} />
             </div>
 
             {/* List */}
             <div className="mb-3 text-sm text-white/60">
-                {events.length} event{events.length === 1 ? "" : "s"} found
+                {filtered.length} event{filtered.length === 1 ? "" : "s"} found
                 {year ? <> in <span className="font-semibold">{year}</span></> : null}
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {events.map((e) => (
+                {filtered.map((e) => (
                     <Link
                         key={e.slug}
                         href={`/events/${e.slug}`}
@@ -133,6 +165,15 @@ export default async function EventsPage({
                         <div className="mt-1 text-sm text-white/60">
                             {highlight(e.locationName || "", q)}
                         </div>
+                        {!!(e.tags && e.tags.length) && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                {e.tags!.slice(0, 6).map((t) => (
+                                    <span key={t} className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
+                    {highlight(t, q)}
+                  </span>
+                                ))}
+                            </div>
+                        )}
                         {e.description ? (
                             <div className="mt-3 text-sm text-white/70 line-clamp-3">
                                 {highlight(e.description, q)}
