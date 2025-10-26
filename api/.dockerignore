@@ -1,0 +1,30 @@
+# VCS & editor
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+.DS_Store
+
+# Node outputs & caches
+node_modules
+.npm
+.pnpm-store
+dist
+build
+coverage
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Tests & tmp
+__tests__/
+*.spec.*
+tmp/

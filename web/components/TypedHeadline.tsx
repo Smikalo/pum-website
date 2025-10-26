@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
-const WORDS = ["Hackathons", "Startups", "Research", "Open Source", "AI"];
+const WORDS = ["Hackathons", "Startups", "Research", "Open Source"];
 
 export default function TypedHeadline() {
     const [i, setI] = useState(0);
