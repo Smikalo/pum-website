@@ -11,7 +11,7 @@ type Member = {
     shortBio?: string;
     skills?: string[];
     techStack?: string[];
-    avatarUrl?: string; // NEW
+    avatarUrl?: string;
 };
 
 type Project = {
@@ -21,21 +21,15 @@ type Project = {
     members?: { memberId?: string; memberSlug?: string }[];
     techStack?: string[];
     tags?: string[];
-    imageUrl?: string; // NEW (cover image)
+    imageUrl?: string;
 };
 
-async function fetchMembers(params: Record<string, string | number | undefined> = {}) {
+async function fetchAllMembers() {
     const url = new URL("/api/members", API_BASE);
-    Object.entries(params).forEach(([k,v])=>{
-        if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
-    });
+    url.searchParams.set("size", "999");
     const res = await fetch(url.toString(), { cache: "no-store" });
     if (!res.ok) throw new Error("Failed to load members");
-    return res.json() as Promise<{ items: Member[]; total: number; page: number; size: number }>;
-}
-
-async function fetchAllMembers() {
-    return fetchMembers({ size: 999 });
+    return res.json() as Promise<{ items: Member[]; total: number }>;
 }
 
 async function fetchProjects() {
@@ -63,6 +57,34 @@ function niceSkillLabel(s: string) {
     return m[s.toLowerCase()] || s;
 }
 
+function parseMulti(param?: string): string[] {
+    if (!param) return [];
+    return param
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+}
+
+// AND logic: member must include *all* selected tags in that category.
+function includesAll(haystack: string[] | undefined, needles: string[]): boolean {
+    if (!needles.length) return true;
+    const h = new Set((haystack || []).map((s) => s.toLowerCase()));
+    return needles.every((n) => h.has(n.toLowerCase()));
+}
+
+// Search also matches tags (skills + techStack), case-insensitive substring.
+function matchesQuery(m: Member, q: string): boolean {
+    if (!q) return true;
+    const needle = q.toLowerCase();
+    const fields: string[] = [
+        m.name || "",
+        m.shortBio || "",
+        ...(m.skills || []),
+        ...(m.techStack || []),
+    ];
+    return fields.some((f) => f.toLowerCase().includes(needle));
+}
+
 // highlight utility for server components
 function highlight(text: string | undefined, q: string) {
     if (!text) return null;
@@ -85,26 +107,32 @@ export default async function MembersPage({
     searchParams?: { q?: string; skill?: string; tech?: string; view?: string }
 }) {
     const q = searchParams?.q || "";
-    const skill = searchParams?.skill || "";
-    const tech = searchParams?.tech || "";
+    const skillList = parseMulti(searchParams?.skill); // NEW: multi-select
+    const techList = parseMulti(searchParams?.tech);   // NEW: multi-select
     const view = (searchParams?.view || "list") as "list" | "graph" | "groups";
 
-    const [{ items, total }, allMembers, projectsRaw] = await Promise.all([
-        fetchMembers({ q, skill, tech, size: 60 }),
+    const [allMembersRes, projectsRaw] = await Promise.all([
         fetchAllMembers(),
         fetchProjects(),
     ]);
 
-    // Filters for chips
-    const allSkills = uniq(allMembers.items.flatMap(m=>m.skills || [])).sort();
-    const allTech = uniq(allMembers.items.flatMap(m=>m.techStack || [])).sort();
+    // Build filterable vocabularies
+    const allSkills = uniq(allMembersRes.items.flatMap(m=>m.skills || [])).sort();
+    const allTech = uniq(allMembersRes.items.flatMap(m=>m.techStack || [])).sort();
 
-    // For the graph, only show filtered members + projects that connect to them
-    const visibleMembers = items;
-    const visibleSlugs = new Set(visibleMembers.map(m=>m.slug));
+    // Filter members (server-side) using AND logic for tags and query across tags too.
+    const filteredMembers = allMembersRes.items.filter((m) =>
+        includesAll(m.skills, skillList) &&
+        includesAll(m.techStack, techList) &&
+        matchesQuery(m, q)
+    );
+    const total = filteredMembers.length;
+
+    // For the graph, only show filtered members + projects connected to them
+    const visibleSlugs = new Set(filteredMembers.map(m=>m.slug));
     const filteredProjects = projectsRaw.items.filter(p =>
         (p.members || []).some(r => {
-            const slug = r.memberSlug || allMembers.items.find(mm => mm.id === r.memberId)?.slug;
+            const slug = r.memberSlug || allMembersRes.items.find(mm => mm.id === r.memberId)?.slug;
             return !!slug && visibleSlugs.has(slug);
         })
     );
@@ -125,7 +153,7 @@ export default async function MembersPage({
                 <div className="flex-1">
                     {/* LIVE search bar (debounced router.replace) */}
                     <MembersSearchBar
-                        placeholder="Search members by name, bio, skills…"
+                        placeholder="Search members by name, bio, expertise, tech…"
                         paramKey="q"
                     />
                 </div>
@@ -133,7 +161,13 @@ export default async function MembersPage({
                     {["list","graph","groups"].map(v=>(
                         <Link
                             key={v}
-                            href={`/members?${new URLSearchParams({ q, skill, tech, view: v}).toString()}`}
+                            href={`/members?${new URLSearchParams({
+                                q,
+                                // keep commas to persist multi-selects
+                                ...(skillList.length ? { skill: skillList.join(",") } : {}),
+                                ...(techList.length ? { tech: techList.join(",") } : {}),
+                                view: v
+                            }).toString()}`}
                             className={`px-3 py-2 rounded-lg text-sm ring-1 ring-white/10 ${view===v? "bg-white text-black font-semibold":"bg-white/5 hover:bg-white/10"}`}
                         >
                             {v === "list" ? "List" : v === "graph" ? "Graph" : "Groups"}
@@ -142,16 +176,16 @@ export default async function MembersPage({
                 </div>
             </div>
 
-            {/* Filters */}
+            {/* Filters (now stackable per category) */}
             <div className="mb-8 grid md:grid-cols-2 gap-3">
                 <div className="card p-3">
                     <div className="text-xs uppercase tracking-widest text-white/60 mb-2">Expertise</div>
                     <div className="flex flex-wrap gap-2">
-                        <FilterChips
+                        <MultiFilterChips
                             base="/members"
-                            params={{ q, tech, view }}
+                            params={{ q, tech: techList.join(","), view }}
                             values={allSkills}
-                            active={skill}
+                            selected={skillList}
                             name="skill"
                             labelize={niceSkillLabel}
                         />
@@ -160,11 +194,11 @@ export default async function MembersPage({
                 <div className="card p-3">
                     <div className="text-xs uppercase tracking-widest text-white/60 mb-2">Tech stack</div>
                     <div className="flex flex-wrap gap-2">
-                        <FilterChips
+                        <MultiFilterChips
                             base="/members"
-                            params={{ q, skill, view }}
+                            params={{ q, skill: skillList.join(","), view }}
                             values={allTech}
-                            active={tech}
+                            selected={techList}
                             name="tech"
                         />
                     </div>
@@ -174,52 +208,71 @@ export default async function MembersPage({
             {/* Content */}
             {view === "graph" ? (
                 <MembersGraph
-                    members={visibleMembers}
+                    members={filteredMembers}
                     projects={filteredProjects}
                     query={q} // for highlight in tooltip
                 />
             ) : view === "groups" ? (
-                <GroupsView members={visibleMembers} q={q} />
+                <GroupsView members={filteredMembers} q={q} />
             ) : (
-                <ListView members={visibleMembers} total={total} q={q} />
+                <ListView members={filteredMembers} total={total} q={q} />
             )}
         </section>
     );
 }
 
-function FilterChips({
-                         base,
-                         params,
-                         values,
-                         active,
-                         name,
-                         labelize,
-                     }: {
+function MultiFilterChips({
+                              base,
+                              params,
+                              values,
+                              selected,
+                              name,
+                              labelize,
+                          }: {
     base: string;
     params: Record<string, string>;
     values: string[];
-    active?: string;
+    selected: string[];
     name: string;
     labelize?: (s: string)=>string;
 }) {
-    const makeHref = (v?: string) => {
-        const p = new URLSearchParams({ ...params, [name]: v || "" });
-        for (const [k,val] of p.entries()) if (!val) p.delete(k);
-        return `${base}?${p.toString()}`;
+    const makeHref = (nextSelected: string[]) => {
+        const p = new URLSearchParams();
+        // keep base params
+        Object.entries(params).forEach(([k, v]) => {
+            if (v) p.set(k, v);
+        });
+        if (nextSelected.length) p.set(name, nextSelected.join(","));
+        const qs = p.toString();
+        return `${base}${qs ? `?${qs}` : ""}`;
+    };
+
+    const toggle = (v: string) => {
+        const exists = selected.includes(v);
+        const next = exists ? selected.filter(s => s !== v) : [...selected, v];
+        return makeHref(next);
     };
 
     return (
         <>
-            {active ? (
-                <Link href={makeHref("")} className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10">
+            {/* Clear all in this category */}
+            {selected.length ? (
+                <Link
+                    href={makeHref([])}
+                    className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10"
+                >
                     Clear
                 </Link>
             ) : null}
             {values.map((v)=>(
                 <Link
                     key={v}
-                    href={makeHref(v)}
-                    className={`px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 ${active===v ? "bg-white text-black font-semibold" : "bg-white/5 hover:bg-white/10"}`}
+                    href={toggle(v)}
+                    className={`px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 ${
+                        selected.includes(v)
+                            ? "bg-white text-black font-semibold"
+                            : "bg-white/5 hover:bg-white/10"
+                    }`}
                 >
                     {labelize ? labelize(v) : v}
                 </Link>
