@@ -1,6 +1,8 @@
+import React from "react";
 import Link from "next/link";
 import { API_BASE } from "../../lib/config";
 import MembersGraph from "@/components/MembersGraph";
+import MembersSearchBar from "@/components/MembersSearchBar";
 
 type Member = {
     id: string;
@@ -9,6 +11,7 @@ type Member = {
     shortBio?: string;
     skills?: string[];
     techStack?: string[];
+    avatarUrl?: string; // NEW
 };
 
 type Project = {
@@ -18,6 +21,7 @@ type Project = {
     members?: { memberId?: string; memberSlug?: string }[];
     techStack?: string[];
     tags?: string[];
+    imageUrl?: string; // NEW (cover image)
 };
 
 async function fetchMembers(params: Record<string, string | number | undefined> = {}) {
@@ -25,7 +29,6 @@ async function fetchMembers(params: Record<string, string | number | undefined> 
     Object.entries(params).forEach(([k,v])=>{
         if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
     });
-    // Use no-store to always reflect current filters
     const res = await fetch(url.toString(), { cache: "no-store" });
     if (!res.ok) throw new Error("Failed to load members");
     return res.json() as Promise<{ items: Member[]; total: number; page: number; size: number }>;
@@ -60,6 +63,22 @@ function niceSkillLabel(s: string) {
     return m[s.toLowerCase()] || s;
 }
 
+// highlight utility for server components
+function highlight(text: string | undefined, q: string) {
+    if (!text) return null;
+    if (!q) return text;
+    const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`(${esc})`, "ig");
+    const parts = text.split(re);
+    return parts.map((p, i) =>
+        re.test(p) ? (
+            <mark key={i} className="px-0.5 rounded bg-yellow-300/30 text-yellow-200">{p}</mark>
+        ) : (
+            <span key={i}>{p}</span>
+        )
+    );
+}
+
 export default async function MembersPage({
                                               searchParams
                                           }: {
@@ -70,14 +89,25 @@ export default async function MembersPage({
     const tech = searchParams?.tech || "";
     const view = (searchParams?.view || "list") as "list" | "graph" | "groups";
 
-    const [{ items, total }, allMembers, projects] = await Promise.all([
+    const [{ items, total }, allMembers, projectsRaw] = await Promise.all([
         fetchMembers({ q, skill, tech, size: 60 }),
         fetchAllMembers(),
         fetchProjects(),
     ]);
 
+    // Filters for chips
     const allSkills = uniq(allMembers.items.flatMap(m=>m.skills || [])).sort();
     const allTech = uniq(allMembers.items.flatMap(m=>m.techStack || [])).sort();
+
+    // For the graph, only show filtered members + projects that connect to them
+    const visibleMembers = items;
+    const visibleSlugs = new Set(visibleMembers.map(m=>m.slug));
+    const filteredProjects = projectsRaw.items.filter(p =>
+        (p.members || []).some(r => {
+            const slug = r.memberSlug || allMembers.items.find(mm => mm.id === r.memberId)?.slug;
+            return !!slug && visibleSlugs.has(slug);
+        })
+    );
 
     return (
         <section className="section">
@@ -92,19 +122,13 @@ export default async function MembersPage({
 
             {/* Controls */}
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
-                <form className="flex-1" action="/members" method="get">
-                    <input
-                        name="q"
-                        defaultValue={q}
-                        placeholder="Search members by name or bio…"
-                        className="w-full px-4 py-3 rounded-xl bg-black/50 ring-1 ring-white/10 focus:outline-none focus:ring-white/30"
+                <div className="flex-1">
+                    {/* LIVE search bar (debounced router.replace) */}
+                    <MembersSearchBar
+                        placeholder="Search members by name, bio, skills…"
+                        paramKey="q"
                     />
-                    {/* Preserve active filters on search */}
-                    {skill ? <input type="hidden" name="skill" value={skill} /> : null}
-                    {tech ? <input type="hidden" name="tech" value={tech} /> : null}
-                    {view ? <input type="hidden" name="view" value={view} /> : null}
-                </form>
-
+                </div>
                 <div className="flex items-center gap-2">
                     {["list","graph","groups"].map(v=>(
                         <Link
@@ -150,13 +174,14 @@ export default async function MembersPage({
             {/* Content */}
             {view === "graph" ? (
                 <MembersGraph
-                    members={allMembers.items}
-                    projects={projects.items}
+                    members={visibleMembers}
+                    projects={filteredProjects}
+                    query={q} // for highlight in tooltip
                 />
             ) : view === "groups" ? (
-                <GroupsView members={items} />
+                <GroupsView members={visibleMembers} q={q} />
             ) : (
-                <ListView members={items} total={total} />
+                <ListView members={visibleMembers} total={total} q={q} />
             )}
         </section>
     );
@@ -179,14 +204,12 @@ function FilterChips({
 }) {
     const makeHref = (v?: string) => {
         const p = new URLSearchParams({ ...params, [name]: v || "" });
-        // Remove empty params to keep URL clean
         for (const [k,val] of p.entries()) if (!val) p.delete(k);
         return `${base}?${p.toString()}`;
     };
 
     return (
         <>
-            {/* Clear */}
             {active ? (
                 <Link href={makeHref("")} className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10">
                     Clear
@@ -205,22 +228,51 @@ function FilterChips({
     );
 }
 
-function ListView({ members, total }: { members: Member[]; total: number }) {
+function Avatar({ name, src, size=40 }: { name: string; src?: string; size?: number }) {
+    const initials = name.split(" ").map(s=>s[0]).slice(0,2).join("").toUpperCase();
+    return src ? (
+        <img
+            src={src}
+            alt={name}
+            className="rounded-full object-cover ring-1 ring-white/10"
+            style={{ width: size, height: size }}
+        />
+    ) : (
+        <div
+            className="rounded-full grid place-items-center bg-white/10 ring-1 ring-white/10 text-white/80"
+            style={{ width: size, height: size }}
+            aria-hidden
+        >
+            <span className="text-xs">{initials}</span>
+        </div>
+    );
+}
+
+function ListView({ members, total, q }: { members: Member[]; total: number; q: string }) {
     return (
         <>
             <div className="mb-3 text-sm text-white/60">{total} member{total===1?"":"s"} found</div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {members.map((m)=>(
                     <Link key={m.slug} href={`/members/${m.slug}`} className="card p-5 hover:shadow-[0_0_0_2px_rgba(255,255,255,0.08)] hover:-translate-y-0.5 transition">
-                        <div className="font-semibold text-lg">{m.name}</div>
-                        {m.shortBio ? <div className="text-sm text-white/70 mt-1">{m.shortBio}</div> : null}
-                        <div className="mt-3 flex flex-wrap gap-2">
-                            {(m.skills||[]).slice(0,3).map(s=>(
-                                <span key={s} className="text-xs px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">{s}</span>
-                            ))}
-                        </div>
-                        <div className="mt-3 text-xs text-white/50 truncate">
-                            {(m.techStack||[]).join(" • ")}
+                        <div className="flex items-start gap-3">
+                            <Avatar name={m.name} src={m.avatarUrl} size={44} />
+                            <div className="min-w-0">
+                                <div className="font-semibold text-lg">{highlight(m.name, q)}</div>
+                                {m.shortBio ? <div className="text-sm text-white/70 mt-1 line-clamp-3">{highlight(m.shortBio, q)}</div> : null}
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {(m.skills||[]).slice(0,3).map(s=>(
+                                        <span key={s} className="text-xs px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">{highlight(s, q)}</span>
+                                    ))}
+                                </div>
+                                <div className="mt-3 text-xs text-white/50 truncate">
+                                    {(m.techStack||[]).map((t, i)=>(
+                                        <span key={t}>
+                      {highlight(t, q)}{i < (m.techStack?.length||0)-1 ? " • " : ""}
+                    </span>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                     </Link>
                 ))}
@@ -229,7 +281,7 @@ function ListView({ members, total }: { members: Member[]; total: number }) {
     );
 }
 
-function GroupsView({ members }: { members: Member[] }) {
+function GroupsView({ members, q }: { members: Member[]; q: string }) {
     const buckets: Record<string, Member[]> = {};
     for (const m of members) {
         const key = (m.skills && m.skills[0]) || "other";
@@ -241,12 +293,17 @@ function GroupsView({ members }: { members: Member[] }) {
         <div className="space-y-8">
             {groups.map(([skill, arr])=>(
                 <div key={skill}>
-                    <h3 className="text-xl font-bold mb-3">{niceSkillLabel(skill)}</h3>
+                    <h3 className="text-xl font-bold mb-3">{highlight(niceSkillLabel(skill), q)}</h3>
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {arr.map((m)=>(
                             <Link key={m.slug} href={`/members/${m.slug}`} className="card p-4 hover:bg-white/10 transition">
-                                <div className="font-semibold">{m.name}</div>
-                                <div className="text-xs text-white/60">{m.shortBio}</div>
+                                <div className="flex items-center gap-3">
+                                    <Avatar name={m.name} src={m.avatarUrl} size={36}/>
+                                    <div>
+                                        <div className="font-semibold">{highlight(m.name, q)}</div>
+                                        <div className="text-xs text-white/60 line-clamp-2">{highlight(m.shortBio, q)}</div>
+                                    </div>
+                                </div>
                             </Link>
                         ))}
                     </div>
