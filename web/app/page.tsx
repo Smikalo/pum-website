@@ -10,10 +10,10 @@ export default function Home() {
             {/* HERO */}
             <section className="section grid md:grid-cols-2 gap-10 items-center">
                 <div className="space-y-6">
-                    <p className="kicker">PROJECTS OF UNITED MINDS</p>
+                    <p className="kicker">PROJECT OF UNITED MINDS</p>
                     <h1 className="display">
-                        We build <span className="underline decoration-white/20">ridiculously fast</span> products for{" "}
-                        <span className="whitespace-nowrap"><TypedHeadline /></span>
+                        We build <span className="underline decoration-white/20">ridiculously fast</span> products for
+                        <p>{" "}<span className="whitespace-nowrap"><TypedHeadline /></span></p>
                     </h1>
                     <p className="text-white/70 max-w-xl">
                         A collective of TUM makers shipping prototypes, startups and research demos at speed.
