@@ -18,7 +18,7 @@ export type Member = {
     headline?: string;
     location?: string;
     expertise?: string[];
-    bio?: string;
+    bio?: string;          // NEW: long-form bio for the member detail page
     links?: {
         github?: string;
         linkedin?: string;
@@ -75,6 +75,10 @@ export const SEED_MEMBERS: Member[] = [
         headline: "ML Engineer @ PUM • Graphs, LLMs, Optimization",
         shortBio:
             "ML engineer shipping fast hackathon prototypes: LLM tooling, routing, MLOps. Loves 24–48h sprints.",
+        bio:
+            "I prototype ML systems end-to-end: from scrappy data pipelines to inference optimizations and neat product UIs. " +
+            "Recent obsessions: graph retrieval for LLMs, efficient vector search, and ONNX deployment. " +
+            "At hackathons I usually lead ML workstreams and help the team converge on a realistic MVP.",
         skills: ["ml", "ai", "data"],
         techStack: ["python", "pytorch", "onnx", "nextjs", "tailwind", "vector-search", "graphs"],
         avatarUrl: avatar("alice"),
@@ -111,6 +115,10 @@ export const SEED_MEMBERS: Member[] = [
         name: "Bob Nguyen",
         headline: "Full-stack + DevOps • TypeScript enjoyer",
         shortBio: "Full-stack + DevOps. DX-first, tidy CI, scales frontends to robust APIs.",
+        bio:
+            "I love shipping reliable web apps with great DX. I care about clean boundaries between client and server, " +
+            "type-safe contracts, and CI that saves time. My happy stack is Next.js + tRPC/REST + Postgres, " +
+            "all wrapped in containers and deployed with minimal drama.",
         skills: ["fullstack"],
         techStack: ["typescript", "react", "nextjs", "docker", "postgres"],
         avatarUrl: avatar("bob"),
@@ -132,6 +140,9 @@ export const SEED_MEMBERS: Member[] = [
         name: "Carol Meyer",
         headline: "Product Design • HCI • Data Viz",
         shortBio: "Product design • HCI • data-viz. Turns messy prototypes into clear narratives.",
+        bio:
+            "Designer focused on clarity: content hierarchy, flow, and motion. I translate complex ideas into interfaces " +
+            "that feel obvious. I’m happiest when working closely with engineering to iterate quickly and keep polish high.",
         skills: ["design"],
         techStack: ["figma", "ux", "data-vis", "storytelling"],
         avatarUrl: avatar("carol"),
