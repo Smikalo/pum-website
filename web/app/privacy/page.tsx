@@ -1,132 +1,150 @@
-// web/app/privacy/page.tsx
+import React from "react";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-    title: "Privacy Policy",
-    description:
-        "How we process personal data for the PUM website: contact form, server logs, analytics/cookies, your GDPR rights, and how to reach us.",
+    title: "Privacy Policy – PUM",
+    description: "How we handle your personal data and your rights.",
 };
 
-const UPDATED = "2025-10-27"; // update when you change the text
-
 export default function PrivacyPage() {
+    const updated = new Date().toISOString().slice(0, 10);
     return (
-        <section className="section space-y-6">
-            <header className="space-y-2">
-                <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">Privacy Policy</h1>
-                <p className="text-white/60">Last updated: {UPDATED}</p>
-            </header>
+        <section className="section py-10">
+            <p className="kicker">LEGAL</p>
+            <h1 className="display">Privacy Policy</h1>
+            <p className="mt-3 text-white/70 max-w-2xl">
+                We respect your privacy. This page explains what personal data we
+                process, for what purposes, and how you can exercise your rights.
+            </p>
 
-            <article className="prose prose-invert max-w-none">
-                <p className="text-white/80">
-                    This Privacy Policy explains how we process personal data on this website. It is intended
-                    to be concise and transparent. <strong>Note:</strong> the information below is for general
-                    guidance only and does not constitute legal advice.
-                </p>
+            <div className="mt-8 grid gap-6 max-w-3xl">
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">1. Controller</h2>
+                    <p className="text-white/80">
+                        <strong>Project of United Minds (PUM)</strong>
+                        <br />
+                        {/* TODO: Replace with your legal/official contact details */}
+                        c/o TUM student group
+                        <br />
+                        Arcisstraße 21, 80333 München, Germany
+                        <br />
+                        Email: contact@pum.example
+                    </p>
+                </div>
 
-                <h2>Controller</h2>
-                <p>
-                    <strong>[ORG_NAME]</strong> <br />
-                    [ADDRESS_LINE_1] <br />
-                    [ADDRESS_LINE_2] <br />
-                    Email: <a href="mailto:[EMAIL]">[EMAIL]</a> <br />
-                    Phone: [PHONE] <br />
-                </p>
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">
+                        2. What data we process & why
+                    </h2>
+                    <ul className="list-disc pl-5 text-white/80 space-y-2">
+                        <li>
+                            <strong>Website usage data</strong> (e.g., pages viewed, referrer,
+                            browser/OS, approximate location) to operate and secure our site
+                            (legitimate interests, Art. 6(1)(f) GDPR).
+                        </li>
+                        <li>
+                            <strong>Contact form data</strong> (name, email, message) to
+                            respond to your request (performance of a contract / steps prior
+                            to entering into a contract, Art. 6(1)(b); or consent, Art.
+                            6(1)(a) GDPR).
+                        </li>
+                        <li>
+                            <strong>Community/portfolio content</strong> you choose to share
+                            (member profiles, project info, event stories) for publishing on
+                            the website (consent, Art. 6(1)(a) GDPR).
+                        </li>
+                        <li>
+                            <strong>Cookies & analytics</strong> only if explicitly enabled
+                            by you (consent, Art. 6(1)(a) GDPR). See “Cookies” below.
+                        </li>
+                    </ul>
+                </div>
 
-                <h3>Data Protection Contact / DPO (if applicable)</h3>
-                <p>
-                    Email: <a href="mailto:[DPO_EMAIL]">[DPO_EMAIL]</a> <br />
-                    Address: [DPO_ADDRESS]
-                </p>
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">3. Cookies & analytics</h2>
+                    <p className="text-white/80">
+                        We aim to run this website with minimal cookies. If we use
+                        analytics, we will ask for your consent via the banner and load
+                        analytics scripts only after consent. You can withdraw consent at
+                        any time via the cookie settings.
+                    </p>
+                    <p className="text-white/60 text-sm mt-2">
+                        {/* Optional link target you can wire later */}
+                        <a className="underline underline-offset-4" href="#cookie-settings">
+                            Open cookie settings
+                        </a>
+                    </p>
+                </div>
 
-                <h2>What data we process, why, and on what legal basis</h2>
-                <h3>Website access (server logs)</h3>
-                <p>
-                    When you visit our website, our hosting infrastructure may log your IP address, date/time,
-                    URL, referrer, and user-agent for security (e.g., to detect abuse) and to ensure stable
-                    operation. <em>Legal basis:</em> our legitimate interests (Art. 6(1)(f) GDPR). Logs are
-                    retained only as long as necessary for these purposes.
-                </p>
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">
+                        4. Recipients & transfers
+                    </h2>
+                    <p className="text-white/80">
+                        We may use service providers (hosting, analytics, form processing)
+                        under data-processing agreements. If data is transferred to
+                        countries outside the EU/EEA, we ensure appropriate safeguards (e.g.
+                        Standard Contractual Clauses) or ask for your consent where
+                        required.
+                    </p>
+                </div>
 
-                <h3>Contact form</h3>
-                <p>
-                    If you contact us via the form, we process the data you provide (e.g., name, email,
-                    organization, message contents, and your selected contact reason) to handle your request
-                    and follow up. <em>Legal basis:</em> Art. 6(1)(b) GDPR (pre-contractual communication) or
-                    Art. 6(1)(f) GDPR (our legitimate interests to respond to inquiries). If you consent to be
-                    kept informed (e.g., subscribe to updates), <em>Legal basis:</em> Art. 6(1)(a) GDPR.
-                </p>
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">5. Retention</h2>
+                    <p className="text-white/80">
+                        We keep personal data only as long as necessary for the stated
+                        purposes, legal obligations, or the defense of legal claims.
+                    </p>
+                </div>
 
-                <h3>Analytics and cookies</h3>
-                <p>
-                    We use only technically necessary cookies by default. Any non-essential cookies or similar
-                    technologies (e.g., analytics, A/B testing, embedded media that set identifiers) are used
-                    <strong> only with your consent</strong>. You can withdraw consent at any time via the
-                    cookie controls. <em>Legal basis:</em> Art. 6(1)(a) GDPR (consent) and § 25 TDDDG/TTDSG
-                    (for storing/reading information on your device). Strictly necessary cookies are used
-                    without consent as permitted by § 25(2) TDDDG/TTDSG.
-                </p>
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">6. Your rights</h2>
+                    <p className="text-white/80">
+                        You have the right to access, rectify, erase, restrict or object to
+                        processing, data portability, and to withdraw consent with effect
+                        for the future. You can also lodge a complaint with a data
+                        protection authority.
+                    </p>
+                    <p className="text-white/60 text-sm mt-2">
+                        In Bavaria, the competent authority is typically the{" "}
+                        <a
+                            className="underline underline-offset-4"
+                            href="https://www.lda.bayern.de/"
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            Bayerisches Landesamt f&uuml;r Datenschutzaufsicht (BayLDA)
+                        </a>
+                        .
+                    </p>
+                </div>
 
-                <h3>Newsletter / subscriptions (if enabled)</h3>
-                <p>
-                    If you opt in, we process your email address to send updates. You can unsubscribe anytime.
-                    <em>Legal basis:</em> Art. 6(1)(a) GDPR (consent).
-                </p>
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">7. Contact</h2>
+                    <p className="text-white/80">
+                        For privacy requests, write to{" "}
+                        <a
+                            className="underline underline-offset-4"
+                            href="mailto:privacy@pum.example"
+                        >
+                            privacy@pum.example
+                        </a>{" "}
+                        or use our{" "}
+                        <a className="underline underline-offset-4" href="/contact">
+                            contact form
+                        </a>
+                        .
+                    </p>
+                </div>
 
-                <h2>Recipients and transfers</h2>
-                <ul>
-                    <li>
-                        <strong>Hosting / infrastructure:</strong> [HOSTING_PROVIDER], located in [COUNTRY/EU].
-                    </li>
-                    <li>
-                        <strong>Email / messaging:</strong> [EMAIL_PROVIDER].
-                    </li>
-                    <li>
-                        <strong>Analytics / other services:</strong> [ANALYTICS_TOOL, if any].
-                    </li>
-                </ul>
-                <p>
-                    If data is transferred outside the EU/EEA, we ensure appropriate safeguards (e.g., EU
-                    Standard Contractual Clauses) and risk assessments.
-                </p>
-
-                <h2>Retention</h2>
-                <p>
-                    We keep data only as long as necessary for the purposes above or to comply with legal
-                    obligations. Typical retention: contact requests up to [RETENTION_WINDOW], server logs up
-                    to [LOG_RETENTION], and newsletter data until you unsubscribe.
-                </p>
-
-                <h2>Your rights under the GDPR</h2>
-                <p>
-                    You have the right to access, rectification, erasure, restriction, objection (including
-                    to processing based on legitimate interests), and data portability. Where processing is
-                    based on consent, you may withdraw it at any time with effect for the future.
-                </p>
-                <p>
-                    You also have the right to lodge a complaint with a supervisory authority. Our local
-                    authority is e.g. <em>[Supervisory Authority, e.g., Bayerisches Landesamt für
-                    Datenschutzaufsicht]</em>.
-                </p>
-
-                <h2>Security</h2>
-                <p>
-                    We implement appropriate technical and organizational measures to protect personal data,
-                    including TLS encryption in transit, access controls, and regular reviews of our systems.
-                </p>
-
-                <h2>Changes to this notice</h2>
-                <p>
-                    We may update this policy to reflect changes to our processing or legal requirements. We
-                    indicate the latest update date at the top of this page.
-                </p>
-
-                <h2>Contact</h2>
-                <p>
-                    Questions about this policy or your rights? Email{" "}
-                    <a href="mailto:[EMAIL]">[EMAIL]</a>.
-                </p>
-            </article>
+                <div className="text-white/50 text-sm">
+                    Last updated: <time dateTime={updated}>{updated}</time>
+                    <br />
+                    <span>
+            This page summarizes our current practices and is not legal advice.
+          </span>
+                </div>
+            </div>
         </section>
     );
 }

@@ -1,80 +1,93 @@
-// web/app/accessibility/page.tsx
+import React from "react";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-    title: "Accessibility Statement",
+    title: "Accessibility Statement – PUM",
     description:
-        "Our commitment to accessible, inclusive design and technical conformance with WCAG.",
+        "Our commitment to accessibility and conformance targets (WCAG).",
 };
 
-const UPDATED = "2025-10-27";
-
 export default function AccessibilityPage() {
+    const updated = new Date().toISOString().slice(0, 10);
     return (
-        <section className="section space-y-6">
-            <header className="space-y-2">
-                <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">Accessibility Statement</h1>
-                <p className="text-white/60">Last updated: {UPDATED}</p>
-            </header>
+        <section className="section py-10">
+            <p className="kicker">LEGAL</p>
+            <h1 className="display">Accessibility Statement</h1>
+            <p className="mt-3 text-white/70 max-w-2xl">
+                We want as many people as possible to use this website. We aim to
+                conform to{" "}
+                <a
+                    href="https://www.w3.org/TR/WCAG22/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-4"
+                >
+                    WCAG&nbsp;2.2
+                </a>{" "}
+                Level AA.
+            </p>
 
-            <article className="prose prose-invert max-w-none">
-                <p className="text-white/80">
-                    We want everyone to be able to use this website. Our aim is to follow the{" "}
-                    <a href="https://www.w3.org/TR/WCAG21/" target="_blank" rel="noreferrer">
-                        Web Content Accessibility Guidelines (WCAG) 2.1
-                    </a>{" "}
-                    at level AA (and adopt 2.2 criteria where feasible).
-                </p>
+            <div className="mt-8 grid gap-6 max-w-3xl">
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">Measures</h2>
+                    <ul className="list-disc pl-5 text-white/80 space-y-2">
+                        <li>Semantic HTML and accessible component patterns.</li>
+                        <li>Keyboard navigation support and visible focus states.</li>
+                        <li>Sufficient color contrast and scalable text.</li>
+                        <li>Labels for inputs and ARIA where appropriate.</li>
+                        <li>Continuous audits and fixing of issues we find.</li>
+                    </ul>
+                </div>
 
-                <h2>Conformance status</h2>
-                <p>
-                    We strive for <strong>WCAG 2.1 AA</strong> conformance. This includes keyboard
-                    accessibility, sufficient color contrast, semantic markup, alternative text for images,
-                    focus indicators, predictable navigation, and support for reduced motion.
-                </p>
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">Compatibility</h2>
+                    <p className="text-white/80">
+                        Our site is designed to work with current versions of major
+                        browsers, including assistive technologies such as NVDA, VoiceOver
+                        and TalkBack on supported platforms.
+                    </p>
+                </div>
 
-                <h2>Measures we take</h2>
-                <ul>
-                    <li>Semantic HTML and ARIA only where needed</li>
-                    <li>Keyboard operability for interactive controls</li>
-                    <li>Visible focus states; skip links (where relevant)</li>
-                    <li>Color contrast checks and accessible component primitives</li>
-                    <li>Responsive layout and reflow on small screens</li>
-                    <li>Captions or transcripts for time-based media (when present)</li>
-                    <li>Performance budget for fast loading on assistive tech and mobile</li>
-                    <li>Automated and manual accessibility testing as part of CI</li>
-                </ul>
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">Feedback & contact</h2>
+                    <p className="text-white/80">
+                        If you encounter accessibility barriers, please let us know:
+                    </p>
+                    <ul className="list-disc pl-5 text-white/80 space-y-1">
+                        <li>
+                            Email:{" "}
+                            <a
+                                className="underline underline-offset-4"
+                                href="mailto:accessibility@pum.example"
+                            >
+                                accessibility@pum.example
+                            </a>
+                        </li>
+                        <li>
+                            Contact form:{" "}
+                            <a className="underline underline-offset-4" href="/contact">
+                                /contact
+                            </a>
+                        </li>
+                    </ul>
+                </div>
 
-                <h2>Known limitations</h2>
-                <p>
-                    Some embedded third-party content (e.g., maps or external media) may not fully meet WCAG
-                    criteria. We provide text alternatives or fallback links where possible.
-                </p>
+                <div className="card p-5">
+                    <h2 className="text-lg font-semibold mb-2">
+                        Enforcement procedure (EU)
+                    </h2>
+                    <p className="text-white/80">
+                        If you are not satisfied with our response, you can contact the
+                        competent enforcement body for your country. For guidance on EU
+                        accessibility statements and national contacts, see the European
+                        Commission resources.
+                    </p>
+                </div>
 
-                <h2>Feedback and contact</h2>
-                <p>
-                    If you encounter an accessibility barrier, please contact us and we will try to remedy it
-                    promptly:
-                </p>
-                <p>
-                    Email: <a href="mailto:[ACCESSIBILITY_EMAIL]">[ACCESSIBILITY_EMAIL]</a> <br />
-                    Postal address: [ADDRESS]
-                </p>
-
-                <h2>Enforcement procedure (for public sector—informational)</h2>
-                <p>
-                    If you are a public sector body in the EU, the{" "}
-                    <a
-                        href="https://digital-strategy.ec.europa.eu/en/policies/web-accessibility-directive-standards-and-harmonisation"
-                        target="_blank"
-                        rel="noreferrer"
-                    >
-                        Web Accessibility Directive
-                    </a>{" "}
-                    requires an accessibility statement and sets minimum standards. Although we are a private
-                    group, we voluntarily strive to meet the same spirit and technical standards.
-                </p>
-            </article>
+                <div className="text-white/50 text-sm">
+                    Statement prepared/updated: <time dateTime={updated}>{updated}</time>
+                </div>
+            </div>
         </section>
     );
 }
