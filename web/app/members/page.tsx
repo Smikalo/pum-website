@@ -3,7 +3,8 @@ import Link from "next/link";
 import { API_BASE } from "../../lib/config";
 import MembersGraph from "@/components/MembersGraph";
 import MembersSearchBar from "@/components/MembersSearchBar";
-import { SEED_MEMBERS, type MemberSeed } from "@/data/members.seed";
+import { SEED_MEMBERS, type Member as SeedMember } from "@/data/members.seed";
+import { SEED_PROJECTS, type Project as SeedProject } from "@/data/projects.seed";
 
 type Member = {
     id: string;
@@ -15,14 +16,21 @@ type Member = {
     avatarUrl?: string;
 };
 
-type Project = {
-    id: string;
+// IMPORTANT: rename to avoid clashing with MembersGraph's internal `Project` type.
+type ProjectData = {
+    id: string; // required (we ensure it below)
     slug: string;
     title: string;
     members?: { memberId?: string; memberSlug?: string }[];
     techStack?: string[];
     tags?: string[];
     imageUrl?: string;
+
+    // optional detail fields (kept for compatibility with other pages)
+    summary?: string;
+    description?: string;
+    year?: number;
+    cover?: string;
 };
 
 async function fetchAllMembers() {
@@ -33,10 +41,65 @@ async function fetchAllMembers() {
     return res.json() as Promise<{ items: Member[]; total: number }>;
 }
 
-async function fetchProjects() {
-    const res = await fetch(`${API_BASE}/api/projects?size=999`, { cache: "no-store" });
-    if (!res.ok) throw new Error("Failed to load projects");
-    return res.json() as Promise<{ items: Project[] }>;
+async function fetchApiProjects(): Promise<ProjectData[]> {
+    try {
+        const res = await fetch(`${API_BASE}/api/projects?size=999`, { cache: "no-store" });
+        if (!res.ok) return [];
+        const json = await res.json();
+        const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+        return items.map(normalizeProject);
+    } catch {
+        return [];
+    }
+}
+
+function normalizeProject(p: any): ProjectData {
+    const slug: string = p.slug ?? p.id ?? "";
+    const id: string = (p.id ?? slug) as string;
+    return {
+        id, // ensure string
+        slug,
+        title: p.title ?? p.name ?? slug,
+        tags: p.tags ?? [],
+        techStack: p.techStack ?? p.tech ?? [],
+        members: (p.members ?? []).map((m: any) => ({
+            memberId: m.memberId ?? m.id,
+            memberSlug: m.memberSlug ?? m.slug,
+        })),
+        imageUrl: p.imageUrl ?? p.cover,
+        summary: p.summary,
+        description: p.description,
+        year: typeof p.year === "number" ? p.year : undefined,
+        cover: p.cover ?? p.imageUrl,
+    };
+}
+
+function mergeProjects(api: ProjectData[], seeds: SeedProject[]): ProjectData[] {
+    const uniq = <T,>(arr: T[]) => Array.from(new Set(arr));
+    const map = new Map<string, ProjectData>();
+    for (const p of api) map.set(p.slug, { ...p });
+    for (const s of seeds) {
+        const sn = normalizeProject(s);
+        if (map.has(s.slug)) {
+            const cur = map.get(s.slug)!;
+            map.set(s.slug, {
+                ...sn,
+                ...cur, // API wins
+                id: cur.id || sn.id, // keep required id
+                tags: uniq([...(cur.tags || []), ...(sn.tags || [])]),
+                techStack: uniq([...(cur.techStack || []), ...(sn.techStack || [])]),
+                members: (cur.members?.length ? cur.members : sn.members) || [],
+                imageUrl: cur.imageUrl || sn.imageUrl,
+                cover: cur.cover || sn.cover,
+                summary: cur.summary || sn.summary,
+                description: cur.description || sn.description,
+                year: cur.year ?? sn.year,
+            });
+        } else {
+            map.set(s.slug, sn);
+        }
+    }
+    return Array.from(map.values());
 }
 
 function uniq<T>(arr: T[]): T[] {
@@ -99,8 +162,8 @@ function highlight(text: string | undefined, q: string) {
     );
 }
 
-// ---- NEW: merge seeds with backend results (BC-safe) ----
-function normalizeSeed(s: MemberSeed): Member {
+// ---- NEW: merge member seeds with backend results (BC-safe) ----
+function normalizeSeed(s: SeedMember): Member {
     return {
         id: s.slug,
         slug: s.slug,
@@ -108,16 +171,14 @@ function normalizeSeed(s: MemberSeed): Member {
         shortBio: s.shortBio,
         skills: s.skills || [],
         techStack: s.techStack || [],
-        avatarUrl: s.avatarUrl,
+        avatarUrl: s.avatarUrl ?? s.avatar,
     };
 }
 
-function mergeMembers(backend: Member[], seeds: MemberSeed[]): Member[] {
+function mergeMembers(backend: Member[], seeds: SeedMember[]): Member[] {
     const merged = new Map<string, Member>();
     // prefer backend if same slug exists; overlay missing fields from seed
-    for (const m of backend) {
-        merged.set(m.slug, { ...m });
-    }
+    for (const m of backend) merged.set(m.slug, { ...m });
     for (const s of seeds) {
         const seedNorm = normalizeSeed(s);
         if (merged.has(s.slug)) {
@@ -125,7 +186,6 @@ function mergeMembers(backend: Member[], seeds: MemberSeed[]): Member[] {
             merged.set(s.slug, {
                 ...seedNorm,
                 ...cur, // backend fields win
-                // but ensure arrays are merged (avoid losing seed tags)
                 skills: uniq([...(cur.skills || []), ...(seedNorm.skills || [])]),
                 techStack: uniq([...(cur.techStack || []), ...(seedNorm.techStack || [])]),
             });
@@ -146,10 +206,12 @@ export default async function MembersPage({
     const techList = parseMulti(searchParams?.tech); // multi-select
     const view = (searchParams?.view || "list") as "list" | "graph" | "groups";
 
-    const [allMembersRes, projectsRaw] = await Promise.all([fetchAllMembers(), fetchProjects()]);
+    // Fetch backend members + projects in parallel
+    const [allMembersRes, apiProjects] = await Promise.all([fetchAllMembers(), fetchApiProjects()]);
 
-    // ---- Merge seeds here (no API changes required) ----
+    // ---- Merge seeds (members + projects) so seeds appear everywhere ----
     const allMembers: Member[] = mergeMembers(allMembersRes.items, SEED_MEMBERS);
+    const allProjects: ProjectData[] = mergeProjects(apiProjects, SEED_PROJECTS);
 
     // Build filterable vocabularies
     const allSkills = uniq(allMembers.flatMap((m) => m.skills || [])).sort();
@@ -163,12 +225,25 @@ export default async function MembersPage({
 
     // For the graph, only show filtered members + projects connected to them
     const visibleSlugs = new Set(filteredMembers.map((m) => m.slug));
-    const filteredProjects = projectsRaw.items.filter((p) =>
+    const filteredProjects = allProjects.filter((p) =>
         (p.members || []).some((r) => {
             const slug = r.memberSlug || allMembers.find((mm) => mm.id === r.memberId)?.slug;
             return !!slug && visibleSlugs.has(slug);
         }),
     );
+
+    // ---- Map to EXACT prop type expected by MembersGraph to satisfy TS ----
+    type MembersGraphProps = React.ComponentProps<typeof MembersGraph>;
+    const graphProjects: MembersGraphProps["projects"] = filteredProjects.map((p) => ({
+        // At minimum ensure `id` is string; include common fields used by the graph.
+        id: p.id,
+        slug: p.slug,
+        title: p.title,
+        members: p.members?.map((m) => ({ memberId: m.memberId, memberSlug: m.memberSlug })) ?? [],
+        techStack: p.techStack ?? [],
+        tags: p.tags ?? [],
+        imageUrl: p.imageUrl,
+    }));
 
     return (
         <section className="section">
@@ -238,7 +313,11 @@ export default async function MembersPage({
 
             {/* Content */}
             {view === "graph" ? (
-                <MembersGraph members={filteredMembers} projects={filteredProjects} query={q} />
+                <MembersGraph
+                    members={filteredMembers}
+                    projects={graphProjects}  // <- mapped to the exact prop type; no TS conflicts
+                    query={q}
+                />
             ) : view === "groups" ? (
                 <GroupsView members={filteredMembers} q={q} />
             ) : (
