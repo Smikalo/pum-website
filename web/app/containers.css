@@ -1,0 +1,57 @@
+/* Global responsive container + full-bleed utilities.
+   Imported AFTER globals.css so these rules take effect sitewide without
+   touching your existing utility classes. */
+
+/* Tunable design tokens */
+:root {
+    /* Max readable column */
+    --container-max: 1600px;
+    /* Responsive side gutter (default) */
+    --gutter-x: clamp(32px, 8vw, 64px);
+}
+
+/* Reduce breathing room ~2x on large/desktop to match the request */
+@media (min-width: 1280px) {
+    :root {
+        /* Previously max ~32px; make it ~16px to be “twice less” */
+        --gutter-x: clamp(32px, 8vw, 64px);
+    }
+}
+
+/* Centered, padded page section used throughout the app */
+.section {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: var(--container-max);
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: var(--gutter-x);
+    padding-right: var(--gutter-x);
+}
+
+/* Optional wider variant */
+.section--wide {
+    max-width: 1400px;
+}
+
+/* Full-bleed helper for edge-to-edge sections (maps, banners, etc.) */
+.full-bleed {
+    position: relative;
+    left: 50%;
+    right: 50%;
+    margin-left: -50vw;
+    margin-right: -50vw;
+    width: 100vw;
+}
+
+/* Prevent accidental horizontal scroll with full-bleed sections */
+html, body {
+    overflow-x: hidden;
+}
+
+/* Respect reduced motion for the drawer. */
+@media (prefers-reduced-motion: reduce) {
+    .drawer-anim {
+        transition: none !important;
+    }
+}
