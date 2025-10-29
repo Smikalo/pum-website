@@ -1,10 +1,12 @@
+/* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
 import MembersSearchBar from "@/components/MembersSearchBar";
 import { API_BASE } from "@/lib/config";
-import { SEED_PROJECTS, type Project as SeedProject } from "@/data/projects.seed";
 
-// Keep the shape compatible with your members page expectations
+export const dynamic = "force-dynamic";
+
+/* ---------- Types shaped for your UI ---------- */
 type Project = {
     id?: string;
     slug: string;
@@ -20,36 +22,25 @@ type Project = {
     cover?: string;
 };
 
+/* ---------- Helpers (same behavior) ---------- */
 function uniq<T>(arr: T[]): T[] {
     return Array.from(new Set(arr));
 }
-
 function parseMulti(param?: string): string[] {
     if (!param) return [];
-    return param
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
+    return param.split(",").map((x) => x.trim()).filter(Boolean);
 }
-
 function includesAll(haystack: string[] | undefined, needles: string[]): boolean {
     if (!needles.length) return true;
     const h = new Set((haystack || []).map((s) => s.toLowerCase()));
     return needles.every((n) => h.has(n.toLowerCase()));
 }
-
 function matchesQuery(p: Project, q: string): boolean {
     if (!q) return true;
     const needle = q.toLowerCase();
-    const fields = [
-        p.title || "",
-        p.summary || "",
-        ...(p.tags || []),
-        ...(p.techStack || []),
-    ];
+    const fields = [p.title || "", p.summary || "", ...(p.tags || []), ...(p.techStack || [])];
     return fields.some((f) => f.toLowerCase().includes(needle));
 }
-
 function highlight(text: string | undefined, q: string) {
     if (!text) return null;
     if (!q) return text;
@@ -67,6 +58,7 @@ function highlight(text: string | undefined, q: string) {
     );
 }
 
+/* ---------- API (no seeds) ---------- */
 async function fetchApiProjects(): Promise<Project[]> {
     try {
         const res = await fetch(`${API_BASE}/api/projects?size=999`, { cache: "no-store" });
@@ -78,7 +70,6 @@ async function fetchApiProjects(): Promise<Project[]> {
         return [];
     }
 }
-
 function normalizeProject(p: any): Project {
     return {
         id: p.id ?? p.slug,
@@ -99,32 +90,7 @@ function normalizeProject(p: any): Project {
     };
 }
 
-function mergeProjects(api: Project[], seeds: SeedProject[]): Project[] {
-    const map = new Map<string, Project>();
-    for (const p of api) map.set(p.slug, { ...p });
-    for (const s of seeds) {
-        const sn = normalizeProject(s);
-        if (map.has(s.slug)) {
-            const cur = map.get(s.slug)!;
-            map.set(s.slug, {
-                ...sn,
-                ...cur, // API wins
-                tags: uniq([...(cur.tags || []), ...(sn.tags || [])]),
-                techStack: uniq([...(cur.techStack || []), ...(sn.techStack || [])]),
-                members: cur.members?.length ? cur.members : sn.members,
-                imageUrl: cur.imageUrl || sn.imageUrl,
-                cover: cur.cover || sn.cover,
-                summary: cur.summary || sn.summary,
-                description: cur.description || sn.description,
-                year: cur.year ?? sn.year,
-            });
-        } else {
-            map.set(s.slug, sn);
-        }
-    }
-    return Array.from(map.values());
-}
-
+/* ---------- Page ---------- */
 export default async function ProjectsPage({
                                                searchParams,
                                            }: {
@@ -135,8 +101,7 @@ export default async function ProjectsPage({
     const techSel = parseMulti(searchParams?.tech);
     const sort = (searchParams?.sort || "newest") as "newest" | "az";
 
-    const api = await fetchApiProjects();
-    const all = mergeProjects(api, SEED_PROJECTS);
+    const all = await fetchApiProjects();
 
     const allTags = uniq(all.flatMap((p) => p.tags || [])).sort();
     const allTech = uniq(all.flatMap((p) => p.techStack || [])).sort();
@@ -147,7 +112,6 @@ export default async function ProjectsPage({
         .filter((p) => includesAll(p.techStack, techSel))
         .sort((a, b) => {
             if (sort === "az") return (a.title || "").localeCompare(b.title || "");
-            // newest by year desc (fallback AZ)
             const ay = a.year ?? 0;
             const by = b.year ?? 0;
             if (ay === by) return (a.title || "").localeCompare(b.title || "");

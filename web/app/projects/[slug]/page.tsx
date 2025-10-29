@@ -1,35 +1,20 @@
+/* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { API_BASE } from "@/lib/config";
-import { SEED_PROJECTS, type Project as SeedProject } from "@/data/projects.seed";
-import { SEED_MEMBERS, type Member } from "@/data/members.seed";
-import { SEED_EVENTS } from "@/data/events.seed";
 
-// Pre-generate seed slugs for stability; still fetch at runtime for fresh data.
-// Docs: generateStaticParams + Dynamic Routes. :contentReference[oaicite:1]{index=1}
-export async function generateStaticParams() {
-    return SEED_PROJECTS.map((p) => ({ slug: p.slug }));
-}
+export const dynamic = "force-dynamic";
 
-// Metadata (server-only). Docs: generateMetadata. :contentReference[oaicite:2]{index=2}
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-    const p = await getProjectBySlug(params.slug);
-    return {
-        title: p ? `${p.title} – PUM Projects` : "Project – PUM",
-        description: p?.summary || p?.description || "PUM project",
-    };
-}
-
+/* ---------- Types ---------- */
 type Project = {
     id?: string;
     slug: string;
     title: string;
     tags?: string[];
     techStack?: string[];
-    members?: { memberId?: string; memberSlug?: string; role?: string }[];
+    members?: { slug?: string; name?: string; avatarUrl?: string; role?: string }[];
     imageUrl?: string;
-    // detail
     summary?: string;
     description?: string;
     year?: number;
@@ -40,36 +25,26 @@ type Project = {
     gallery?: string[];
 };
 
-type MemberLite = {
-    slug: string;
-    name: string;
-    avatarUrl?: string;
-    avatar?: string;
-    headline?: string;
-};
-
-async function fetchApiProjects(): Promise<Project[]> {
-    try {
-        const res = await fetch(`${API_BASE}/api/projects?size=999`, { cache: "no-store" });
-        if (!res.ok) return [];
-        const json = await res.json();
-        const items: any[] = Array.isArray(json) ? json : json.items ?? [];
-        return items.map(normalizeProject);
-    } catch {
-        return [];
-    }
+/* ---------- API ---------- */
+async function getProjectBySlug(slug: string): Promise<Project | null> {
+    const res = await fetch(`${API_BASE}/api/projects/${slug}`, { cache: "no-store" });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error("Failed to load project");
+    const p = await res.json();
+    return normalizeProjectDetail(p);
 }
 
-function normalizeProject(p: any): Project {
+function normalizeProjectDetail(p: any): Project {
     return {
         id: p.id ?? p.slug,
         slug: p.slug,
-        title: p.title ?? p.name,
+        title: p.title ?? p.name ?? p.slug,
         tags: p.tags ?? [],
         techStack: p.techStack ?? p.tech ?? [],
         members: (p.members ?? []).map((m: any) => ({
-            memberId: m.memberId ?? m.id,
-            memberSlug: m.memberSlug ?? m.slug,
+            slug: m.slug ?? m.memberSlug,
+            name: m.name,
+            avatarUrl: m.avatarUrl ?? m.avatar,
             role: m.role,
         })),
         imageUrl: p.imageUrl ?? p.cover,
@@ -80,86 +55,20 @@ function normalizeProject(p: any): Project {
         demoUrl: p.demoUrl,
         repoUrl: p.repoUrl,
         events: (p.events ?? []).map((e: any) => ({ slug: e.slug ?? e.id, name: e.name })),
-        gallery: p.gallery ?? [],
+        gallery: Array.isArray(p.images) ? p.images : p.gallery ?? [],
     };
 }
 
-function mergeProjects(api: Project[], seeds: SeedProject[]): Project[] {
-    const map = new Map<string, Project>();
-    for (const p of api) map.set(p.slug, { ...p });
-    for (const s of seeds) {
-        const sn = normalizeProject(s);
-        if (map.has(s.slug)) {
-            const cur = map.get(s.slug)!;
-            map.set(s.slug, {
-                ...sn,
-                ...cur,
-                tags: Array.from(new Set([...(cur.tags || []), ...(sn.tags || [])])),
-                techStack: Array.from(new Set([...(cur.techStack || []), ...(sn.techStack || [])])),
-                members: cur.members?.length ? cur.members : sn.members,
-                imageUrl: cur.imageUrl || sn.imageUrl,
-                cover: cur.cover || sn.cover,
-                summary: cur.summary || sn.summary,
-                description: cur.description || sn.description,
-                year: cur.year ?? sn.year,
-                demoUrl: cur.demoUrl || sn.demoUrl,
-                repoUrl: cur.repoUrl || sn.repoUrl,
-                events: cur.events?.length ? cur.events : sn.events,
-                gallery: cur.gallery?.length ? cur.gallery : sn.gallery,
-            });
-        } else {
-            map.set(s.slug, sn);
-        }
-    }
-    return Array.from(map.values());
+/* ---------- Metadata ---------- */
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+    const p = await getProjectBySlug(params.slug);
+    return {
+        title: p ? `${p.title} – PUM Projects` : "Project – PUM",
+        description: p?.summary || p?.description || "PUM project",
+    };
 }
 
-async function getProjectBySlug(slug: string): Promise<Project | null> {
-    const api = await fetchApiProjects();
-    const merged = mergeProjects(api, SEED_PROJECTS);
-    return merged.find((p) => p.slug === slug) ?? null;
-}
-
-async function getMergedMembers(): Promise<MemberLite[]> {
-    try {
-        const res = await fetch(`${API_BASE}/api/members?size=999`, { cache: "no-store" });
-        const json = res.ok ? await res.json() : { items: [] };
-        const apiMembers: any[] = Array.isArray(json) ? json : json.items ?? [];
-        const apiLite: MemberLite[] = apiMembers.map((m) => ({
-            slug: m.slug ?? m.id,
-            name: m.name,
-            avatarUrl: m.avatarUrl ?? m.avatar ?? m.photo ?? m.image,
-            headline: m.headline ?? m.shortBio,
-        }));
-
-        // seeds
-        const seedLite: MemberLite[] = SEED_MEMBERS.map((m) => ({
-            slug: m.slug,
-            name: m.name,
-            avatarUrl: m.avatarUrl ?? m.avatar,
-            avatar: m.avatar,
-            headline: m.headline ?? m.shortBio,
-        }));
-
-        const map = new Map<string, MemberLite>();
-        for (const m of [...apiLite, ...seedLite]) {
-            if (!m.slug) continue;
-            if (!map.has(m.slug)) map.set(m.slug, m);
-            else map.set(m.slug, { ...m, ...map.get(m.slug)! });
-        }
-        return Array.from(map.values());
-    } catch {
-        // seeds-only fallback
-        return SEED_MEMBERS.map((m) => ({
-            slug: m.slug,
-            name: m.name,
-            avatarUrl: m.avatarUrl ?? m.avatar,
-            avatar: m.avatar,
-            headline: m.headline ?? m.shortBio,
-        }));
-    }
-}
-
+/* ---------- Page ---------- */
 export default async function ProjectDetailPage({ params }: { params: { slug: string } }) {
     const project = await getProjectBySlug(params.slug);
 
@@ -175,10 +84,6 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
             </section>
         );
     }
-
-    const members = await getMergedMembers();
-    const membersBySlug = new Map(members.map((m) => [m.slug, m]));
-    const eventBySlug = new Map(SEED_EVENTS.map((e) => [e.slug, e]));
 
     const cover = project.cover || project.imageUrl;
 
@@ -244,16 +149,13 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                         <div className="card p-5">
                             <h2 className="text-lg font-semibold mb-2">Connected events</h2>
                             <ul className="space-y-2">
-                                {project.events.map((ev) => {
-                                    const full = eventBySlug.get(ev.slug);
-                                    return (
-                                        <li key={ev.slug}>
-                                            <Link href={`/events/${ev.slug}`} className="hover:underline">
-                                                {full?.name || ev.name || ev.slug}
-                                            </Link>
-                                        </li>
-                                    );
-                                })}
+                                {project.events.map((ev, i) => (
+                                    <li key={`${ev.slug}-${i}`}>
+                                        <Link href={`/events/${ev.slug}`} className="hover:underline">
+                                            {ev.name || ev.slug}
+                                        </Link>
+                                    </li>
+                                ))}
                             </ul>
                         </div>
                     )}
@@ -275,32 +177,25 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                         <h2 className="text-lg font-semibold mb-2">Team</h2>
                         {project.members?.length ? (
                             <ul className="space-y-3">
-                                {project.members.map((ref, i) => {
-                                    const s = (ref.memberSlug ||
-                                        // optional fallback: if only memberId is provided and matches a seed slug
-                                        ref.memberId) as string;
-                                    const m = s ? membersBySlug.get(s) : undefined;
-                                    return (
-                                        <li key={`${s}-${i}`} className="flex items-center gap-3">
-                                            <img
-                                                src={m?.avatarUrl || m?.avatar || "/avatars/default.png"}
-                                                alt={m?.name || s || "Member"}
-                                                className="w-10 h-10 rounded-full object-cover ring-1 ring-white/10"
-                                            />
-                                            <div className="min-w-0">
-                                                {m ? (
-                                                    <Link href={`/members/${m.slug}`} className="font-medium hover:underline">
-                                                        {m.name}
-                                                    </Link>
-                                                ) : (
-                                                    <span className="font-medium">{s || "Unknown member"}</span>
-                                                )}
-                                                {ref.role && <div className="text-xs text-white/60">{ref.role}</div>}
-                                                {m?.headline && <div className="text-xs text-white/60 truncate">{m.headline}</div>}
-                                            </div>
-                                        </li>
-                                    );
-                                })}
+                                {project.members.map((m, i) => (
+                                    <li key={`${m.slug || i}-${i}`} className="flex items-center gap-3">
+                                        <img
+                                            src={m.avatarUrl || "/avatars/default.png"}
+                                            alt={m.name || m.slug || "Member"}
+                                            className="w-10 h-10 rounded-full object-cover ring-1 ring-white/10"
+                                        />
+                                        <div className="min-w-0">
+                                            {m.slug ? (
+                                                <Link href={`/members/${m.slug}`} className="font-medium hover:underline">
+                                                    {m.name || m.slug}
+                                                </Link>
+                                            ) : (
+                                                <span className="font-medium">{m.name || "Unknown member"}</span>
+                                            )}
+                                            {m.role && <div className="text-xs text-white/60">{m.role}</div>}
+                                        </div>
+                                    </li>
+                                ))}
                             </ul>
                         ) : (
                             <p className="text-white/60">Team coming soon.</p>

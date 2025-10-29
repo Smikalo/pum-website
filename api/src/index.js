@@ -145,3 +145,132 @@ app.post("/api/contact", (req, res) => {
 
 const PORT = Number(process.env.PORT || 3001);
 app.listen(PORT, () => console.log(`API on :${PORT}`));
+
+
+// --- Projects (list) ---
+app.get("/api/projects", async (req, res) => {
+    const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
+    const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
+
+    const q = (req.query.q || "").toString().trim();
+    const techCsv = (req.query.tech || "").toString();
+    const tagCsv  = (req.query.tag  || "").toString();
+    const techs = techCsv.split(",").map(s=>s.trim()).filter(Boolean);
+    const tags  = tagCsv .split(",").map(s=>s.trim()).filter(Boolean);
+
+    const AND = [];
+    if (q) {
+        AND.push({
+            OR: [
+                { title: { contains: q, mode: "insensitive" } },
+                { summary: { contains: q, mode: "insensitive" } },
+                { description: { contains: q, mode: "insensitive" } },
+            ],
+        });
+    }
+    for (const t of techs) AND.push({ techs: { some: { tech: { name: t } } } });
+    for (const t of tags)  AND.push({ tags:  { some: { tag:  { name: t } } } });
+
+    const where = AND.length ? { AND } : undefined;
+
+    const [total, rows] = await Promise.all([
+        prisma.project.count({ where }),
+        prisma.project.findMany({
+            where,
+            include: {
+                techs: { include: { tech: true } },
+                tags: { include: { tag: true } },
+                members: { include: { member: { select: { id:true, slug:true, name:true, avatarUrl:true } } } },
+            },
+            orderBy: [{ year: "desc" }, { title: "asc" }],
+            skip: (page - 1) * size,
+            take: size,
+        }),
+    ]);
+
+    res.json({
+        items: rows.map(p => ({
+            id: p.id,
+            slug: p.slug,
+            title: p.title,
+            summary: p.summary || null,
+            cover: p.cover || p.imageUrl || null,
+            year: p.year || null,
+            techStack: p.techs.map(x => x.tech.name),
+            tags: p.tags.map(x => x.tag.name),
+            members: p.members.map(r => ({
+                memberId: r.member.id,
+                memberSlug: r.member.slug,
+                memberName: r.member.name,
+                avatarUrl: r.member.avatarUrl || null,
+            })),
+        })),
+        page, size, total,
+    });
+});
+
+// --- Project detail ---
+app.get("/api/projects/:slug", async (req, res) => {
+    const p = await prisma.project.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+            techs: { include: { tech: true } },
+            tags:  { include: { tag:  true } },
+            members: { include: { member: { select: { slug:true, name:true, avatarUrl:true, id:true } } } },
+            event: true,
+        },
+    });
+    if (!p) return res.status(404).json({ error: "Not found" });
+
+    res.json({
+        id: p.id,
+        slug: p.slug,
+        title: p.title,
+        summary: p.summary || null,
+        description: p.description || null,
+        status: p.status || null,
+        demoUrl: p.demoUrl || null,
+        imageUrl: p.imageUrl || null,
+        cover: p.cover || null,
+        images: Array.isArray(p.images) ? p.images : [],
+        year: p.year || null,
+        event: p.event ? { slug: p.event.slug, name: p.event.name, dateStart: p.event.dateStart } : null,
+        techStack: p.techs.map(x => x.tech.name),
+        tags: p.tags.map(x => x.tag.name),
+        members: p.members.map(r => ({
+            slug: r.member.slug,
+            name: r.member.name,
+            avatarUrl: r.member.avatarUrl || null,
+        })),
+    });
+});
+
+// --- Project categories (tech + tags) ---
+app.get("/api/projects/categories", async (_req, res) => {
+    const [tech, tags] = await Promise.all([
+        prisma.tech.findMany({ select: { name: true, _count: { select: { projects: true } } }, orderBy: { name: "asc" } }),
+        prisma.tag.findMany({  select: { name: true, _count: { select: { projects: true } } }, orderBy: { name: "asc" } }),
+    ]);
+    res.json({
+        tech: tech.map(t => ({ name: t.name, count: t._count.projects })),
+        tags: tags.map(t => ({ name: t.name, count: t._count.projects })),
+    });
+});
+
+// --- Project graph (projects <-> members) ---
+app.get("/api/projects/graph", async (_req, res) => {
+    const projects = await prisma.project.findMany({
+        select: { id:true, slug:true, title:true, members: { select: { member: { select: { id:true, slug:true, name:true } } } } },
+    });
+    const memberMap = new Map();
+    for (const p of projects) for (const r of p.members) memberMap.set(r.member.id, r.member);
+    const members = [...memberMap.values()];
+
+    res.json({
+        nodes: [
+            ...projects.map(p => ({ id:`p:${p.id}`, type:"project", slug:p.slug, title:p.title })),
+            ...members.map(m => ({ id:`m:${m.id}`, type:"member", slug:m.slug, name:m.name })),
+        ],
+        links: projects.flatMap(p => p.members.map(r => ({ source:`p:${p.id}`, target:`m:${r.member.id}` }))),
+    });
+});
