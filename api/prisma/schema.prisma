@@ -1,0 +1,13 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model _bootstrap {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+}
