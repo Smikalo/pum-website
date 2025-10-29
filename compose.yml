@@ -1,17 +1,91 @@
+# One file for both dev and prod using Compose profiles.
+# - dev:  local Postgres + build ./api and ./web
+# - prod: run GHCR images for api and web, share "pum" network
+
 services:
+  # ---------- DEV STACK ----------
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pum
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"        # Host access for local tooling (psql, Prisma)
+    networks: [pum]
+    profiles: ["dev"]
+
+  api-dev:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    env_file:
+      - ./api/.env
+    environment:
+      API_PORT: 3001
+      # When SSR calls API, it originates from the web-dev service;
+      # for CORS we usually care about the browser origin:
+      WEB_ORIGIN: "http://localhost:3000"
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/pum"
+    depends_on:
+      - db
+    expose: ["3001"]       # visible to other services on the "pum" network
+    ports:
+      - "3001:3001"        # dev convenience (hit API directly from host)
+    networks: [pum]
+    profiles: ["dev"]
+
+  web-dev:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3000
+      # Next.js server talks to api-dev by service name on the "pum" network:
+      API_BASE: "http://api-dev:3001"
+      # Keep client-side API calls off unless you explicitly open CORS:
+      NEXT_PUBLIC_API_BASE: ""
+      # Optional: your map style URL comes from host env if provided
+      NEXT_PUBLIC_MAP_STYLE_URL: "${NEXT_PUBLIC_MAP_STYLE_URL:-}"
+    depends_on:
+      - api-dev
+    expose: ["3000"]
+    ports:
+      - "3000:3000"        # open the site on http://localhost:3000
+    networks: [pum]
+    profiles: ["dev"]
+
+  # ---------- PROD STACK (uses your GHCR images) ----------
+  api:
+    image: ghcr.io/${GITHUB_OWNER}/${REPO_NAME}-api:latest
+    restart: unless-stopped
+    environment:
+      API_PORT: 3001
+      WEB_ORIGIN: "https://the-pum.com"   # set to your real front-end origin
+      # In prod, use managed Postgres; inject full URL via env/secret store
+      DATABASE_URL: "${DATABASE_URL}"
+    expose: ["3001"]       # internal to "pum" network
+    networks: [pum]
+    profiles: ["prod"]
+
   web:
     image: ghcr.io/${GITHUB_OWNER}/${REPO_NAME}-web:latest
     restart: unless-stopped
     environment:
-      - PORT=3000
+      PORT: 3000
+      # Web server (SSR) calls API by service name "api" on the "pum" network:
+      API_BASE: "http://api:3001"
+      NEXT_PUBLIC_API_BASE: ""
+      NEXT_PUBLIC_MAP_STYLE_URL: "${NEXT_PUBLIC_MAP_STYLE_URL:-}"
+    expose: ["3000"]       # typically fronted by reverse proxy; bind in infra
     networks: [pum]
-    expose: [ "3000" ]
-
-  api:
-    image: ghcr.io/${GITHUB_OWNER}/${REPO_NAME}-api:latest
-    restart: unless-stopped
-    networks: [pum]
-    expose: [ "3001" ]
+    profiles: ["prod"]
 
 networks:
   pum: {}
+
+volumes:
+  db_data:

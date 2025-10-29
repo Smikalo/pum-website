@@ -1,0 +1,24 @@
+[
+  {
+    "slug": "alice-petrenko",
+    "name": "Alice Petrenko",
+    "avatarUrl": "/avatars/alice.jpg",
+    "headline": "Full-stack @ PUM • Hackathon enjoyer",
+    "bio": "Building delightful UIs and robust APIs. Loves TypeScript, GraphQL, and reasonable DX.",
+    "skills": ["frontend", "fullstack", "design"],
+    "techStack": ["React", "Next.js", "TypeScript", "Node.js", "Prisma", "PostgreSQL"],
+    "links": { "github": "https://github.com/alice", "linkedin": "https://www.linkedin.com/in/alice" },
+    "photos": ["/photos/alice-1.jpg", "/photos/alice-2.jpg"]
+  },
+  {
+    "slug": "max-bauer",
+    "name": "Max Bauer",
+    "avatarUrl": "/avatars/max.jpg",
+    "headline": "Backend & infra • Argon2 appreciator",
+    "bio": "APIs, databases and infra. Shipping boring, reliable systems.",
+    "skills": ["backend", "data"],
+    "techStack": ["Node.js", "Fastify", "PostgreSQL", "Redis", "Docker"],
+    "links": { "github": "https://github.com/max" },
+    "photos": []
+  }
+]

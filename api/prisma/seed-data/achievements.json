@@ -1,0 +1,8 @@
+[
+  {
+    "slug": "most-projects",
+    "name": "Most Projects",
+    "description": "For the member with the largest number of project participations.",
+    "iconUrl": "/achievements/trophy.svg"
+  }
+]

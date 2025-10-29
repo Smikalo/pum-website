@@ -1,0 +1,16 @@
+[
+  {
+    "slug": "spezi-finder",
+    "name": "Spezi Finder",
+    "summary": "A map to find Spezi near you.",
+    "cover": "/projects/spezi-finder.jpg",
+    "year": 2025,
+    "tech": ["Next.js", "MapLibre", "TypeScript"],
+    "tags": ["maps", "fun"],
+    "links": { "demo": "https://example.com/spezi" },
+    "members": [
+      { "memberSlug": "alice-petrenko", "role": "Frontend" },
+      { "memberSlug": "max-bauer", "role": "Backend" }
+    ]
+  }
+]
