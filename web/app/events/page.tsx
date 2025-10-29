@@ -1,3 +1,4 @@
+// web/app/events/page.tsx
 import React from "react";
 import Link from "next/link";
 import { API_BASE } from "../../lib/config";
@@ -19,33 +20,24 @@ type Event = {
     tags?: string[];
 };
 
-// --- utils ---
-function formatDateRange(a?: string, b?: string) {
-    if (!a && !b) return "";
-    if (a && !b) return new Date(a).toLocaleDateString();
-    if (!a && b) return new Date(b).toLocaleDateString();
-    const da = new Date(a!);
-    const db = new Date(b!);
-    const opts: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" };
-    return `${da.toLocaleDateString(undefined, opts)} – ${db.toLocaleDateString(undefined, opts)}`;
+function normalizeEvent(e: any): Event {
+    const slug = e.slug ?? e.id ?? "";
+    return {
+        id: String(e.id ?? slug),
+        slug,
+        name: e.name ?? e.title ?? slug,
+        dateStart: e.dateStart ?? e.start ?? undefined,
+        dateEnd: e.dateEnd ?? e.end ?? undefined,
+        locationName: e.locationName ?? e.location ?? undefined,
+        lat: e.lat ?? e.latitude ?? undefined,
+        lng: e.lng ?? e.longitude ?? undefined,
+        description: e.description ?? e.summary ?? undefined,
+        photos: e.photos ?? [],
+        tags: e.tags ?? [],
+    };
 }
 
-function highlight(text: string | undefined, q: string) {
-    if (!text) return null;
-    if (!q) return text;
-    const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`(${esc})`, "ig");
-    const parts = text.split(re);
-    return parts.map((p, i) =>
-        re.test(p) ? (
-            <mark key={i} className="px-0.5 rounded bg-yellow-300/30 text-yellow-200">{p}</mark>
-        ) : (
-            <span key={i}>{p}</span>
-        )
-    );
-}
-
-function matchesQuery(e: Event, q: string) {
+function matchesQuery(e: Event, q: string): boolean {
     if (!q) return true;
     const n = q.toLowerCase();
     const fields = [
@@ -89,27 +81,19 @@ function dedupeBySlug(list: Event[]): Event[] {
 export default async function EventsPage({
                                              searchParams,
                                          }: {
-    searchParams?: { q?: string; year?: string };
+    searchParams?: Record<string, string | string[] | undefined>;
 }) {
-    const q = searchParams?.q || "";
-    const year = searchParams?.year || "";
+    const q = (searchParams?.q as string) || "";
+    const year = (searchParams?.year as string) || "";
 
-    const apiEvents = await fetchAllEventsFromApi();
+    const apiEvents = (await fetchAllEventsFromApi()).map(normalizeEvent);
+    const events = dedupeBySlug([...SEED_EVENTS.map(normalizeEvent), ...apiEvents]);
 
-    // Merge API + seed to ensure rich coverage (Munich, Regensburg, Potsdam, Vienna, multiple years)
-    const allEvents = dedupeBySlug([...(apiEvents || []), ...SEED_EVENTS]);
-
-    // Build year chips from all events
     const years = Array.from(
-        new Set(
-            allEvents
-                .map((e) => (e.dateStart ? String(e.dateStart).slice(0, 4) : ""))
-                .filter(Boolean)
-        )
+        new Set(events.map((e) => (e.dateStart ? String(e.dateStart).slice(0, 4) : "")).filter(Boolean)),
     ).sort((a, b) => Number(b) - Number(a));
 
-    // Filter (query also matches tags)
-    const filtered = allEvents.filter((e) => {
+    const filtered = events.filter((e) => {
         const byQ = matchesQuery(e, q);
         const byYear = year ? parseYear(e.dateStart) === Number(year) : true;
         return byQ && byYear;
@@ -119,108 +103,59 @@ export default async function EventsPage({
         <section className="section">
             <header className="mb-6">
                 <p className="kicker">EVENTS</p>
-                <h1 className="display">Where we hack & build</h1>
+                <h1 className="display">What’s happening around PUM</h1>
                 <p className="mt-3 text-white/70 max-w-2xl">
-                    A map of hackathons, demos, and conferences we’ve attended — discover stories,
-                    projects, and people behind each pin.
+                    Hackathons, meetups and demo days we host or join as a team. Explore by year or search by city and topic.
                 </p>
             </header>
 
-            {/* Controls */}
-            <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
-                <div className="flex-1">
-                    <MembersSearchBar
-                        placeholder="Search events by name, location, or tag…"
-                        paramKey="q"
-                    />
-                </div>
-                <div className="flex items-center gap-2">
-                    <YearChips years={years} selected={year} params={{ q }} />
-                </div>
-            </div>
+            <MembersSearchBar placeholder="Search events, places…" paramKey="q" />
 
-            {/* Map */}
-            <div className="mb-8">
-                <EventsMap events={filtered} />
-            </div>
+            <div className="mt-6 grid lg:grid-cols-[1.2fr,1fr] gap-8 items-start">
+                <div className="space-y-3">
+                    {filtered.map((e) => (
+                        <Link key={e.slug} href={`/events/${e.slug}`} className="row-card">
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <div className="font-semibold">{e.name}</div>
+                                    <div className="text-xs text-white/60">
+                                        {formatDateRange(e.dateStart, e.dateEnd)}{" "}
+                                        {e.locationName ? `· ${e.locationName}` : ""}
+                                    </div>
+                                </div>
+                                <div className="text-xs text-white/60">Open →</div>
+                            </div>
+                        </Link>
+                    ))}
+                </div>
 
-            {/* List */}
-            <div className="mb-3 text-sm text-white/60">
-                {filtered.length} event{filtered.length === 1 ? "" : "s"} found
-                {year ? <> in <span className="font-semibold">{year}</span></> : null}
-            </div>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filtered.map((e) => (
-                    <Link
-                        key={e.slug}
-                        href={`/events/${e.slug}`}
-                        className="card p-5 hover:shadow-[0_0_0_2px_rgba(255,255,255,0.08)] hover:-translate-y-0.5 transition"
-                    >
-                        <div className="font-semibold text-lg line-clamp-1">
-                            {highlight(e.name, q)}
+                <div className="sticky top-20">
+                    <EventsMap events={filtered} />
+                    {!!years.length && (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                            {years.map((y) => (
+                                <Link
+                                    key={y}
+                                    href={`/events?year=${encodeURIComponent(y)}`}
+                                    className="text-xs px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                >
+                                    {y}
+                                </Link>
+                            ))}
                         </div>
-                        <div className="mt-1 text-sm text-white/70">
-                            {formatDateRange(e.dateStart, e.dateEnd)}
-                        </div>
-                        <div className="mt-1 text-sm text-white/60">
-                            {highlight(e.locationName || "", q)}
-                        </div>
-                        {!!(e.tags && e.tags.length) && (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                                {e.tags!.slice(0, 6).map((t) => (
-                                    <span key={t} className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
-                    {highlight(t, q)}
-                  </span>
-                                ))}
-                            </div>
-                        )}
-                        {e.description ? (
-                            <div className="mt-3 text-sm text-white/70 line-clamp-3">
-                                {highlight(e.description, q)}
-                            </div>
-                        ) : null}
-                    </Link>
-                ))}
+                    )}
+                </div>
             </div>
         </section>
     );
 }
 
-function YearChips({
-                       years,
-                       selected,
-                       params,
-                   }: {
-    years: string[];
-    selected?: string;
-    params: Record<string, string>;
-}) {
-    const makeHref = (year?: string) => {
-        const p = new URLSearchParams({ ...params });
-        if (year) p.set("year", year);
-        else p.delete("year");
-        const qs = p.toString();
-        return `/events${qs ? `?${qs}` : ""}`;
-    };
-    return (
-        <div className="flex flex-wrap gap-2">
-            {selected ? (
-                <Link href={makeHref("")} className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10">
-                    Clear year
-                </Link>
-            ) : null}
-            {years.map((y) => (
-                <Link
-                    key={y}
-                    href={makeHref(y)}
-                    className={`px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 ${
-                        selected === y ? "bg-white text-black font-semibold" : "bg-white/5 hover:bg-white/10"
-                    }`}
-                    aria-current={selected === y ? "page" : undefined}
-                >
-                    {y}
-                </Link>
-            ))}
-        </div>
-    );
+function formatDateRange(a?: string, b?: string) {
+    if (!a && !b) return "";
+    if (a && !b) return new Date(a).toLocaleDateString();
+    if (!a && b) return new Date(b).toLocaleDateString();
+    const da = new Date(a!);
+    const db = new Date(b!);
+    const opts: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" };
+    return `${da.toLocaleDateString(undefined, opts)} – ${db.toLocaleDateString(undefined, opts)}`;
 }

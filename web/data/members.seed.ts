@@ -1,163 +1,103 @@
-// Unified member seeds for BOTH the overview page (which expects shortBio/skills/techStack/avatarUrl)
-// and the detail/attendee pages (which may reference avatar/headline/expertise/...).
-// Everything beyond slug+name is optional for backwards compatibility.
+// web/data/members.seed.ts
+// Unified seed format used by list, graph, and detail pages.
+
+export type MemberLinkset = {
+    github?: string;
+    linkedin?: string;
+    website?: string;
+};
+
+export type MemberProjectRef = {
+    slug: string;
+    name?: string;
+    role?: string;
+    year?: number;
+    cover?: string;
+    tech?: string[];
+    summary?: string;
+};
+
+export type MemberEventRef = {
+    slug: string;
+    name?: string;
+    role?: string;
+};
 
 export type Member = {
     id?: string;
     slug: string;
     name: string;
 
-    // --- Overview-page fields (your existing Members page expects these names) ---
-    shortBio?: string;
-    skills?: string[];     // e.g., ["frontend","ml","design"]
-    techStack?: string[];  // e.g., ["python","pytorch","nextjs"]
-    avatarUrl?: string;
-
-    // --- Detail/attendee fields (used by member/event detail pages) ---
-    avatar?: string;       // duplicate of avatarUrl for components that expect "avatar"
-    headline?: string;
-    location?: string;
-    expertise?: string[];
-    bio?: string;          // NEW: long-form bio for the member detail page
-    links?: {
-        github?: string;
-        linkedin?: string;
-        website?: string;
-        email?: string;
-    };
-    projects?: Array<{
-        slug: string;
-        name: string;
-        role?: string;
-        summary?: string;
-        tech?: string[];
-        year?: number;
-        cover?: string;
-    }>;
-    events?: Array<{
-        slug: string;
-        name?: string;
-        role?: string;
-    }>;
-    photos?: string[];
-};
-
-// Minimal shape the Members page needs; kept for clarity.
-// (This is a subset of Member; using it where you specifically want the small surface.)
-export type MemberSeed = {
-    slug: string;
-    name: string;
+    // Members list / graph expects these:
     shortBio?: string;
     skills?: string[];
     techStack?: string[];
     avatarUrl?: string;
 
-    // The following are optional, but included so seeds can power detail pages too.
-    avatar?: string;
+    // Detail page fields (optional)
+    avatar?: string;     // alias to avatarUrl
     headline?: string;
-    location?: string;
-    expertise?: string[];
     bio?: string;
-    links?: Member["links"];
-    projects?: Member["projects"];
-    events?: Member["events"];
+    links?: MemberLinkset;
     photos?: string[];
+    projects?: MemberProjectRef[];
+    events?: MemberEventRef[];
+    expertise?: string[]; // optional alias category
 };
 
-const avatar = (seed: string) =>
-    `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4`;
+const img = (q: string) =>
+    `https://images.unsplash.com/${q}?q=80&w=1400&auto=format&fit=crop`;
 
-// You can freely add more members here. Fields are optional and backward-compatible.
 export const SEED_MEMBERS: Member[] = [
     {
-        slug: "alice-ml",
+        id: "m-alice",
+        slug: "alice-petrenko",
         name: "Alice Petrenko",
-        headline: "ML Engineer @ PUM • Graphs, LLMs, Optimization",
-        shortBio:
-            "ML engineer shipping fast hackathon prototypes: LLM tooling, routing, MLOps. Loves 24–48h sprints.",
+        headline: "Full-stack & ML @ PUM",
+        shortBio: "Full-stack + applied ML, loves hackathons and FOSS.",
+        skills: ["fullstack", "ml", "ai"],
+        techStack: ["TypeScript", "Next.js", "Python", "PyTorch"],
+        avatarUrl: img("photo-1544723795-3fb6469f5b39"),
+        avatar: img("photo-1544723795-3fb6469f5b39"),
         bio:
-            "I prototype ML systems end-to-end: from scrappy data pipelines to inference optimizations and neat product UIs. " +
-            "Recent obsessions: graph retrieval for LLMs, efficient vector search, and ONNX deployment. " +
-            "At hackathons I usually lead ML workstreams and help the team converge on a realistic MVP.",
-        skills: ["ml", "ai", "data"],
-        techStack: ["python", "pytorch", "onnx", "nextjs", "tailwind", "vector-search", "graphs"],
-        avatarUrl: avatar("alice"),
-        avatar: avatar("alice"),
-        expertise: ["ML/AI"],
+            "Alice builds fast product prototypes with a focus on ML-powered UX. " +
+            "She enjoys shipping, mentoring and coffee chats about model evaluations.",
         links: {
-            github: "https://github.com/example",
-            linkedin: "https://linkedin.com/in/example",
-            website: "https://pum.dev",
+            github: "https://github.com/example-alice",
+            linkedin: "https://www.linkedin.com/in/example-alice",
+            website: "https://example.com/alice",
         },
-        projects: [
-            {
-                slug: "green-route-planner",
-                name: "Green Route Planner",
-                role: "ML lead",
-                summary:
-                    "Optimizes urban trips on emissions + transfers using GTFS feeds, historical delays and map heuristics.",
-                tech: ["python", "pytorch", "onnx", "nextjs", "tailwind"],
-                year: 2023,
-                cover:
-                    "https://images.unsplash.com/photo-1520583457224-aee11bad5112?q=80&w=1200&auto=format&fit=crop",
-            },
-        ],
-        events: [
-            { slug: "danube-hack-2023-regensburg", role: "participant" },
-            { slug: "munich-werk1-2025", role: "mentor" },
-        ],
         photos: [
-            "https://images.unsplash.com/photo-1557804506-669a67965ba0?q=80&w=1200&auto=format&fit=crop",
+            img("photo-1518770660439-4636190af475"),
+            img("photo-1587620962725-abab7fe55159"),
         ],
+        projects: [
+            { slug: "spezi-scout", role: "Lead dev", year: 2024 },
+            { slug: "hacktrack", role: "ML engineer", year: 2023 },
+        ],
+        events: [{ slug: "danube-hack-2023-regensburg", role: "Participant" }],
     },
     {
-        slug: "bob-fs",
-        name: "Bob Nguyen",
-        headline: "Full-stack + DevOps • TypeScript enjoyer",
-        shortBio: "Full-stack + DevOps. DX-first, tidy CI, scales frontends to robust APIs.",
+        id: "m-bob",
+        slug: "bob-lee",
+        name: "Bob Lee",
+        headline: "Backend @ PUM",
+        shortBio: "Developer experience, infra and APIs.",
+        skills: ["backend"],
+        techStack: ["Node.js", "PostgreSQL", "Prisma", "Docker"],
+        avatarUrl: img("photo-1527980965255-d3b416303d12"),
+        avatar: img("photo-1527980965255-d3b416303d12"),
         bio:
-            "I love shipping reliable web apps with great DX. I care about clean boundaries between client and server, " +
-            "type-safe contracts, and CI that saves time. My happy stack is Next.js + tRPC/REST + Postgres, " +
-            "all wrapped in containers and deployed with minimal drama.",
-        skills: ["fullstack"],
-        techStack: ["typescript", "react", "nextjs", "docker", "postgres"],
-        avatarUrl: avatar("bob"),
-        avatar: avatar("bob"),
-        projects: [
-            {
-                slug: "spezi-finder",
-                name: "Spezi Finder",
-                role: "Tech lead",
-                summary: "Never run out of Spezi again — map the nearest stash 😉",
-                tech: ["nextjs", "maplibre", "prisma"],
-                year: 2025,
-            },
+            "Bob designs resilient services and developer tooling. " +
+            "Enjoys clean schemas, tracing, and long bike rides.",
+        links: {
+            github: "https://github.com/example-bob",
+            linkedin: "https://www.linkedin.com/in/example-bob",
+        },
+        projects: [{ slug: "spezi-scout", role: "Backend", year: 2024 }],
+        events: [
+            { slug: "danube-hack-2023-regensburg", role: "Participant" },
+            { slug: "bits-and-pretzels-2024-munich", role: "Volunteer" },
         ],
-        events: [{ slug: "european-maker-week-2025-vienna" }, { slug: "munich-werk1-2025" }],
-    },
-    {
-        slug: "carol-design",
-        name: "Carol Meyer",
-        headline: "Product Design • HCI • Data Viz",
-        shortBio: "Product design • HCI • data-viz. Turns messy prototypes into clear narratives.",
-        bio:
-            "Designer focused on clarity: content hierarchy, flow, and motion. I translate complex ideas into interfaces " +
-            "that feel obvious. I’m happiest when working closely with engineering to iterate quickly and keep polish high.",
-        skills: ["design"],
-        techStack: ["figma", "ux", "data-vis", "storytelling"],
-        avatarUrl: avatar("carol"),
-        avatar: avatar("carol"),
-        expertise: ["Design"],
-        projects: [
-            {
-                slug: "plant-orchestra",
-                name: "Plant Orchestra",
-                role: "Design",
-                summary: "Interactive installation turning plant signals into sound.",
-                tech: ["arduino", "max/msp", "web-audio"],
-                year: 2024,
-            },
-        ],
-        events: [{ slug: "european-maker-week-2025-vienna" }],
     },
 ];

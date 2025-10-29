@@ -1,124 +1,150 @@
+// web/app/blog/page.tsx
 import React from "react";
 import Link from "next/link";
 import MembersSearchBar from "@/components/MembersSearchBar";
 import { API_BASE } from "@/lib/config";
 import { SEED_POSTS, type BlogPost } from "@/data/blog.seed";
 
-type ApiPost = BlogPost;
+/**
+ * Normalize any API post into our seed BlogPost shape.
+ * The seed type expects: id, slug, title, summary, contentHtml, cover?, author?, tags?, date
+ */
+function normalizeApiPostToBlog(p: any): BlogPost {
+    const slug = String(p?.slug ?? p?.id ?? "");
+    const title = String(p?.title ?? slug);
+    const summary = String(p?.summary ?? p?.excerpt ?? p?.description ?? "");
+    const contentHtml = String(
+        p?.contentHtml ?? p?.content ?? p?.bodyHtml ?? p?.body ?? "" // leave empty for list page if not provided
+    );
+    const cover: string | undefined = p?.cover ?? p?.image ?? undefined;
+    const author: string | undefined = p?.author ?? p?.by ?? p?.authorSlug ?? undefined;
+    const tags: string[] = Array.isArray(p?.tags) ? p.tags : [];
+    const date = String(p?.date ?? p?.publishedAt ?? p?.createdAt ?? "");
 
-// Try to read from either /api/blog or /api/posts if your backend adds it later.
-async function fetchApiPosts(): Promise<ApiPost[]> {
-    async function tryEndpoint(path: string) {
+    return {
+        id: String(p?.id ?? slug),
+        slug,
+        title,
+        summary,
+        contentHtml,
+        cover,
+        tags,
+        date,
+    };
+}
+
+async function fetchApiPosts(): Promise<BlogPost[]> {
+    async function tryEndpoint(path: string): Promise<BlogPost[]> {
         try {
             const res = await fetch(new URL(path, API_BASE).toString(), { cache: "no-store" });
             if (!res.ok) return [];
             const json = await res.json();
-            // support either {items:[]} or an array
-            return Array.isArray(json) ? json : (json.items ?? []);
+            const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+            return items.map(normalizeApiPostToBlog);
         } catch {
             return [];
         }
     }
-    const a = await tryEndpoint("/api/blog?size=999");
-    if (a.length) return a;
-    return tryEndpoint("/api/posts?size=999");
+    // prefer /api/blog, then alias /api/posts
+    const first = await tryEndpoint("/api/blog?size=999");
+    if (first.length) return first;
+    return await tryEndpoint("/api/posts?size=999");
 }
 
-function dedupeBySlug<T extends { slug: string }>(arr: T[]) {
+function dedupeBySlug<T extends { slug: string }>(arr: T[]): T[] {
     const seen = new Set<string>();
     const out: T[] = [];
-    for (const x of arr) {
-        if (!x.slug || seen.has(x.slug)) continue;
-        seen.add(x.slug);
-        out.push(x);
+    for (const item of arr) {
+        if (!item.slug || seen.has(item.slug)) continue;
+        seen.add(item.slug);
+        out.push(item);
     }
     return out;
 }
 
-function highlight(text: string | undefined, q: string) {
-    if (!text) return null;
+function matchesQuery(p: BlogPost, q: string): boolean {
+    if (!q) return true;
+    const needle = q.toLowerCase();
+    const fields = [p.title || "", p.summary || "", ...(p.tags || [])];
+    return fields.some((f) => f.toLowerCase().includes(needle));
+}
+
+function highlight(text: string, q: string) {
     if (!q) return text;
     const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const re = new RegExp(`(${esc})`, "ig");
-    const parts = text.split(re);
-    return parts.map((p, i) => re.test(p) ? <mark key={i} className="px-0.5 rounded bg-yellow-300/30 text-yellow-200">{p}</mark> : <span key={i}>{p}</span>);
+    return text.split(re).map((part, i) =>
+        re.test(part) ? (
+            <mark key={i} className="px-1 rounded bg-yellow-300/30 text-yellow-200">
+                {part}
+            </mark>
+        ) : (
+            <span key={i}>{part}</span>
+        )
+    );
 }
 
-export default async function BlogPage({ searchParams }: { searchParams?: { q?: string; tag?: string } }) {
+export default async function BlogPage({
+                                           searchParams,
+                                       }: {
+    searchParams?: { q?: string; tag?: string };
+}) {
     const q = searchParams?.q || "";
     const tag = searchParams?.tag || "";
 
+    // Merge API + seeds, then sort desc by date
     const apiPosts = await fetchApiPosts();
-    const posts = dedupeBySlug<BlogPost>([...SEED_POSTS, ...apiPosts]).sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-
-    const tags = Array.from(new Set(posts.flatMap(p => p.tags || []))).sort();
-    const filtered = posts.filter(p => {
-        const matchesQ = !q || [p.title, p.summary, ...(p.tags||[])].some(f => f.toLowerCase().includes(q.toLowerCase()));
-        const matchesTag = !tag || (p.tags||[]).includes(tag);
-        return matchesQ && matchesTag;
+    const posts = dedupeBySlug<BlogPost>([...SEED_POSTS, ...apiPosts]).sort((a, b) => {
+        const toMs = (d?: string) => (d ? new Date(d).getTime() : 0);
+        return toMs(b.date) - toMs(a.date);
     });
+
+    const filtered = posts.filter(
+        (p) =>
+            matchesQuery(p, q) &&
+            (!tag || (p.tags || []).map((t) => t.toLowerCase()).includes(tag.toLowerCase()))
+    );
 
     return (
         <section className="section">
             <header className="mb-6">
                 <p className="kicker">BLOG</p>
-                <h1 className="display">Stories, wins & lab notes</h1>
-                <p className="mt-3 text-white/70 max-w-2xl">
-                    Recent events, project write-ups and announcements from the PUM community.
-                </p>
+                <h1 className="display">Stories from the community</h1>
+                <p className="mt-3 text-white/70 max-w-2xl">News, postmortems and behind-the-scenes write-ups.</p>
             </header>
 
-            <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
-                <div className="flex-1">
-                    <MembersSearchBar placeholder="Search posts by title, summary, or tag…" paramKey="q" />
-                </div>
-                <div className="flex items-center gap-2">
-                    <TagChips tags={tags} selected={tag} params={{ q }} />
-                </div>
-            </div>
+            <MembersSearchBar placeholder="Search posts, tags…" paramKey="q" />
 
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filtered.map((p) => (
-                    <Link key={p.slug} href={`/blog/${p.slug}`} className="card p-4 hover:bg-white/10 transition">
-                        {p.cover && (
-                            <img src={p.cover} alt={p.title} className="w-full h-40 object-cover rounded-md ring-1 ring-white/10 mb-3" />
-                        )}
-                        <div className="text-xs text-white/60">{new Date(p.date).toLocaleDateString()}</div>
-                        <div className="font-semibold text-lg line-clamp-2">{highlight(p.title, q)}</div>
-                        <div className="mt-2 text-sm text-white/70 line-clamp-3">{highlight(p.summary, q)}</div>
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                            {(p.tags||[]).slice(0,6).map(t => (
-                                <span key={t} className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">{highlight(t, q)}</span>
-                            ))}
+            <div className="mt-8 grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filtered.map((post) => (
+                    <Link key={post.slug} href={`/blog/${post.slug}`} className="card hover:border-white/20">
+                        <div className="aspect-video rounded-xl overflow-hidden bg-white/5 ring-1 ring-white/10">
+                            {post.cover ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={post.cover} alt={post.title} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full grid place-items-center text-white/40 text-sm">No cover</div>
+                            )}
                         </div>
+                        <div className="mt-3 font-semibold">{highlight(post.title, q)}</div>
+                        <div className="text-xs text-white/60 line-clamp-2">{highlight(post.summary || "", q)}</div>
+                        {!!post.tags?.length && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                {post.tags.map((t) => (
+                                    <Link
+                                        key={t}
+                                        href={`/blog?tag=${encodeURIComponent(t)}`}
+                                        className="text-xs px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        {t}
+                                    </Link>
+                                ))}
+                            </div>
+                        )}
                     </Link>
                 ))}
             </div>
         </section>
-    );
-}
-
-function TagChips({ tags, selected, params }: { tags: string[]; selected?: string; params: Record<string,string> }) {
-    const makeHref = (tag?: string) => {
-        const p = new URLSearchParams({ ...params });
-        if (tag) p.set("tag", tag); else p.delete("tag");
-        const qs = p.toString();
-        return `/blog${qs ? `?${qs}` : ""}`;
-    };
-    return (
-        <div className="flex flex-wrap gap-2">
-            {selected ? (
-                <Link href={makeHref("")} className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10">
-                    Clear tag
-                </Link>
-            ) : null}
-            {tags.map(t => (
-                <Link key={t} href={makeHref(t)} className={`px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 ${selected===t ? "bg-white text-black font-semibold" : "bg-white/5 hover:bg-white/10"}`}>
-                    {t}
-                </Link>
-            ))}
-        </div>
     );
 }

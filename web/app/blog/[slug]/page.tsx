@@ -1,68 +1,113 @@
+// web/app/blog/[slug]/page.tsx
 import React from "react";
 import Link from "next/link";
+import type { Metadata } from "next";
 import { API_BASE } from "@/lib/config";
-import { SEED_POSTS, type BlogPost } from "@/data/blog.seed";
 
-export async function generateStaticParams() {
-    // Provide some static params from seeds to avoid 404 on first load; API posts show up at runtime.
-    return SEED_POSTS.map(p => ({ slug: p.slug }));
+type BlogPost = {
+    id?: string;
+    slug: string;
+    title: string;
+    content?: string;
+    excerpt?: string;
+    cover?: string;
+    author?: string;
+    tags?: string[];
+    date?: string;
+};
+
+function normalize(p: any): BlogPost {
+    const slug = p.slug ?? p.id ?? "";
+    return {
+        id: String(p.id ?? slug),
+        slug,
+        title: p.title ?? slug,
+        content: p.content ?? p.body ?? "",
+        excerpt: p.excerpt ?? p.summary ?? "",
+        cover: p.cover ?? p.image ?? undefined,
+        author: p.author ?? p.by ?? undefined,
+        tags: p.tags ?? [],
+        date: p.date ?? p.publishedAt ?? undefined,
+    };
 }
 
-async function fetchApiPost(slug: string): Promise<BlogPost | null> {
-    async function tryPath(path: string) {
+async function fetchPost(slug: string): Promise<BlogPost | null> {
+    const candidates = [
+        `/api/blog/${encodeURIComponent(slug)}`,
+        `/api/posts/${encodeURIComponent(slug)}`,
+    ];
+    for (const path of candidates) {
         try {
             const res = await fetch(new URL(path, API_BASE).toString(), { cache: "no-store" });
-            if (!res.ok) return null;
+            if (!res.ok) continue;
             const json = await res.json();
-            if (Array.isArray(json?.items)) {
-                return json.items.find((x: any) => x.slug === slug) ?? null;
-            }
-            if (Array.isArray(json)) {
-                return json.find((x: any) => x.slug === slug) ?? null;
-            }
-            return json?.slug === slug ? json : null;
-        } catch { return null; }
+            return normalize(json);
+        } catch {}
     }
-    return (await tryPath(`/api/blog/${slug}`)) || (await tryPath(`/api/posts/${slug}`));
+    return null;
+}
+
+async function fetchSlugs(): Promise<string[]> {
+    const candidates = ["/api/blog?size=999", "/api/posts?size=999"];
+    for (const path of candidates) {
+        try {
+            const res = await fetch(new URL(path, API_BASE).toString(), { cache: "no-store" });
+            if (!res.ok) continue;
+            const json = await res.json();
+            const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+            return items.map((p: any) => String(p.slug ?? p.id ?? "")).filter(Boolean);
+        } catch {}
+    }
+    return [];
+}
+
+export async function generateStaticParams() {
+    const slugs = await fetchSlugs();
+    return slugs.map((slug) => ({ slug }));
+}
+
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+    const p = await fetchPost(params.slug);
+    return {
+        title: p ? `${p.title} – Blog` : "Blog post",
+        description: p?.excerpt || "PUM Blog",
+    };
 }
 
 export default async function BlogPostPage({ params }: { params: { slug: string } }) {
-    const fromSeed = SEED_POSTS.find(p => p.slug === params.slug) || null;
-    const fromApi = await fetchApiPost(params.slug);
-    const post = fromApi || fromSeed;
-
-    if (!post) {
+    const p = await fetchPost(params.slug);
+    if (!p) {
         return (
             <section className="section">
-                <h1 className="display">Post not found</h1>
-                <p className="mt-4"><Link href="/blog" className="underline underline-offset-4">Back to blog</Link></p>
+                <h1 className="h1">Post not found</h1>
+                <Link href="/blog" className="underline underline-offset-4">← Back to all posts</Link>
             </section>
         );
     }
 
     return (
         <section className="section">
-            <div className="mb-6">
-                <p className="kicker">BLOG</p>
-                <h1 className="display">{post.title}</h1>
-                <div className="mt-2 text-white/60 text-sm">{new Date(post.date).toLocaleDateString()}</div>
-                {post.cover && (
-                    <img src={post.cover} alt={post.title} className="w-full h-80 object-cover rounded-xl ring-1 ring-white/10 mt-4" />
-                )}
-            </div>
+            <h1 className="h1">{p.title}</h1>
+            {!!p.tags?.length && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                    {p.tags.map((t) => (
+                        <Link key={t} href={`/blog?tag=${encodeURIComponent(t)}`} className="text-xs px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
+                            {t}
+                        </Link>
+                    ))}
+                </div>
+            )}
 
-            <article className="prose prose-invert max-w-none">
-                {/* keep content simple HTML; your API/MD renderer can replace this later */}
-                <div dangerouslySetInnerHTML={{ __html: post.contentHtml }} />
-            </article>
+            {p.cover && (
+                <div className="mt-6 rounded-xl overflow-hidden ring-1 ring-white/10">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p.cover} alt={p.title} className="w-full h-auto" />
+                </div>
+            )}
 
-            <div className="mt-8 flex flex-wrap gap-2">
-                {(post.tags||[]).map(t => (
-                    <Link key={t} href={`/blog?tag=${encodeURIComponent(t)}`} className="text-xs px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
-                        {t}
-                    </Link>
-                ))}
-            </div>
+            {!!p.content && (
+                <article className="prose prose-invert mt-6" dangerouslySetInnerHTML={{ __html: p.content }} />
+            )}
 
             <div className="mt-8">
                 <Link href="/blog" className="underline underline-offset-4">← Back to all posts</Link>

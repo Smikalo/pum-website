@@ -1,3 +1,4 @@
+// web/components/MembersSearchBar.tsx
 "use client";
 
 import * as React from "react";
@@ -18,20 +19,20 @@ export default function MembersSearchBar({
     paramKey?: string;
     delay?: number;
 }) {
-    const router = useRouter();
-    const pathname = usePathname();
     const searchParams = useSearchParams();
+    const pathname = usePathname();
+    const router = useRouter();
 
-    const [value, setValue] = React.useState<string>(searchParams.get(paramKey) || "");
+    const initial = searchParams.get(paramKey) || "";
+    const [value, setValue] = React.useState(initial);
 
-    // Keep in sync if URL changes externally (e.g. back/forward)
+    // keep local value in sync if url changes (eg. back/forward)
     React.useEffect(() => {
-        const external = searchParams.get(paramKey) || "";
-        setValue(external);
+        if (initial !== value) setValue(initial);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchParams]);
+    }, [initial]);
 
-    // Debounced URL update
+    // debounce updates into the URL
     React.useEffect(() => {
         const t = setTimeout(() => {
             const params = new URLSearchParams(searchParams.toString());

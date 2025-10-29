@@ -1,25 +1,18 @@
-# -------- deps stage: install deps with your conditional npm ci flow --------
+# syntax=docker/dockerfile:1.6
+
 FROM node:20-alpine AS deps
 WORKDIR /srv
+RUN apk add --no-cache openssl
 COPY package*.json ./
-RUN [ -f package-lock.json ] && npm ci || (npm install --package-lock-only && npm ci)
+RUN npm ci --ignore-scripts
 
-# -------- build stage: compile TypeScript to dist/ --------------------------
-FROM node:20-alpine AS build
+FROM node:20-alpine AS dev
 WORKDIR /srv
+ENV NODE_ENV=development
+RUN apk add --no-cache openssl
 COPY --from=deps /srv/node_modules ./node_modules
 COPY . .
-# Generate Prisma client if present; don't fail the build if prisma isn't wired yet
-RUN npx prisma generate || true
-RUN npm run build
-
-# -------- runner stage: minimal prod image -------------------
-FROM node:20-alpine AS runner
-WORKDIR /srv
-ENV NODE_ENV=production \
-    NODE_OPTIONS="--trace-uncaught --trace-warnings --unhandled-rejections=strict"
-COPY package*.json ./
-RUN [ -f package-lock.json ] && npm ci --omit=dev || (npm install --package-lock-only && npm ci --omit=dev)
-COPY --from=build /srv/dist ./dist
+# generate Prisma client only if a schema exists
+RUN if [ -f prisma/schema.prisma ]; then npx prisma generate --schema=prisma/schema.prisma; else echo "no prisma schema, skip generate"; fi
 EXPOSE 3001
-CMD ["node", "dist/src/server.js"]
+CMD ["npm","run","dev"]
