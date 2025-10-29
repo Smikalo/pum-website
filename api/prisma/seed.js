@@ -151,6 +151,42 @@ async function main(){
         }
     }
 
+    // --- link attendees from events.json -> MemberEvent ---
+    for (const e of events) {
+        const eRow = evMap.get(e.slug);
+        if (!eRow) continue;
+        for (const a of (e.attendees || [])) {
+            // match by slug first; allow fallbacks
+            const mRow =
+                memMap.get(a.slug) ||
+                memMap.get(a.memberSlug) ||
+                [...memMap.values()].find(x => x.id === a.memberId);
+            if (!mRow) {
+                console.warn('[seed] attendee not linked (missing member):', a);
+                continue;
+            }
+            await prisma.memberEvent.upsert({
+                where: { memberId_eventId: { memberId: mRow.id, eventId: eRow.id } },
+                create: { memberId: mRow.id, eventId: eRow.id, role: a.role || null },
+                update: { role: a.role || null },
+            });
+        }
+    }
+
+    for (const m of members) {
+        const mRow = memMap.get(m.slug);
+        if (!mRow) continue;
+        for (const evRef of (m.events || [])) {
+            const eRow = evMap.get(evRef.slug);
+            if (!eRow) continue;
+            await prisma.memberEvent.upsert({
+                where: { memberId_eventId: { memberId: mRow.id, eventId: eRow.id } },
+                create: { memberId: mRow.id, eventId: eRow.id, role: evRef.role || null },
+                update: { role: evRef.role || null },
+            });
+        }
+    }
+
 
     // member <-> project (roles/contrib)
     for (const m of members) {

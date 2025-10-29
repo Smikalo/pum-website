@@ -49,12 +49,7 @@ function highlight(text: string | undefined, q: string) {
 function matchesQuery(e: Event, q: string) {
     if (!q) return true;
     const n = q.toLowerCase();
-    const fields = [
-        e.name || "",
-        e.locationName || "",
-        e.description || "",
-        ...(e.tags || []),
-    ];
+    const fields = [e.name || "", e.locationName || "", e.description || "", ...(e.tags || [])];
     return fields.some((f) => f.toLowerCase().includes(n));
 }
 
@@ -64,7 +59,7 @@ function parseYear(s?: string) {
     return Number.isFinite(y) ? y : undefined;
 }
 
-// --- merge helpers (fix for missing lat/lng coming from API) ---
+// --- merge helpers: API-only list, seed fills gaps for same slug (e.g. lat/lng) ---
 const uniq = <T,>(arr: T[]) => Array.from(new Set(arr));
 
 function normalizeEvent(e: any): Event {
@@ -83,76 +78,56 @@ function normalizeEvent(e: any): Event {
     };
 }
 
-function mergeOneEvent(seed?: Event, api?: Event): Event | undefined {
-    if (!seed && !api) return undefined;
-    const a = api || ({} as Event);
-    const s = seed || ({} as Event);
-    return {
-        id: a.id ?? s.id!,
-        slug: a.slug ?? s.slug!,
-        name: a.name ?? s.name!,
-        dateStart: a.dateStart ?? s.dateStart,
-        dateEnd: a.dateEnd ?? s.dateEnd,
-        locationName: a.locationName ?? s.locationName,
-        // keep seed coords if API missing them
-        lat: typeof a.lat === "number" ? a.lat : s.lat,
-        lng: typeof a.lng === "number" ? a.lng : s.lng,
-        description: a.description ?? s.description,
-        photos: uniq([...(s.photos || []), ...(a.photos || [])]),
-        tags:   uniq([...(s.tags   || []), ...(a.tags   || [])]),
-    };
-}
-
-function mergeEvents(api: Event[], seeds: Event[]): Event[] {
-    const map = new Map<string, Event>();
-    // start with seeds so we always have coords/tags
-    for (const s of seeds.map(normalizeEvent)) {
-        if (!s.slug) continue;
-        map.set(s.slug, s);
-    }
-    // overlay API (without dropping existing coords when API lacks them)
-    for (const a of api.map(normalizeEvent)) {
-        if (!a.slug) continue;
-        const merged = mergeOneEvent(map.get(a.slug), a)!;
-        map.set(a.slug, merged);
-    }
-    return Array.from(map.values());
+function mergeApiWithSeed(api: Event[], seeds: Event[]): Event[] {
+    const seedBySlug = new Map(seeds.map((s) => [s.slug, normalizeEvent(s)]));
+    // IMPORTANT: only return API slugs; merge seed fields per slug to fill gaps
+    return api.map((a) => {
+        const s = seedBySlug.get(a.slug);
+        const an = normalizeEvent(a);
+        if (!s) return an;
+        return {
+            id: an.id || s.id,
+            slug: an.slug || s.slug,
+            name: an.name || s.name,
+            dateStart: an.dateStart ?? s.dateStart,
+            dateEnd: an.dateEnd ?? s.dateEnd,
+            locationName: an.locationName ?? s.locationName,
+            lat: typeof an.lat === "number" ? an.lat : s.lat,
+            lng: typeof an.lng === "number" ? an.lng : s.lng,
+            description: an.description ?? s.description,
+            photos: uniq([...(s.photos || []), ...(an.photos || [])]),
+            tags: uniq([...(s.tags || []), ...(an.tags || [])]),
+        };
+    });
 }
 
 // --- data ---
 async function fetchAllEventsFromApi(): Promise<Event[]> {
-    // Grab everything from the API, we'll filter locally so seed + api behave the same.
     const url = new URL("/api/events", API_BASE);
     url.searchParams.set("size", "999");
     const res = await fetch(url.toString(), { cache: "no-store" });
     if (!res.ok) return [];
     const json = (await res.json()) as { items?: Event[] };
-    return json.items || [];
+    return (json.items || []).map(normalizeEvent);
 }
 
 export default async function EventsPage({
                                              searchParams,
-                                         }: {
-    searchParams?: { q?: string; year?: string };
-}) {
+                                         }: { searchParams?: { q?: string; year?: string } }) {
     const q = searchParams?.q || "";
     const year = searchParams?.year || "";
 
     const apiEvents = await fetchAllEventsFromApi();
 
-    // IMPORTANT: merge (don’t just dedupe) so seed coords survive when API lacks lat/lng
-    const allEvents = mergeEvents(apiEvents || [], SEED_EVENTS);
+    // ONLY API slugs; enrich with seed values for the *same* slugs (keeps map pins).
+    const allEvents = mergeApiWithSeed(apiEvents, SEED_EVENTS);
 
-    // Build year chips from all events
+    // Year chips
     const years = Array.from(
-        new Set(
-            allEvents
-                .map((e) => (e.dateStart ? String(e.dateStart).slice(0, 4) : ""))
-                .filter(Boolean)
-        )
+        new Set(allEvents.map((e) => (e.dateStart ? String(e.dateStart).slice(0, 4) : "")).filter(Boolean))
     ).sort((a, b) => Number(b) - Number(a));
 
-    // Filter (query also matches tags)
+    // Filter
     const filtered = allEvents.filter((e) => {
         const byQ = matchesQuery(e, q);
         const byYear = year ? parseYear(e.dateStart) === Number(year) : true;
@@ -173,10 +148,7 @@ export default async function EventsPage({
             {/* Controls */}
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
                 <div className="flex-1">
-                    <MembersSearchBar
-                        placeholder="Search events by name, location, or tag…"
-                        paramKey="q"
-                    />
+                    <MembersSearchBar placeholder="Search events by name, location, or tag…" paramKey="q" />
                 </div>
                 <div className="flex items-center gap-2">
                     <YearChips years={years} selected={year} params={{ q }} />
@@ -200,15 +172,9 @@ export default async function EventsPage({
                         href={`/events/${e.slug}`}
                         className="card p-5 hover:shadow-[0_0_0_2px_rgba(255,255,255,0.08)] hover:-translate-y-0.5 transition"
                     >
-                        <div className="font-semibold text-lg line-clamp-1">
-                            {highlight(e.name, q)}
-                        </div>
-                        <div className="mt-1 text-sm text-white/70">
-                            {formatDateRange(e.dateStart, e.dateEnd)}
-                        </div>
-                        <div className="mt-1 text-sm text-white/60">
-                            {highlight(e.locationName || "", q)}
-                        </div>
+                        <div className="font-semibold text-lg line-clamp-1">{highlight(e.name, q)}</div>
+                        <div className="mt-1 text-sm text-white/70">{formatDateRange(e.dateStart, e.dateEnd)}</div>
+                        <div className="mt-1 text-sm text-white/60">{highlight(e.locationName || "", q)}</div>
                         {!!(e.tags && e.tags.length) && (
                             <div className="mt-2 flex flex-wrap gap-1.5">
                                 {e.tags!.slice(0, 6).map((t) => (
@@ -219,9 +185,7 @@ export default async function EventsPage({
                             </div>
                         )}
                         {e.description ? (
-                            <div className="mt-3 text-sm text-white/70 line-clamp-3">
-                                {highlight(e.description, q)}
-                            </div>
+                            <div className="mt-3 text-sm text-white/70 line-clamp-3">{highlight(e.description, q)}</div>
                         ) : null}
                     </Link>
                 ))}

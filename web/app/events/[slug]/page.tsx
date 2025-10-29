@@ -35,9 +35,6 @@ type Event = {
     description?: string;
     photos?: string[];
     tags?: string[];
-    // NEW from API (detail)
-    attendees?: Member[];
-    projects?: Array<ReturnType<typeof normalizeProject>>;
 };
 
 type Member = {
@@ -46,7 +43,6 @@ type Member = {
     avatarUrl?: string;
     avatar?: string;
     headline?: string;
-    role?: string | null;
 };
 
 type Project = {
@@ -79,8 +75,8 @@ function normalizeProject(p: any): Project {
         techStack: p.techStack ?? p.tech ?? [],
         members:
             (p.members ?? []).map((m: any) => ({
-                memberId: m.memberId ?? m.id ?? m.slug,
-                memberSlug: m.memberSlug ?? m.slug ?? m.id,
+                memberId: m.memberId ?? m.id,
+                memberSlug: m.memberSlug ?? m.slug,
                 role: m.role,
             })) ?? [],
         imageUrl: p.imageUrl ?? p.cover,
@@ -129,7 +125,6 @@ function mergeProjects(api: Project[], seeds: SeedProject[]): Project[] {
 
 /* --------------------------------- Fetchers -------------------------------- */
 
-// List (for fallback and map)
 async function fetchApiEvents(): Promise<Event[]> {
     try {
         const res = await fetch(new URL("/api/events?size=999", API_BASE).toString(), { cache: "no-store" });
@@ -142,13 +137,33 @@ async function fetchApiEvents(): Promise<Event[]> {
     }
 }
 
-// Detail (primary source)
-async function fetchApiEventDetail(slug: string): Promise<Event | null> {
+async function fetchApiEventDetail(slug: string): Promise<{
+    id: string;
+    slug: string;
+    name: string;
+    dateStart?: string;
+    dateEnd?: string;
+    locationName?: string;
+    lat?: number;
+    lng?: number;
+    description?: string;
+    photos?: string[];
+    tags?: string[];
+    attendees?: { slug: string; name?: string; avatarUrl?: string; role?: string; headline?: string }[];
+    projects?: {
+        slug: string;
+        title: string;
+        imageUrl?: string | null;
+        year?: number | null;
+        summary?: string | null;
+        techStack?: string[];
+        members?: { memberSlug?: string; memberId?: string }[];
+    }[];
+} | null> {
     try {
         const res = await fetch(new URL(`/api/events/${slug}`, API_BASE).toString(), { cache: "no-store" });
-        if (res.status === 404) return null;
         if (!res.ok) return null;
-        return (await res.json()) as Event;
+        return await res.json();
     } catch {
         return null;
     }
@@ -184,24 +199,37 @@ async function fetchApiProjects(): Promise<Project[]> {
     }
 }
 
-async function getEvent(slug: string): Promise<Event | null> {
-    // Prefer the event detail API (with attendees + projects)
-    const detail = await fetchApiEventDetail(slug);
-    if (detail) return detail;
+function mergeEvent(seed?: Event, api?: Partial<Event> | null): Event | null {
+    if (!seed && !api) return null;
+    const s = seed || ({} as Event);
+    const a = (api || {}) as Partial<Event>;
+    return {
+        id: String(a.id ?? s.id ?? s.slug),
+        slug: String(a.slug ?? s.slug),
+        name: String(a.name ?? s.name),
+        dateStart: a.dateStart ?? s.dateStart,
+        dateEnd: a.dateEnd ?? s.dateEnd,
+        locationName: a.locationName ?? s.locationName,
+        lat: typeof a.lat === "number" ? a.lat : s.lat,
+        lng: typeof a.lng === "number" ? a.lng : s.lng,
+        description: a.description ?? s.description,
+        photos: Array.isArray(a.photos) ? a.photos : s.photos,
+        tags: Array.isArray(a.tags) ? a.tags : s.tags,
+    };
+}
 
-    // Fallback: compose from list + seeds (keeps old links stable)
+async function getEvent(slug: string): Promise<Event | null> {
     const fromApi = await fetchApiEvents();
-    const pool = [...fromApi, ...SEED_EVENTS];
-    const map = new Map(pool.map((e) => [e.slug, e]));
-    return (map.get(slug) as Event | undefined) ?? null;
+    const seed = SEED_EVENTS.find((e) => e.slug === slug);
+    const api = fromApi.find((e) => e.slug === slug);
+    return mergeEvent(seed, api);
 }
 
 /* --------------------------------- Page --------------------------------- */
 
 export default async function EventDetailPage({ params }: { params: { slug: string } }) {
-    const ev = await getEvent(params.slug);
-
-    if (!ev) {
+    const baseEvent = await getEvent(params.slug); // merged API list + seeds (for coords/photos)
+    if (!baseEvent) {
         return (
             <section className="section">
                 <h1 className="display">Event not found</h1>
@@ -214,70 +242,77 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
         );
     }
 
-    // Build attendees (prefer API; fallback to seeds inference)
-    let attendees: Member[] = ev.attendees || [];
-    if (!attendees.length) {
-        const membersFromApi = await fetchApiMembers();
-        const membersFromSeeds: Member[] = SEED_MEMBERS.map((m: SeedMember) => ({
-            slug: m.slug,
-            name: m.name,
-            avatarUrl: m.avatarUrl ?? m.avatar,
-            avatar: m.avatar,
-            headline: (m as any).headline ?? m.shortBio,
-        }));
-        const membersAll = dedupeBy(
-            [...membersFromApi, ...membersFromSeeds],
-            (m) => m.slug,
-        );
-        attendees = membersAll.filter((m) =>
-            (SEED_MEMBERS.find((s) => s.slug === m.slug)?.events || []).some((x) => x.slug === ev.slug),
-        );
-    }
+    // Prefer attendees/projects directly from the API detail:
+    const evDetail = await fetchApiEventDetail(params.slug);
 
-    // Projects at this event (prefer API; fallback to global merge)
+    // Members for avatars in the "tiny team row" under projects:
+    const membersFromApi = await fetchApiMembers();
+    const membersFromSeeds: Member[] = SEED_MEMBERS.map((m: SeedMember) => ({
+        slug: m.slug,
+        name: m.name,
+        avatarUrl: m.avatarUrl ?? m.avatar,
+        avatar: m.avatar,
+        headline: (m as any).headline ?? m.shortBio,
+    }));
+    const membersAll = dedupeBy([...membersFromApi, ...membersFromSeeds], (m) => m.slug);
+    const memMap = new Map(membersAll.map((m) => [m.slug, m]));
+
+    // Attendees:
+    const attendees: Member[] =
+        evDetail?.attendees && evDetail.attendees.length
+            ? evDetail.attendees.map((a) => ({
+                slug: a.slug,
+                name: a.name || a.slug,
+                avatarUrl: a.avatarUrl || undefined,
+                headline: a.headline || undefined,
+            }))
+            : // Fallback to old behavior (seed-based) only if API has none:
+            membersAll.filter((m) =>
+                (SEED_MEMBERS.find((s) => s.slug === m.slug)?.events || []).some((x) => x.slug === baseEvent.slug),
+            );
+
+    // Projects at this event:
     let projectsForEvent: Project[] = [];
-    if (Array.isArray(ev.projects) && ev.projects.length) {
-        projectsForEvent = ev.projects.map(normalizeProject);
+    if (evDetail?.projects && evDetail.projects.length) {
+        projectsForEvent = evDetail.projects.map((p) => ({
+            id: p.slug,
+            slug: p.slug,
+            title: p.title,
+            imageUrl: p.imageUrl || undefined,
+            year: (p.year ?? undefined) as number | undefined,
+            summary: p.summary || undefined,
+            techStack: p.techStack || [],
+            members:
+                p.members?.map((r) => ({
+                    memberSlug: r.memberSlug,
+                    memberId: r.memberId,
+                })) || [],
+        }));
     } else {
+        // Fallback to previous merge if API detail didn't include projects
         const apiProjects = await fetchApiProjects();
         const allProjects = mergeProjects(apiProjects, SEED_PROJECTS);
-        projectsForEvent = allProjects.filter((p) => (p.events || []).some((e) => e.slug === ev.slug));
+        projectsForEvent = allProjects.filter((p) => (p.events || []).some((e) => e.slug === baseEvent.slug));
     }
 
-    // Member lookup for tiny team row (use attendees + any member refs found on projects)
-    const memMap = new Map<string, Member>();
-    attendees.forEach((m) => m.slug && memMap.set(m.slug, m));
-    projectsForEvent.forEach((p) =>
-        (p.members || []).forEach((r) => {
-            const s = r.memberSlug || r.memberId;
-            if (s && !memMap.has(String(s))) {
-                memMap.set(String(s), { slug: String(s), name: String(s) });
-            }
-        })
-    );
-
-    const photos = ev.photos || [];
+    const photos = baseEvent.photos || [];
     const cover = photos[0];
 
     return (
         <section className="section">
             <header className="mb-6">
                 <p className="kicker">EVENT</p>
-                <h1 className="display">{ev.name}</h1>
+                <h1 className="display">{baseEvent.name}</h1>
                 <div className="mt-2 text-white/70 text-sm">
-                    {ev.locationName ? `${ev.locationName} • ` : ""}
-                    {ev.dateStart ? new Date(ev.dateStart).toLocaleDateString() : ""}
-                    {ev.dateEnd ? ` – ${new Date(ev.dateEnd).toLocaleDateString()}` : ""}
+                    {baseEvent.locationName ? `${baseEvent.locationName} • ` : ""}
+                    {baseEvent.dateStart ? new Date(baseEvent.dateStart).toLocaleDateString() : ""}
+                    {baseEvent.dateEnd ? ` – ${new Date(baseEvent.dateEnd).toLocaleDateString()}` : ""}
                 </div>
             </header>
 
             {cover && (
                 <div className="mb-6">
-                    <img
-                        src={cover}
-                        alt={ev.name}
-                        className="w-full h-80 object-cover rounded-xl ring-1 ring-white/10"
-                    />
+                    <img src={cover} alt={baseEvent.name} className="w-full h-80 object-cover rounded-xl ring-1 ring-white/10" />
                 </div>
             )}
 
@@ -285,15 +320,15 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                 <article className="lg:col-span-3 space-y-6">
                     <div className="card p-5">
                         <h2 className="text-lg font-semibold mb-2">About</h2>
-                        {ev.description ? (
-                            <p className="text-white/80 leading-relaxed">{ev.description}</p>
+                        {baseEvent.description ? (
+                            <p className="text-white/80 leading-relaxed">{baseEvent.description}</p>
                         ) : (
                             <p className="text-white/60">No description yet.</p>
                         )}
 
-                        {(ev.tags && ev.tags.length > 0) && (
+                        {(baseEvent.tags && baseEvent.tags.length > 0) && (
                             <div className="mt-3 flex flex-wrap gap-1.5">
-                                {ev.tags.slice(0, 12).map((t) => (
+                                {baseEvent.tags.slice(0, 12).map((t) => (
                                     <span key={t} className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
                     {t}
                   </span>
@@ -303,13 +338,13 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                     </div>
 
                     {/* reuse the same MapLibre component with a single event to keep styling consistent */}
-                    {(typeof ev.lng === "number" && typeof ev.lat === "number") && (
+                    {(typeof baseEvent.lng === "number" && typeof baseEvent.lat === "number") && (
                         <div className="card p-0 overflow-hidden">
-                            <EventsMap events={[ev]} />
+                            <EventsMap events={[baseEvent]} />
                         </div>
                     )}
 
-                    {/* NEW: Projects at this event */}
+                    {/* Projects at this event */}
                     {projectsForEvent.length > 0 && (
                         <div className="card p-5">
                             <h2 className="text-lg font-semibold mb-3">Projects at this event</h2>
@@ -384,7 +419,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                                     <img
                                         key={i}
                                         src={src}
-                                        alt={`${ev.name} photo ${i + 2}`}
+                                        alt={`${baseEvent.name} photo ${i + 2}`}
                                         className="w-full h-32 object-cover rounded-md ring-1 ring-white/10"
                                     />
                                 ))}

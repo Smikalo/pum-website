@@ -299,36 +299,38 @@ app.get("/api/members/graph", async (_req, res) => {
 });
 
 /* ------------------------------ Events (NEW) ------------------------------ */
-// ---- Events (list) ----
+// --- Events list ---
 app.get("/api/events", async (req, res) => {
     const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
     const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
     const q = (req.query.q || "").toString().trim();
-    const yearStr = (req.query.year || "").toString().trim();
-    const year = Number(yearStr) || null;
+    const year = (req.query.year || "").toString().trim();
 
     const AND = [];
     if (q) {
         AND.push({
             OR: [
                 { name: { contains: q, mode: "insensitive" } },
-                { locationName: { contains: q, mode: "insensitive" } },
                 { description: { contains: q, mode: "insensitive" } },
+                { locationName: { contains: q, mode: "insensitive" } },
             ],
         });
     }
     if (year) {
-        const start = new Date(Date.UTC(year, 0, 1));
-        const end = new Date(Date.UTC(year + 1, 0, 1));
-        AND.push({ dateStart: { gte: start, lt: end } });
+        AND.push({
+            dateStart: {
+                gte: new Date(`${year}-01-01T00:00:00.000Z`),
+                lt: new Date(`${Number(year) + 1}-01-01T00:00:00.000Z`),
+            },
+        });
     }
-
     const where = AND.length ? { AND } : undefined;
 
     const [total, rows] = await Promise.all([
         prisma.event.count({ where }),
         prisma.event.findMany({
             where,
+            include: { attendees: true },
             orderBy: [{ dateStart: "desc" }, { name: "asc" }],
             skip: (page - 1) * size,
             take: size,
@@ -340,14 +342,16 @@ app.get("/api/events", async (req, res) => {
             id: e.id,
             slug: e.slug,
             name: e.name,
-            dateStart: e.dateStart ? e.dateStart.toISOString() : null,
-            dateEnd: e.dateEnd ? e.dateEnd.toISOString() : null,
-            locationName: e.locationName || null,
-            lat: e.lat ?? null,
-            lng: e.lng ?? null,
-            description: e.description || null,
+            dateStart: e.dateStart,
+            dateEnd: e.dateEnd,
+            locationName: e.locationName,
+            lat: e.lat,
+            lng: e.lng,
+            description: e.description,
             photos: Array.isArray(e.photos) ? e.photos : [],
-            tags: [], // tags not modeled in schema yet
+            // if you added tags Json? in schema, return it here; otherwise a safe default:
+            tags: Array.isArray(e.tags) ? e.tags : [],
+            attendeesCount: e.attendees.length,
         })),
         page,
         size,
@@ -355,17 +359,16 @@ app.get("/api/events", async (req, res) => {
     });
 });
 
-// ---- Event detail (with attendees + projects) ----
+// --- Event detail ---
 app.get("/api/events/:slug", async (req, res) => {
     const e = await prisma.event.findUnique({
         where: { slug: req.params.slug },
         include: {
-            attendees: { include: { member: true } },
+            attendees: { include: { member: { select: { slug: true, name: true, avatarUrl: true, headline: true, id: true } } } },
             projects: {
                 include: {
+                    members: { include: { member: { select: { slug: true, name: true, avatarUrl: true, id: true } } } },
                     techs: { include: { tech: true } },
-                    tags: { include: { tag: true } },
-                    members: { include: { member: { select: { id: true, slug: true, name: true, avatarUrl: true, headline: true } } } },
                 },
             },
         },
@@ -376,43 +379,32 @@ app.get("/api/events/:slug", async (req, res) => {
         id: e.id,
         slug: e.slug,
         name: e.name,
-        dateStart: e.dateStart ? e.dateStart.toISOString() : null,
-        dateEnd: e.dateEnd ? e.dateEnd.toISOString() : null,
-        locationName: e.locationName || null,
-        lat: e.lat ?? null,
-        lng: e.lng ?? null,
-        description: e.description || null,
+        dateStart: e.dateStart,
+        dateEnd: e.dateEnd,
+        locationName: e.locationName,
+        lat: e.lat,
+        lng: e.lng,
+        description: e.description,
         photos: Array.isArray(e.photos) ? e.photos : [],
-        tags: [],
-
-        attendees: e.attendees.map((r) => ({
-            slug: r.member.slug,
-            name: r.member.name,
-            avatarUrl: r.member.avatarUrl || null,
-            headline: r.member.headline || null,
-            role: r.role || null,
+        tags: Array.isArray(e.tags) ? e.tags : [],
+        attendees: e.attendees.map((a) => ({
+            slug: a.member.slug,
+            name: a.member.name,
+            avatarUrl: a.member.avatarUrl || null,
+            role: a.role || null,
+            headline: a.member.headline || null,
         })),
-
         projects: e.projects.map((p) => ({
-            id: p.id,
             slug: p.slug,
             title: p.title,
-            summary: p.summary || null,
-            description: p.description || null,
-            year: p.year || null,
             imageUrl: p.imageUrl || p.cover || null,
-            cover: p.cover || p.imageUrl || null,
-            demoUrl: p.demoUrl || null,
-            repoUrl: p.repoUrl || null,
-            techStack: p.techs.map((x) => x.tech.name),
-            tags: p.tags.map((x) => x.tag.name),
-            members: p.members.map((m) => ({
-                memberId: m.member.id,
-                memberSlug: m.member.slug,
-                role: m.role || null,
+            year: p.year || null,
+            summary: p.summary || null,
+            techStack: p.techs.map((t) => t.tech.name),
+            members: p.members.map((r) => ({
+                memberSlug: r.member.slug,
+                memberId: r.member.id,
             })),
-            events: [{ slug: e.slug, name: e.name }],
-            gallery: Array.isArray(p.images) ? p.images : [],
         })),
     });
 });

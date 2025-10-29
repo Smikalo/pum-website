@@ -1,14 +1,19 @@
 [
   {
-    "id": "e1",
-    "slug": "hack-munich-2025",
-    "name": "Hack Munich 2025",
-    "dateStart": "2025-05-12",
-    "dateEnd": "2025-05-14",
+    "id": "hacka-2024",
+    "slug": "hacka-2024",
+    "name": "HackA 2024",
+    "dateStart": "2024-04-12",
+    "dateEnd": "2024-04-14",
     "locationName": "Munich, DE",
     "lat": 48.1351,
-    "lng": 11.582,
-    "description": "48h hackathon",
-    "photos": []
+    "lng": 11.5820,
+    "description": "48 hours of building amazing stuff.",
+    "photos": ["/events/hacka-2024/cover.jpg"],
+    "tags": ["hackathon", "ai"],
+    "attendees": [
+      { "slug": "alice-smith", "role": "Participant" },
+      { "slug": "bob-lee", "role": "Mentor" }
+    ]
   }
 ]
