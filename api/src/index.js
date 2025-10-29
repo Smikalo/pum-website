@@ -8,38 +8,57 @@ const { prisma } = require("./db");
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
-app.use(helmet()); // secure headers :contentReference[oaicite:2]{index=2}
+app.use(helmet());
 app.use(cors({ origin: true, credentials: true }));
-
-app.use(rateLimit({ windowMs: 60_000, max: Number(process.env.RATE_LIMIT_MAX || 100), standardHeaders: true, legacyHeaders: false })); // :contentReference[oaicite:3]{index=3}
+app.use(
+    rateLimit({
+        windowMs: 60_000,
+        max: Number(process.env.RATE_LIMIT_MAX || 100),
+        standardHeaders: true,
+        legacyHeaders: false,
+    })
+);
 
 app.get("/healthz", async (_, res) => {
-    const dbOk = await prisma.$queryRaw`SELECT 1`;
-    res.json({ ok: true, service: "api", db: !!dbOk });
+    try {
+        const dbOk = await prisma.$queryRaw`SELECT 1`;
+        res.json({ ok: true, service: "api", db: !!dbOk });
+    } catch (e) {
+        res.status(500).json({ ok: false, service: "api", db: false, error: String(e) });
+    }
 });
 
 const toInt = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
-const qpSchema = z.object({ q: z.string().optional(), skill: z.string().optional(), tech: z.string().optional(), page: z.string().optional(), size: z.string().optional() });
+const qpSchema = z.object({
+    q: z.string().optional(),
+    skill: z.string().optional(),
+    tech: z.string().optional(),
+    page: z.string().optional(),
+    size: z.string().optional(),
+});
 
-// ---- Members (list) ----
+/* ------------------------------ Members ------------------------------ */
 app.get("/api/members", async (req, res) => {
     const qp = qpSchema.parse(req.query);
     const page = toInt(qp.page, 1);
     const size = Math.min(toInt(qp.size, 24), 1000);
 
-    const skills = (qp.skill || "").split(",").map(s=>s.trim()).filter(Boolean);
-    const techs  = (qp.tech  || "").split(",").map(s=>s.trim()).filter(Boolean);
+    const skills = (qp.skill || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const techs = (qp.tech || "").split(",").map((s) => s.trim()).filter(Boolean);
 
     const AND = [];
-    if (qp.q) AND.push({ OR: [
-            { name: { contains: qp.q, mode: 'insensitive' } },
-            { shortBio: { contains: qp.q, mode: 'insensitive' } },
-            { longBio: { contains: qp.q, mode: 'insensitive' } },
-            { bio:      { contains: qp.q, mode: 'insensitive' } },
-            { headline: { contains: qp.q, mode: 'insensitive' } },
-        ]});
+    if (qp.q)
+        AND.push({
+            OR: [
+                { name: { contains: qp.q, mode: "insensitive" } },
+                { shortBio: { contains: qp.q, mode: "insensitive" } },
+                { longBio: { contains: qp.q, mode: "insensitive" } },
+                { bio: { contains: qp.q, mode: "insensitive" } },
+                { headline: { contains: qp.q, mode: "insensitive" } },
+            ],
+        });
     for (const s of skills) AND.push({ skills: { some: { skill: { name: s } } } });
-    for (const t of techs)  AND.push({ techs:  { some: { tech:  { name: t } } } });
+    for (const t of techs) AND.push({ techs: { some: { tech: { name: t } } } });
 
     const where = AND.length ? { AND } : undefined;
 
@@ -48,115 +67,88 @@ app.get("/api/members", async (req, res) => {
         prisma.member.findMany({
             where,
             include: { skills: { include: { skill: true } }, techs: { include: { tech: true } } },
-            orderBy: { name: 'asc' }, skip: (page-1)*size, take: size,
+            orderBy: { name: "asc" },
+            skip: (page - 1) * size,
+            take: size,
         }),
     ]);
 
     res.json({
-        items: rows.map(m => ({
-            id: m.id, slug: m.slug, name: m.name,
+        items: rows.map((m) => ({
+            id: m.id,
+            slug: m.slug,
+            name: m.name,
             avatarUrl: m.avatarUrl || m.avatar || null,
             shortBio: m.shortBio || m.bio || null,
             headline: m.headline || null,
-            skills: m.skills.map(x=>x.skill.name),
-            techStack: m.techs.map(x=>x.tech.name),
+            skills: m.skills.map((x) => x.skill.name),
+            techStack: m.techs.map((x) => x.tech.name),
         })),
-        page, size, total
+        page,
+        size,
+        total,
     });
 });
 
-// ---- Member detail ----
 app.get("/api/members/:slug", async (req, res) => {
     const m = await prisma.member.findUnique({
         where: { slug: req.params.slug },
         include: {
-            skills:   { include: { skill: true } },
-            techs:    { include: { tech: true } },
+            skills: { include: { skill: true } },
+            techs: { include: { tech: true } },
             projects: { include: { project: true } },
-            events:   { include: { event: true } },
+            events: { include: { event: true } },
         },
     });
     if (!m) return res.status(404).json({ error: "Not found" });
     res.json({
-        id: m.id, slug: m.slug, name: m.name,
-        avatar: m.avatar || m.avatarUrl || null, avatarUrl: m.avatarUrl || m.avatar || null,
-        headline: m.headline, shortBio: m.shortBio, bio: m.bio || m.longBio,
-        location: m.location, links: m.links || {}, photos: m.photos || [],
-        skills: m.skills.map(x=>x.skill.name), techStack: m.techs.map(x=>x.tech.name),
-        projects: m.projects.map(r => ({
-            id: r.project.id, slug: r.project.slug, title: r.project.title,
-            role: r.role, contribution: r.contribution, cover: r.project.cover || r.project.imageUrl, year: r.project.year
+        id: m.id,
+        slug: m.slug,
+        name: m.name,
+        avatar: m.avatar || m.avatarUrl || null,
+        avatarUrl: m.avatarUrl || m.avatar || null,
+        headline: m.headline,
+        shortBio: m.shortBio,
+        bio: m.bio || m.longBio,
+        location: m.location,
+        links: m.links || {},
+        photos: m.photos || [],
+        skills: m.skills.map((x) => x.skill.name),
+        techStack: m.techs.map((x) => x.tech.name),
+        projects: m.projects.map((r) => ({
+            id: r.project.id,
+            slug: r.project.slug,
+            title: r.project.title,
+            role: r.role,
+            contribution: r.contribution,
+            cover: r.project.cover || r.project.imageUrl,
+            year: r.project.year,
+            tech: [], // optional
+            techStack: [], // optional
+            summary: r.project.summary || null,
         })),
-        events: m.events.map(r => ({ id: r.event.id, slug: r.event.slug, name: r.event.name, role: r.role || null })),
+        events: m.events.map((r) => ({
+            id: r.event.id,
+            slug: r.event.slug,
+            name: r.event.name,
+            role: r.role || null,
+            dateStart: r.event.dateStart,
+            dateEnd: r.event.dateEnd,
+        })),
     });
 });
 
-// ---- Projects list/detail (unchanged URL shape, DB-backed) ----
-/* ...same as above — see full snippet in this message ... */
-
-// ---- Categories (NEW) ----
-app.get("/api/members/categories", async (_req, res) => {
-    const [skills, tech] = await Promise.all([
-        prisma.skill.findMany({ select: { name: true, _count: { select: { members: true } } }, orderBy: { name: 'asc' } }),
-        prisma.tech.findMany({  select: { name: true, _count: { select: { members: true } } }, orderBy: { name: 'asc' } }),
-    ]);
-    res.json({
-        skills: skills.map(s => ({ name: s.name, count: s._count.members })),
-        tech:   tech.map(t => ({ name: t.name,  count: t._count.members })),
-    });
-});
-
-// ---- Graph (NEW) ----
-app.get("/api/members/graph", async (_req, res) => {
-    const members = await prisma.member.findMany({ select: { id:true, slug:true, name:true, skills:{ include:{ skill:true } } } });
-    const projects = await prisma.project.findMany({ select: { id:true, slug:true, title:true, members:{ select:{ memberId:true } } } });
-    res.json({
-        nodes: [
-            ...members.map(m => ({ id:`m:${m.id}`, type:"member", slug:m.slug, name:m.name, skills:m.skills.map(s=>s.skill.name) })),
-            ...projects.map(p => ({ id:`p:${p.id}`, type:"project", slug:p.slug, title:p.title })),
-        ],
-        links: projects.flatMap(p => p.members.map(r => ({ source:`m:${r.memberId}`, target:`p:${p.id}` }))),
-    });
-});
-
-// ---- Search (kept) ----
-app.get("/api/search", async (req, res) => {
-    const q = String(req.query.q || "");
-    if (!q) return res.json({ items: [] });
-    const [ms, ps, es] = await Promise.all([
-        prisma.member.findMany({ where: { name: { contains: q, mode: 'insensitive' } }, select: { slug:true, name:true } }),
-        prisma.project.findMany({ where: { title:{ contains: q, mode: 'insensitive' } }, select: { slug:true, title:true } }),
-        prisma.event.findMany({   where: { name: { contains: q, mode: 'insensitive' } }, select: { slug:true, name:true } }),
-    ]);
-    res.json({
-        items: [
-            ...ms.map(m => ({ type:"member", slug:m.slug, title:m.name })),
-            ...ps.map(p => ({ type:"project", slug:p.slug, title:p.title })),
-            ...es.map(e => ({ type:"event",  slug:e.slug, title:e.name })),
-        ],
-    });
-});
-
-app.post("/api/contact", (req, res) => {
-    const { type, name, email, message } = req.body || {};
-    if (!type || !name || !email || !message) return res.status(400).json({ error: "Missing fields" });
-    res.status(201).json({ id: Math.random().toString(36).slice(2), received: true });
-});
-
-const PORT = Number(process.env.PORT || 3001);
-app.listen(PORT, () => console.log(`API on :${PORT}`));
-
-
-// --- Projects (list) ---
+/* ------------------------------ Projects ------------------------------ */
+// list
 app.get("/api/projects", async (req, res) => {
     const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
     const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
 
     const q = (req.query.q || "").toString().trim();
     const techCsv = (req.query.tech || "").toString();
-    const tagCsv  = (req.query.tag  || "").toString();
-    const techs = techCsv.split(",").map(s=>s.trim()).filter(Boolean);
-    const tags  = tagCsv .split(",").map(s=>s.trim()).filter(Boolean);
+    const tagCsv = (req.query.tag || "").toString();
+    const techs = techCsv.split(",").map((s) => s.trim()).filter(Boolean);
+    const tags = tagCsv.split(",").map((s) => s.trim()).filter(Boolean);
 
     const AND = [];
     if (q) {
@@ -169,7 +161,7 @@ app.get("/api/projects", async (req, res) => {
         });
     }
     for (const t of techs) AND.push({ techs: { some: { tech: { name: t } } } });
-    for (const t of tags)  AND.push({ tags:  { some: { tag:  { name: t } } } });
+    for (const t of tags) AND.push({ tags: { some: { tag: { name: t } } } });
 
     const where = AND.length ? { AND } : undefined;
 
@@ -180,7 +172,7 @@ app.get("/api/projects", async (req, res) => {
             include: {
                 techs: { include: { tech: true } },
                 tags: { include: { tag: true } },
-                members: { include: { member: { select: { id:true, slug:true, name:true, avatarUrl:true } } } },
+                members: { include: { member: { select: { id: true, slug: true, name: true, avatarUrl: true } } } },
             },
             orderBy: [{ year: "desc" }, { title: "asc" }],
             skip: (page - 1) * size,
@@ -189,34 +181,37 @@ app.get("/api/projects", async (req, res) => {
     ]);
 
     res.json({
-        items: rows.map(p => ({
+        items: rows.map((p) => ({
             id: p.id,
             slug: p.slug,
             title: p.title,
             summary: p.summary || null,
             cover: p.cover || p.imageUrl || null,
+            imageUrl: p.imageUrl || p.cover || null,
             year: p.year || null,
-            techStack: p.techs.map(x => x.tech.name),
-            tags: p.tags.map(x => x.tag.name),
-            members: p.members.map(r => ({
+            techStack: p.techs.map((x) => x.tech.name),
+            tags: p.tags.map((x) => x.tag.name),
+            members: p.members.map((r) => ({
                 memberId: r.member.id,
                 memberSlug: r.member.slug,
                 memberName: r.member.name,
                 avatarUrl: r.member.avatarUrl || null,
             })),
         })),
-        page, size, total,
+        page,
+        size,
+        total,
     });
 });
 
-// --- Project detail ---
+// detail
 app.get("/api/projects/:slug", async (req, res) => {
     const p = await prisma.project.findUnique({
         where: { slug: req.params.slug },
         include: {
             techs: { include: { tech: true } },
-            tags:  { include: { tag:  true } },
-            members: { include: { member: { select: { slug:true, name:true, avatarUrl:true, id:true } } } },
+            tags: { include: { tag: true } },
+            members: { include: { member: { select: { slug: true, name: true, avatarUrl: true, id: true } } } },
             event: true,
         },
     });
@@ -235,9 +230,9 @@ app.get("/api/projects/:slug", async (req, res) => {
         images: Array.isArray(p.images) ? p.images : [],
         year: p.year || null,
         event: p.event ? { slug: p.event.slug, name: p.event.name, dateStart: p.event.dateStart } : null,
-        techStack: p.techs.map(x => x.tech.name),
-        tags: p.tags.map(x => x.tag.name),
-        members: p.members.map(r => ({
+        techStack: p.techs.map((x) => x.tech.name),
+        tags: p.tags.map((x) => x.tag.name),
+        members: p.members.map((r) => ({
             slug: r.member.slug,
             name: r.member.name,
             avatarUrl: r.member.avatarUrl || null,
@@ -245,22 +240,22 @@ app.get("/api/projects/:slug", async (req, res) => {
     });
 });
 
-// --- Project categories (tech + tags) ---
+// categories
 app.get("/api/projects/categories", async (_req, res) => {
     const [tech, tags] = await Promise.all([
         prisma.tech.findMany({ select: { name: true, _count: { select: { projects: true } } }, orderBy: { name: "asc" } }),
-        prisma.tag.findMany({  select: { name: true, _count: { select: { projects: true } } }, orderBy: { name: "asc" } }),
+        prisma.tag.findMany({ select: { name: true, _count: { select: { projects: true } } }, orderBy: { name: "asc" } }),
     ]);
     res.json({
-        tech: tech.map(t => ({ name: t.name, count: t._count.projects })),
-        tags: tags.map(t => ({ name: t.name, count: t._count.projects })),
+        tech: tech.map((t) => ({ name: t.name, count: t._count.projects })),
+        tags: tags.map((t) => ({ name: t.name, count: t._count.projects })),
     });
 });
 
-// --- Project graph (projects <-> members) ---
+// graph
 app.get("/api/projects/graph", async (_req, res) => {
     const projects = await prisma.project.findMany({
-        select: { id:true, slug:true, title:true, members: { select: { member: { select: { id:true, slug:true, name:true } } } } },
+        select: { id: true, slug: true, title: true, members: { select: { member: { select: { id: true, slug: true, name: true } } } } },
     });
     const memberMap = new Map();
     for (const p of projects) for (const r of p.members) memberMap.set(r.member.id, r.member);
@@ -268,9 +263,183 @@ app.get("/api/projects/graph", async (_req, res) => {
 
     res.json({
         nodes: [
-            ...projects.map(p => ({ id:`p:${p.id}`, type:"project", slug:p.slug, title:p.title })),
-            ...members.map(m => ({ id:`m:${m.id}`, type:"member", slug:m.slug, name:m.name })),
+            ...projects.map((p) => ({ id: `p:${p.id}`, type: "project", slug: p.slug, title: p.title })),
+            ...members.map((m) => ({ id: `m:${m.id}`, type: "member", slug: m.slug, name: m.name })),
         ],
-        links: projects.flatMap(p => p.members.map(r => ({ source:`p:${p.id}`, target:`m:${r.member.id}` }))),
+        links: projects.flatMap((p) => p.members.map((r) => ({ source: `p:${p.id}`, target: `m:${r.member.id}` }))),
     });
 });
+
+/* ------------------------------ Members categories/graph ------------------------------ */
+app.get("/api/members/categories", async (_req, res) => {
+    const [skills, tech] = await Promise.all([
+        prisma.skill.findMany({ select: { name: true, _count: { select: { members: true } } }, orderBy: { name: "asc" } }),
+        prisma.tech.findMany({ select: { name: true, _count: { select: { members: true } } }, orderBy: { name: "asc" } }),
+    ]);
+    res.json({
+        skills: skills.map((s) => ({ name: s.name, count: s._count.members })),
+        tech: tech.map((t) => ({ name: t.name, count: t._count.members })),
+    });
+});
+
+app.get("/api/members/graph", async (_req, res) => {
+    const members = await prisma.member.findMany({
+        select: { id: true, slug: true, name: true, skills: { include: { skill: true } } },
+    });
+    const projects = await prisma.project.findMany({
+        select: { id: true, slug: true, title: true, members: { select: { memberId: true } } },
+    });
+    res.json({
+        nodes: [
+            ...members.map((m) => ({ id: `m:${m.id}`, type: "member", slug: m.slug, name: m.name, skills: m.skills.map((s) => s.skill.name) })),
+            ...projects.map((p) => ({ id: `p:${p.id}`, type: "project", slug: p.slug, title: p.title })),
+        ],
+        links: projects.flatMap((p) => p.members.map((r) => ({ source: `m:${r.memberId}`, target: `p:${p.id}` }))),
+    });
+});
+
+/* ------------------------------ Events (NEW) ------------------------------ */
+// ---- Events (list) ----
+app.get("/api/events", async (req, res) => {
+    const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
+    const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
+    const q = (req.query.q || "").toString().trim();
+    const yearStr = (req.query.year || "").toString().trim();
+    const year = Number(yearStr) || null;
+
+    const AND = [];
+    if (q) {
+        AND.push({
+            OR: [
+                { name: { contains: q, mode: "insensitive" } },
+                { locationName: { contains: q, mode: "insensitive" } },
+                { description: { contains: q, mode: "insensitive" } },
+            ],
+        });
+    }
+    if (year) {
+        const start = new Date(Date.UTC(year, 0, 1));
+        const end = new Date(Date.UTC(year + 1, 0, 1));
+        AND.push({ dateStart: { gte: start, lt: end } });
+    }
+
+    const where = AND.length ? { AND } : undefined;
+
+    const [total, rows] = await Promise.all([
+        prisma.event.count({ where }),
+        prisma.event.findMany({
+            where,
+            orderBy: [{ dateStart: "desc" }, { name: "asc" }],
+            skip: (page - 1) * size,
+            take: size,
+        }),
+    ]);
+
+    res.json({
+        items: rows.map((e) => ({
+            id: e.id,
+            slug: e.slug,
+            name: e.name,
+            dateStart: e.dateStart ? e.dateStart.toISOString() : null,
+            dateEnd: e.dateEnd ? e.dateEnd.toISOString() : null,
+            locationName: e.locationName || null,
+            lat: e.lat ?? null,
+            lng: e.lng ?? null,
+            description: e.description || null,
+            photos: Array.isArray(e.photos) ? e.photos : [],
+            tags: [], // tags not modeled in schema yet
+        })),
+        page,
+        size,
+        total,
+    });
+});
+
+// ---- Event detail (with attendees + projects) ----
+app.get("/api/events/:slug", async (req, res) => {
+    const e = await prisma.event.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+            attendees: { include: { member: true } },
+            projects: {
+                include: {
+                    techs: { include: { tech: true } },
+                    tags: { include: { tag: true } },
+                    members: { include: { member: { select: { id: true, slug: true, name: true, avatarUrl: true, headline: true } } } },
+                },
+            },
+        },
+    });
+    if (!e) return res.status(404).json({ error: "Not found" });
+
+    res.json({
+        id: e.id,
+        slug: e.slug,
+        name: e.name,
+        dateStart: e.dateStart ? e.dateStart.toISOString() : null,
+        dateEnd: e.dateEnd ? e.dateEnd.toISOString() : null,
+        locationName: e.locationName || null,
+        lat: e.lat ?? null,
+        lng: e.lng ?? null,
+        description: e.description || null,
+        photos: Array.isArray(e.photos) ? e.photos : [],
+        tags: [],
+
+        attendees: e.attendees.map((r) => ({
+            slug: r.member.slug,
+            name: r.member.name,
+            avatarUrl: r.member.avatarUrl || null,
+            headline: r.member.headline || null,
+            role: r.role || null,
+        })),
+
+        projects: e.projects.map((p) => ({
+            id: p.id,
+            slug: p.slug,
+            title: p.title,
+            summary: p.summary || null,
+            description: p.description || null,
+            year: p.year || null,
+            imageUrl: p.imageUrl || p.cover || null,
+            cover: p.cover || p.imageUrl || null,
+            demoUrl: p.demoUrl || null,
+            repoUrl: p.repoUrl || null,
+            techStack: p.techs.map((x) => x.tech.name),
+            tags: p.tags.map((x) => x.tag.name),
+            members: p.members.map((m) => ({
+                memberId: m.member.id,
+                memberSlug: m.member.slug,
+                role: m.role || null,
+            })),
+            events: [{ slug: e.slug, name: e.name }],
+            gallery: Array.isArray(p.images) ? p.images : [],
+        })),
+    });
+});
+
+/* ------------------------------ Search & misc ------------------------------ */
+app.get("/api/search", async (req, res) => {
+    const q = String(req.query.q || "");
+    if (!q) return res.json({ items: [] });
+    const [ms, ps, es] = await Promise.all([
+        prisma.member.findMany({ where: { name: { contains: q, mode: "insensitive" } }, select: { slug: true, name: true } }),
+        prisma.project.findMany({ where: { title: { contains: q, mode: "insensitive" } }, select: { slug: true, title: true } }),
+        prisma.event.findMany({ where: { name: { contains: q, mode: "insensitive" } }, select: { slug: true, name: true } }),
+    ]);
+    res.json({
+        items: [
+            ...ms.map((m) => ({ type: "member", slug: m.slug, title: m.name })),
+            ...ps.map((p) => ({ type: "project", slug: p.slug, title: p.title })),
+            ...es.map((e) => ({ type: "event", slug: e.slug, title: e.name })),
+        ],
+    });
+});
+
+app.post("/api/contact", (req, res) => {
+    const { type, name, email, message } = req.body || {};
+    if (!type || !name || !email || !message) return res.status(400).json({ error: "Missing fields" });
+    res.status(201).json({ id: Math.random().toString(36).slice(2), received: true });
+});
+
+const PORT = Number(process.env.PORT || 3001);
+app.listen(PORT, () => console.log(`API on :${PORT}`));

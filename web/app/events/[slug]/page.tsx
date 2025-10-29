@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -34,6 +35,9 @@ type Event = {
     description?: string;
     photos?: string[];
     tags?: string[];
+    // NEW from API (detail)
+    attendees?: Member[];
+    projects?: Array<ReturnType<typeof normalizeProject>>;
 };
 
 type Member = {
@@ -42,6 +46,7 @@ type Member = {
     avatarUrl?: string;
     avatar?: string;
     headline?: string;
+    role?: string | null;
 };
 
 type Project = {
@@ -74,8 +79,8 @@ function normalizeProject(p: any): Project {
         techStack: p.techStack ?? p.tech ?? [],
         members:
             (p.members ?? []).map((m: any) => ({
-                memberId: m.memberId ?? m.id,
-                memberSlug: m.memberSlug ?? m.slug,
+                memberId: m.memberId ?? m.id ?? m.slug,
+                memberSlug: m.memberSlug ?? m.slug ?? m.id,
                 role: m.role,
             })) ?? [],
         imageUrl: p.imageUrl ?? p.cover,
@@ -124,6 +129,7 @@ function mergeProjects(api: Project[], seeds: SeedProject[]): Project[] {
 
 /* --------------------------------- Fetchers -------------------------------- */
 
+// List (for fallback and map)
 async function fetchApiEvents(): Promise<Event[]> {
     try {
         const res = await fetch(new URL("/api/events?size=999", API_BASE).toString(), { cache: "no-store" });
@@ -133,6 +139,18 @@ async function fetchApiEvents(): Promise<Event[]> {
         return items as Event[];
     } catch {
         return [];
+    }
+}
+
+// Detail (primary source)
+async function fetchApiEventDetail(slug: string): Promise<Event | null> {
+    try {
+        const res = await fetch(new URL(`/api/events/${slug}`, API_BASE).toString(), { cache: "no-store" });
+        if (res.status === 404) return null;
+        if (!res.ok) return null;
+        return (await res.json()) as Event;
+    } catch {
+        return null;
     }
 }
 
@@ -167,6 +185,11 @@ async function fetchApiProjects(): Promise<Project[]> {
 }
 
 async function getEvent(slug: string): Promise<Event | null> {
+    // Prefer the event detail API (with attendees + projects)
+    const detail = await fetchApiEventDetail(slug);
+    if (detail) return detail;
+
+    // Fallback: compose from list + seeds (keeps old links stable)
     const fromApi = await fetchApiEvents();
     const pool = [...fromApi, ...SEED_EVENTS];
     const map = new Map(pool.map((e) => [e.slug, e]));
@@ -191,29 +214,47 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
         );
     }
 
-    // Attendees = members that list this event slug
-    const membersFromApi = await fetchApiMembers();
-    const membersFromSeeds: Member[] = SEED_MEMBERS.map((m: SeedMember) => ({
-        slug: m.slug,
-        name: m.name,
-        avatarUrl: m.avatarUrl ?? m.avatar,
-        avatar: m.avatar,
-        headline: (m as any).headline ?? m.shortBio,
-    }));
-    const membersAll = dedupeBy(
-        [...membersFromApi, ...membersFromSeeds],
-        (m) => m.slug,
-    );
-    const attendees = membersAll.filter((m) =>
-        (SEED_MEMBERS.find((s) => s.slug === m.slug)?.events || []).some((x) => x.slug === ev.slug),
-    );
+    // Build attendees (prefer API; fallback to seeds inference)
+    let attendees: Member[] = ev.attendees || [];
+    if (!attendees.length) {
+        const membersFromApi = await fetchApiMembers();
+        const membersFromSeeds: Member[] = SEED_MEMBERS.map((m: SeedMember) => ({
+            slug: m.slug,
+            name: m.name,
+            avatarUrl: m.avatarUrl ?? m.avatar,
+            avatar: m.avatar,
+            headline: (m as any).headline ?? m.shortBio,
+        }));
+        const membersAll = dedupeBy(
+            [...membersFromApi, ...membersFromSeeds],
+            (m) => m.slug,
+        );
+        attendees = membersAll.filter((m) =>
+            (SEED_MEMBERS.find((s) => s.slug === m.slug)?.events || []).some((x) => x.slug === ev.slug),
+        );
+    }
 
-    const memMap = new Map(membersAll.map((m) => [m.slug, m]));
+    // Projects at this event (prefer API; fallback to global merge)
+    let projectsForEvent: Project[] = [];
+    if (Array.isArray(ev.projects) && ev.projects.length) {
+        projectsForEvent = ev.projects.map(normalizeProject);
+    } else {
+        const apiProjects = await fetchApiProjects();
+        const allProjects = mergeProjects(apiProjects, SEED_PROJECTS);
+        projectsForEvent = allProjects.filter((p) => (p.events || []).some((e) => e.slug === ev.slug));
+    }
 
-    // Projects at this event (merged API + seeds)
-    const apiProjects = await fetchApiProjects();
-    const allProjects = mergeProjects(apiProjects, SEED_PROJECTS);
-    const projectsForEvent = allProjects.filter((p) => (p.events || []).some((e) => e.slug === ev.slug));
+    // Member lookup for tiny team row (use attendees + any member refs found on projects)
+    const memMap = new Map<string, Member>();
+    attendees.forEach((m) => m.slug && memMap.set(m.slug, m));
+    projectsForEvent.forEach((p) =>
+        (p.members || []).forEach((r) => {
+            const s = r.memberSlug || r.memberId;
+            if (s && !memMap.has(String(s))) {
+                memMap.set(String(s), { slug: String(s), name: String(s) });
+            }
+        })
+    );
 
     const photos = ev.photos || [];
     const cover = photos[0];

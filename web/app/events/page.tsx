@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
 import { API_BASE } from "../../lib/config";
@@ -63,6 +64,61 @@ function parseYear(s?: string) {
     return Number.isFinite(y) ? y : undefined;
 }
 
+// --- merge helpers (fix for missing lat/lng coming from API) ---
+const uniq = <T,>(arr: T[]) => Array.from(new Set(arr));
+
+function normalizeEvent(e: any): Event {
+    return {
+        id: String(e.id ?? e.slug),
+        slug: String(e.slug ?? e.id),
+        name: String(e.name ?? e.slug ?? e.id ?? ""),
+        dateStart: e.dateStart ?? undefined,
+        dateEnd: e.dateEnd ?? undefined,
+        locationName: e.locationName ?? undefined,
+        lat: typeof e.lat === "number" ? e.lat : (typeof e.lat === "string" ? Number(e.lat) : undefined),
+        lng: typeof e.lng === "number" ? e.lng : (typeof e.lng === "string" ? Number(e.lng) : undefined),
+        description: e.description ?? undefined,
+        photos: Array.isArray(e.photos) ? e.photos : undefined,
+        tags: Array.isArray(e.tags) ? e.tags : undefined,
+    };
+}
+
+function mergeOneEvent(seed?: Event, api?: Event): Event | undefined {
+    if (!seed && !api) return undefined;
+    const a = api || ({} as Event);
+    const s = seed || ({} as Event);
+    return {
+        id: a.id ?? s.id!,
+        slug: a.slug ?? s.slug!,
+        name: a.name ?? s.name!,
+        dateStart: a.dateStart ?? s.dateStart,
+        dateEnd: a.dateEnd ?? s.dateEnd,
+        locationName: a.locationName ?? s.locationName,
+        // keep seed coords if API missing them
+        lat: typeof a.lat === "number" ? a.lat : s.lat,
+        lng: typeof a.lng === "number" ? a.lng : s.lng,
+        description: a.description ?? s.description,
+        photos: uniq([...(s.photos || []), ...(a.photos || [])]),
+        tags:   uniq([...(s.tags   || []), ...(a.tags   || [])]),
+    };
+}
+
+function mergeEvents(api: Event[], seeds: Event[]): Event[] {
+    const map = new Map<string, Event>();
+    // start with seeds so we always have coords/tags
+    for (const s of seeds.map(normalizeEvent)) {
+        if (!s.slug) continue;
+        map.set(s.slug, s);
+    }
+    // overlay API (without dropping existing coords when API lacks them)
+    for (const a of api.map(normalizeEvent)) {
+        if (!a.slug) continue;
+        const merged = mergeOneEvent(map.get(a.slug), a)!;
+        map.set(a.slug, merged);
+    }
+    return Array.from(map.values());
+}
+
 // --- data ---
 async function fetchAllEventsFromApi(): Promise<Event[]> {
     // Grab everything from the API, we'll filter locally so seed + api behave the same.
@@ -72,18 +128,6 @@ async function fetchAllEventsFromApi(): Promise<Event[]> {
     if (!res.ok) return [];
     const json = (await res.json()) as { items?: Event[] };
     return json.items || [];
-}
-
-function dedupeBySlug(list: Event[]): Event[] {
-    const seen = new Set<string>();
-    const out: Event[] = [];
-    for (const e of list) {
-        const key = e.slug;
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        out.push(e);
-    }
-    return out;
 }
 
 export default async function EventsPage({
@@ -96,8 +140,8 @@ export default async function EventsPage({
 
     const apiEvents = await fetchAllEventsFromApi();
 
-    // Merge API + seed to ensure rich coverage (Munich, Regensburg, Potsdam, Vienna, multiple years)
-    const allEvents = dedupeBySlug([...(apiEvents || []), ...SEED_EVENTS]);
+    // IMPORTANT: merge (don’t just dedupe) so seed coords survive when API lacks lat/lng
+    const allEvents = mergeEvents(apiEvents || [], SEED_EVENTS);
 
     // Build year chips from all events
     const years = Array.from(
