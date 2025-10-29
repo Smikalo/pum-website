@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Member {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  avatarUrl String?
+  avatar    String?
+  headline  String?
+  shortBio  String?
+  longBio   String?
+  bio       String?
+  location  String?
+  links     Json?
+  photos    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  skills    MemberSkill[]
+  techs     MemberTech[]
+  projects  MemberProject[]
+  events    MemberEvent[]
+}
+
+model Skill {
+  id      Int     @id @default(autoincrement())
+  name    String  @unique
+  members MemberSkill[]
+}
+
+model Tech {
+  id       Int     @id @default(autoincrement())
+  name     String  @unique
+  members  MemberTech[]
+  projects ProjectTech[]
+}
+
+model Tag {
+  id       Int     @id @default(autoincrement())
+  name     String  @unique
+  projects ProjectTag[]
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  summary     String?
+  description String?
+  year        Int?
+  status      String?
+  demoUrl     String?
+  imageUrl    String?
+  cover       String?
+  images      Json?
+  eventId     String?
+  event       Event?   @relation(fields: [eventId], references: [id])
+  members     MemberProject[]
+  techs       ProjectTech[]
+  tags        ProjectTag[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Event {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  name         String
+  dateStart    DateTime?
+  dateEnd      DateTime?
+  locationName String?
+  lat          Float?
+  lng          Float?
+  description  String?
+  photos       Json?
+  projects     Project[]
+  attendees    MemberEvent[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model MemberSkill {
+  memberId String
+  skillId  Int
+  member   Member @relation(fields: [memberId], references: [id])
+  skill    Skill  @relation(fields: [skillId], references: [id])
+  @@id([memberId, skillId])
+}
+
+model MemberTech {
+  memberId String
+  techId   Int
+  member   Member @relation(fields: [memberId], references: [id])
+  tech     Tech   @relation(fields: [techId], references: [id])
+  @@id([memberId, techId])
+}
+
+model MemberProject {
+  memberId     String
+  projectId    String
+  role         String?
+  contribution String?
+  member       Member  @relation(fields: [memberId], references: [id])
+  project      Project @relation(fields: [projectId], references: [id])
+  @@id([memberId, projectId])
+}
+
+model MemberEvent {
+  memberId String
+  eventId  String
+  role     String?
+  member   Member @relation(fields: [memberId], references: [id])
+  event    Event  @relation(fields: [eventId], references: [id])
+  @@id([memberId, eventId])
+}
+
+model ProjectTech {
+  projectId String
+  techId    Int
+  project   Project @relation(fields: [projectId], references: [id])
+  tech      Tech    @relation(fields: [techId], references: [id])
+  @@id([projectId, techId])
+}
+
+model ProjectTag {
+  projectId String
+  tagId     Int
+  project   Project @relation(fields: [projectId], references: [id])
+  tag       Tag     @relation(fields: [tagId], references: [id])
+  @@id([projectId, tagId])
+}

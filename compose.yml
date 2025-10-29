@@ -4,14 +4,57 @@ services:
     restart: unless-stopped
     environment:
       - PORT=3000
+      - API_BASE=http://api:3001
     networks: [pum]
-    expose: [ "3000" ]
+    expose: ["3000"]
+    depends_on:
+      api:
+        condition: service_healthy  # wait for API readiness
 
   api:
     image: ghcr.io/${GITHUB_OWNER}/${REPO_NAME}-api:latest
+    # if you build in CI, keep both image+build so compose tags the image accordingly
+    build:
+      context: ./api
+      dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+      - RATE_LIMIT_MAX=200
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
     networks: [pum]
-    expose: [ "3001" ]
+    expose: ["3001"]
+    # simple node-based healthcheck against /healthz (no curl/wget needed)
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e 'http=require(\"http\");http.get(\"http://localhost:3001/healthz\",r=>process.exit(r.statusCode===200?0:1)).on(\"error\",()=>process.exit(1))'",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy  # wait until Postgres passes its healthcheck
 
-networks:
-  pum: {}
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1 -p 5432 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [pum]
+
+networks: { pum: {} }
+volumes: { pg-data: {} }
