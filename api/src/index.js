@@ -22,26 +22,34 @@ const corsOptions = {
     allowedHeaders: ["Content-Type", "X-CSRF-Token", "Authorization"],
     optionsSuccessStatus: 204,
 };
-app.use(cors(corsOptions));                 // handles preflight globally
-// app.options("*", cors(corsOptions));     // not strictly needed with app.use(cors(...)) per docs
+app.use(cors(corsOptions));
 
 /* ---------------- Proxy + std middleware ---------------- */
-app.set("trust proxy", 1); // so cookie "secure" logic & IPs work behind reverse proxies
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "2mb" }));
-app.use(helmet());
+
+// Allow cross-origin embedding of static assets (avatars, CVs) and avoid COEP breaking embeds.
+// See helmet docs/threads re CORP/COEP.
 app.use(
-    rateLimit({
-        windowMs: 60_000,
-        max: Number(process.env.RATE_LIMIT_MAX || 100),
-        standardHeaders: true,
-        legacyHeaders: false,
+    helmet({
+        crossOriginResourcePolicy: { policy: "cross-origin" },
+        crossOriginEmbedderPolicy: false,
     })
 );
 
 /* ------------------------ Static uploads ------------------------ */
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
 fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
-app.use("/uploads", express.static(UPLOAD_ROOT, { maxAge: "1h", etag: true }));
+
+// Ensure the CORP header is permissive on the file responses themselves.
+app.use(
+    "/uploads",
+    (req, res, next) => {
+        res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+        next();
+    },
+    express.static(UPLOAD_ROOT, { maxAge: "1h", etag: true })
+);
 
 /* ------------------------------ Health ------------------------------ */
 app.get("/healthz", async (_req, res) => {
@@ -164,7 +172,6 @@ app.get("/api/members/:slug", async (req, res) => {
 });
 
 /* ------------------------------ Projects ------------------------------ */
-// list
 app.get("/api/projects", async (req, res) => {
     const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
     const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
@@ -229,7 +236,6 @@ app.get("/api/projects", async (req, res) => {
     });
 });
 
-// detail
 app.get("/api/projects/:slug", async (req, res) => {
     const p = await prisma.project.findUnique({
         where: { slug: req.params.slug },
@@ -265,36 +271,6 @@ app.get("/api/projects/:slug", async (req, res) => {
     });
 });
 
-// categories
-app.get("/api/projects/categories", async (_req, res) => {
-    const [tech, tags] = await Promise.all([
-        prisma.tech.findMany({ select: { name: true, _count: { select: { projects: true } } }, orderBy: { name: "asc" } }),
-        prisma.tag.findMany({ select: { name: true, _count: { select: { projects: true } } }, orderBy: { name: "asc" } }),
-    ]);
-    res.json({
-        tech: tech.map((t) => ({ name: t.name, count: t._count.projects })),
-        tags: tags.map((t) => ({ name: t.name, count: t._count.projects })),
-    });
-});
-
-// graph
-app.get("/api/projects/graph", async (_req, res) => {
-    const projects = await prisma.project.findMany({
-        select: { id: true, slug: true, title: true, members: { select: { member: { select: { id: true, slug: true, name: true } } } } },
-    });
-    const memberMap = new Map();
-    for (const p of projects) for (const r of p.members) memberMap.set(r.member.id, r.member);
-    const members = [...memberMap.values()];
-
-    res.json({
-        nodes: [
-            ...projects.map((p) => ({ id: `p:${p.id}`, type: "project", slug: p.slug, title: p.title })),
-            ...members.map((m) => ({ id: `m:${m.id}`, type: "member", slug: m.slug, name: m.name })),
-        ],
-        links: projects.flatMap((p) => p.members.map((r) => ({ source: `p:${p.id}`, target: `m:${r.member.id}` }))),
-    });
-});
-
 /* ---------------- Members categories/graph ---------------- */
 app.get("/api/members/categories", async (_req, res) => {
     const [skills, tech] = await Promise.all([
@@ -324,7 +300,6 @@ app.get("/api/members/graph", async (_req, res) => {
 });
 
 /* -------------------------------- Events -------------------------------- */
-// list
 app.get("/api/events", async (req, res) => {
     const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
     const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
@@ -383,7 +358,6 @@ app.get("/api/events", async (req, res) => {
     });
 });
 
-// detail
 app.get("/api/events/:slug", async (req, res) => {
     const e = await prisma.event.findUnique({
         where: { slug: req.params.slug },
@@ -433,32 +407,7 @@ app.get("/api/events/:slug", async (req, res) => {
     });
 });
 
-/* ------------------------------ Search & misc ------------------------------ */
-app.get("/api/search", async (req, res) => {
-    const q = String(req.query.q || "");
-    if (!q) return res.json({ items: [] });
-    const [ms, ps, es] = await Promise.all([
-        prisma.member.findMany({ where: { name: { contains: q, mode: "insensitive" } }, select: { slug: true, name: true } }),
-        prisma.project.findMany({ where: { title: { contains: q, mode: "insensitive" } }, select: { slug: true, title: true } }),
-        prisma.event.findMany({ where: { name: { contains: q, mode: "insensitive" } }, select: { slug: true, name: true } }),
-    ]);
-    res.json({
-        items: [
-            ...ms.map((m) => ({ type: "member", slug: m.slug, title: m.name })),
-            ...ps.map((p) => ({ type: "project", slug: p.slug, title: p.title })),
-            ...es.map((e) => ({ type: "event", slug: e.slug, title: e.name })),
-        ],
-    });
-});
-
-app.post("/api/contact", (req, res) => {
-    const { type, name, email, message } = req.body || {};
-    if (!type || !name || !email || !message) return res.status(400).json({ error: "Missing fields" });
-    res.status(201).json({ id: Math.random().toString(36).slice(2), received: true });
-});
-
 /* ------------------------------ Blogs ------------------------------ */
-// list
 app.get("/api/blogs", async (req, res) => {
     const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
     const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
@@ -526,7 +475,6 @@ app.get("/api/blogs", async (req, res) => {
     });
 });
 
-// detail
 app.get("/api/blogs/:slug", async (req, res) => {
     const b = await prisma.blog.findUnique({
         where: { slug: req.params.slug },
@@ -557,18 +505,6 @@ app.get("/api/blogs/:slug", async (req, res) => {
             headline: r.member.headline || null,
             role: r.role || null,
         })),
-    });
-});
-
-// categories
-app.get("/api/blogs/categories", async (_req, res) => {
-    const [tech, tags] = await Promise.all([
-        prisma.tech.findMany({ select: { name: true, _count: { select: { blogs: true } } }, orderBy: { name: "asc" } }),
-        prisma.tag.findMany({  select: { name: true, _count: { select: { blogs: true } } }, orderBy: { name: "asc" } }),
-    ]);
-    res.json({
-        tech: tech.map(t => ({ name: t.name, count: t._count.blogs })),
-        tags: tags.map(t => ({ name: t.name, count: t._count.blogs })),
     });
 });
 

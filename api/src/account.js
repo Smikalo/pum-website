@@ -14,9 +14,18 @@ const mime = require("mime-types");
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
 const AVATAR_DIR = path.join(UPLOAD_ROOT, "avatars");
+const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || null;
 
 // ensure upload dir exists
 fs.mkdirSync(AVATAR_DIR, { recursive: true });
+
+function toAbsoluteUrl(u, req) {
+    if (!u) return null;
+    if (/^https?:\/\//i.test(u)) return u;
+    const base = PUBLIC_API_BASE || `${req.protocol}://${req.get("host")}`;
+    const rel = u.startsWith("/") ? u : `/${u}`;
+    return `${base}${rel}`;
+}
 
 // ---- Auth middleware ----
 function authRequired(req, res, next) {
@@ -53,7 +62,6 @@ async function ensureMemberForUser(user) {
     if (user.memberId) {
         return prisma.member.findUnique({ where: { id: user.memberId } });
     }
-    // create a minimal member
     const base = slugify(user.email.split("@")[0] || "user", { lower: true, strict: true }) || "user";
     let slug = base;
     let attempt = 0;
@@ -65,9 +73,7 @@ async function ensureMemberForUser(user) {
         data: {
             slug,
             name: user.email.split("@")[0],
-            headline: null,
-            shortBio: null,
-            bio: "", // store markdown in bio for now
+            bio: "",
             links: {},
             avatarUrl: null,
         },
@@ -76,23 +82,22 @@ async function ensureMemberForUser(user) {
     return member;
 }
 
-function presentMember(m, skills = [], techs = []) {
+function presentMember(m, skills = [], techs = [], req) {
     return {
         id: m.id,
         slug: m.slug,
         name: m.name,
         headline: m.headline,
         shortBio: m.shortBio,
-        markdown: m.bio || "", // we keep markdown in bio field
+        markdown: m.bio || "",
         links: m.links || {},
-        avatarUrl: m.avatarUrl || null,
+        avatarUrl: toAbsoluteUrl(m.avatarUrl || null, req),
         skills,
         techStack: techs,
     };
 }
 
 async function upsertStringList(list, modelName) {
-    // returns ids in same order as names
     const out = [];
     for (const nameRaw of list) {
         const name = nameRaw.trim();
@@ -118,14 +123,8 @@ router.get("/profile", async (req, res) => {
     const member = user.member || (await ensureMemberForUser(user));
 
     const [skills, techs] = await Promise.all([
-        prisma.memberSkill.findMany({
-            where: { memberId: member.id },
-            include: { skill: true },
-        }),
-        prisma.memberTech.findMany({
-            where: { memberId: member.id },
-            include: { tech: true },
-        }),
+        prisma.memberSkill.findMany({ where: { memberId: member.id }, include: { skill: true } }),
+        prisma.memberTech.findMany({ where: { memberId: member.id }, include: { tech: true } }),
     ]);
 
     return res.json({
@@ -133,19 +132,20 @@ router.get("/profile", async (req, res) => {
         profile: presentMember(
             member,
             skills.map((s) => s.skill.name),
-            techs.map((t) => t.tech.name)
+            techs.map((t) => t.tech.name),
+            req
         ),
     });
 });
 
-// PUT /api/account/profile  (JSON: name, headline, shortBio, markdown, links, skills[], techStack[])
+// PUT /api/account/profile
 router.put("/profile", async (req, res) => {
     const schema = z.object({
         name: z.string().min(1).max(120).optional(),
         headline: z.string().max(200).nullable().optional(),
         shortBio: z.string().max(500).nullable().optional(),
         markdown: z.string().max(100_000).optional(),
-        links: z.record(z.string().url()).optional(), // { label: url }
+        links: z.record(z.string().url()).optional(),
         skills: z.array(z.string().min(1)).optional(),
         techStack: z.array(z.string().min(1)).optional(),
     });
@@ -156,16 +156,14 @@ router.put("/profile", async (req, res) => {
     if (!user) return res.status(401).json({ ok: false, error: "Unknown user" });
     const member = user.member || (await ensureMemberForUser(user));
 
-    // Update core fields
     const data = {};
     const { name, headline, shortBio, markdown, links } = parsed.data;
     if (typeof name !== "undefined") data.name = name;
     if (typeof headline !== "undefined") data.headline = headline;
     if (typeof shortBio !== "undefined") data.shortBio = shortBio;
-    if (typeof markdown !== "undefined") data.bio = markdown; // store markdown
+    if (typeof markdown !== "undefined") data.bio = markdown;
     if (typeof links !== "undefined") data.links = links;
 
-    // Skills & tech mapping
     const skills = parsed.data.skills || null;
     const techStack = parsed.data.techStack || null;
 
@@ -173,12 +171,10 @@ router.put("/profile", async (req, res) => {
         if (Object.keys(data).length) {
             await tx.member.update({ where: { id: member.id }, data });
         }
-
         if (skills) {
-            const skillIds = await upsertStringList(skills, "skill");
-            await tx.memberSkill.deleteMany({ where: { memberId: member.id, NOT: { skillId: { in: skillIds } } } });
-            // upsert links
-            for (const sid of skillIds) {
+            const ids = await upsertStringList(skills, "skill");
+            await tx.memberSkill.deleteMany({ where: { memberId: member.id, NOT: { skillId: { in: ids } } } });
+            for (const sid of ids) {
                 await tx.memberSkill.upsert({
                     where: { memberId_skillId: { memberId: member.id, skillId: sid } },
                     update: {},
@@ -186,11 +182,10 @@ router.put("/profile", async (req, res) => {
                 });
             }
         }
-
         if (techStack) {
-            const techIds = await upsertStringList(techStack, "tech");
-            await tx.memberTech.deleteMany({ where: { memberId: member.id, NOT: { techId: { in: techIds } } } });
-            for (const tid of techIds) {
+            const ids = await upsertStringList(techStack, "tech");
+            await tx.memberTech.deleteMany({ where: { memberId: member.id, NOT: { techId: { in: ids } } } });
+            for (const tid of ids) {
                 await tx.memberTech.upsert({
                     where: { memberId_techId: { memberId: member.id, techId: tid } },
                     update: {},
@@ -211,7 +206,8 @@ router.put("/profile", async (req, res) => {
         profile: presentMember(
             updated,
             skillsOut.map((s) => s.skill.name),
-            techsOut.map((t) => t.tech.name)
+            techsOut.map((t) => t.tech.name),
+            req
         ),
     });
 });
@@ -221,12 +217,13 @@ router.post("/avatar", upload.single("avatar"), async (req, res) => {
     if (!req.file) return res.status(400).json({ ok: false, error: "Missing file" });
 
     const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
-    if (!user) return res.status(401).json({ ok: false, error: "Unknown user" });
+    if (!user || !user.memberId) return res.status(401).json({ ok: false, error: "Unknown user" });
 
     const rel = `/uploads/avatars/${req.file.filename}`;
     await prisma.member.update({ where: { id: user.memberId }, data: { avatarUrl: rel } });
 
-    return res.status(201).json({ ok: true, url: rel });
+    // Return absolute URL so the browser can display it immediately
+    return res.status(201).json({ ok: true, url: toAbsoluteUrl(rel, req) });
 });
 
 module.exports = { accountRouter: router };
