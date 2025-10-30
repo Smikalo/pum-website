@@ -1,15 +1,31 @@
-// api/src/index.js
 const express = require("express");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const cors = require("cors");
 const z = require("zod");
 const { prisma } = require("./db");
+const { authRouter } = require("./auth");
 
 const app = express();
+
+// ---------- CORS (must be early) ----------
+const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:3000";
+const corsOptions = {
+    origin: WEB_ORIGIN,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "X-CSRF-Token", "Authorization"],
+    optionsSuccessStatus: 204,
+};
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // respond to preflight
+
+// If you’re behind a proxy (Docker/NGINX), this helps cookie “secure” logic
+app.set("trust proxy", 1);
+
+// ---------- Standard middleware ----------
 app.use(express.json({ limit: "1mb" }));
 app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
 app.use(
     rateLimit({
         windowMs: 60_000,
@@ -549,3 +565,6 @@ app.get("/api/blogs/categories", async (_req, res) => {
         tags: tags.map(t => ({ name: t.name, count: t._count.blogs })),
     });
 });
+
+// --- Auth routes ---
+app.use("/api/auth", authRouter);

@@ -8,8 +8,8 @@ datasource db {
 }
 
 model Member {
-  id        String   @id @default(cuid())
-  slug      String   @unique
+  id        String          @id @default(cuid())
+  slug      String          @unique
   name      String
   avatarUrl String?
   avatar    String?
@@ -20,39 +20,40 @@ model Member {
   location  String?
   links     Json?
   photos    Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
   skills    MemberSkill[]
   techs     MemberTech[]
   projects  MemberProject[]
   events    MemberEvent[]
   blogs     BlogAuthor[]
+  user      User?           @relation("UserMember")
 }
 
 model Skill {
-  id      Int     @id @default(autoincrement())
-  name    String  @unique
+  id      Int           @id @default(autoincrement())
+  name    String        @unique
   members MemberSkill[]
 }
 
 model Tech {
-  id       Int     @id @default(autoincrement())
-  name     String  @unique
+  id       Int           @id @default(autoincrement())
+  name     String        @unique
   members  MemberTech[]
   projects ProjectTech[]
   blogs    BlogTech[]
 }
 
 model Tag {
-  id       Int     @id @default(autoincrement())
-  name     String  @unique
+  id       Int          @id @default(autoincrement())
+  name     String       @unique
   projects ProjectTag[]
   blogs    BlogTag[]
 }
 
 model Project {
-  id          String   @id @default(cuid())
-  slug        String   @unique
+  id          String          @id @default(cuid())
+  slug        String          @unique
   title       String
   summary     String?
   description String?
@@ -63,17 +64,17 @@ model Project {
   cover       String?
   images      Json?
   eventId     String?
-  event       Event?   @relation(fields: [eventId], references: [id])
+  event       Event?          @relation(fields: [eventId], references: [id])
   members     MemberProject[]
   techs       ProjectTech[]
   tags        ProjectTag[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 }
 
 model Event {
-  id           String   @id @default(cuid())
-  slug         String   @unique
+  id           String        @id @default(cuid())
+  slug         String        @unique
   name         String
   dateStart    DateTime?
   dateEnd      DateTime?
@@ -84,8 +85,8 @@ model Event {
   photos       Json?
   projects     Project[]
   attendees    MemberEvent[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
 model MemberSkill {
@@ -93,6 +94,7 @@ model MemberSkill {
   skillId  Int
   member   Member @relation(fields: [memberId], references: [id])
   skill    Skill  @relation(fields: [skillId], references: [id])
+
   @@id([memberId, skillId])
 }
 
@@ -101,6 +103,7 @@ model MemberTech {
   techId   Int
   member   Member @relation(fields: [memberId], references: [id])
   tech     Tech   @relation(fields: [techId], references: [id])
+
   @@id([memberId, techId])
 }
 
@@ -111,6 +114,7 @@ model MemberProject {
   contribution String?
   member       Member  @relation(fields: [memberId], references: [id])
   project      Project @relation(fields: [projectId], references: [id])
+
   @@id([memberId, projectId])
 }
 
@@ -118,8 +122,9 @@ model MemberEvent {
   memberId String
   eventId  String
   role     String?
-  member   Member @relation(fields: [memberId], references: [id])
-  event    Event  @relation(fields: [eventId], references: [id])
+  member   Member  @relation(fields: [memberId], references: [id])
+  event    Event   @relation(fields: [eventId], references: [id])
+
   @@id([memberId, eventId])
 }
 
@@ -128,6 +133,7 @@ model ProjectTech {
   techId    Int
   project   Project @relation(fields: [projectId], references: [id])
   tech      Tech    @relation(fields: [techId], references: [id])
+
   @@id([projectId, techId])
 }
 
@@ -136,49 +142,91 @@ model ProjectTag {
   tagId     Int
   project   Project @relation(fields: [projectId], references: [id])
   tag       Tag     @relation(fields: [tagId], references: [id])
+
   @@id([projectId, tagId])
 }
 
 model Blog {
-  id          String   @id @default(cuid())
-  slug        String   @unique
+  id          String    @id @default(cuid())
+  slug        String    @unique
   title       String
   summary     String?
-  content     String?     // markdown or HTML
+  content     String? // markdown or HTML
   publishedAt DateTime?
   imageUrl    String?
   cover       String?
   images      Json?
 
-  authors     BlogAuthor[]
-  techs       BlogTech[]
-  tags        BlogTag[]
+  authors BlogAuthor[]
+  techs   BlogTech[]
+  tags    BlogTag[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model BlogAuthor {
   blogId   String
   memberId String
   role     String?
-  blog     Blog   @relation(fields: [blogId], references: [id])
-  member   Member @relation(fields: [memberId], references: [id])
+  blog     Blog    @relation(fields: [blogId], references: [id])
+  member   Member  @relation(fields: [memberId], references: [id])
+
   @@id([blogId, memberId])
 }
 
 model BlogTech {
   blogId String
   techId Int
-  blog   Blog @relation(fields: [blogId], references: [id])
-  tech   Tech @relation(fields: [techId], references: [id])
+  blog   Blog   @relation(fields: [blogId], references: [id])
+  tech   Tech   @relation(fields: [techId], references: [id])
+
   @@id([blogId, techId])
 }
 
 model BlogTag {
   blogId String
   tagId  Int
-  blog   Blog @relation(fields: [blogId], references: [id])
-  tag    Tag  @relation(fields: [tagId], references: [id])
+  blog   Blog   @relation(fields: [blogId], references: [id])
+  tag    Tag    @relation(fields: [tagId], references: [id])
+
   @@id([blogId, tagId])
+}
+
+enum Role {
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  passwordHash    String
+  emailVerifiedAt DateTime?
+  memberId        String?    @unique
+  member          Member?    @relation("UserMember", fields: [memberId], references: [id])
+  roles           UserRole[]
+  sessions        Session[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+model UserRole {
+  userId String
+  role   Role
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@id([userId, role])
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  refreshTokenHash String
+  userAgent        String?
+  ip               String?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
 }

@@ -4,8 +4,9 @@ import * as NavigationMenu from "@radix-ui/react-navigation-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import React from "react";
+import { useAuth } from "@/context/AuthProvider";
 
 type NavItem = { href: string; label: string };
 
@@ -20,6 +21,9 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function NavBar() {
     const pathname = usePathname();
+    const router = useRouter();
+    const { user, login, logout } = useAuth();
+
     const [drawerOpen, setDrawerOpen] = React.useState(false);
     const [drawerView, setDrawerView] = React.useState<"menu" | "settings" | "login">("menu");
     const firstLinkRef = React.useRef<HTMLAnchorElement | null>(null);
@@ -70,13 +74,22 @@ export default function NavBar() {
 
     const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
 
-    // --- Desktop gear animation (spin cw on open, ccw on close) ---
+    // --- Desktop gear animation (spin cw on open, ccw on close) for LOGGED-OUT only ---
     const [settingsOpen, setSettingsOpen] = React.useState(false);
     const [gearAnim, setGearAnim] = React.useState<"idle" | "open" | "close">("idle");
     const handleSettingsOpenChange = (o: boolean) => {
         setSettingsOpen(o);
         setGearAnim(o ? "open" : "close");
     };
+
+    // login helpers
+    async function handleLogin(email: string, pw: string) {
+        await login(email, pw);
+        setLoginOpen(false);
+        setDrawerOpen(false);
+        setDrawerView("menu");
+        router.push("/account");
+    }
 
     return (
         <header className="sticky top-0 z-50 bg-black/60 backdrop-blur border-b border-white/10">
@@ -111,76 +124,125 @@ export default function NavBar() {
                         </NavigationMenu.List>
                     </NavigationMenu.Root>
 
-                    {/* SETTINGS: round gear button -> DropdownMenu (list only) */}
-                    <DropdownMenu.Root open={settingsOpen} onOpenChange={handleSettingsOpenChange}>
-                        <DropdownMenu.Trigger asChild>
-                            <button
-                                type="button"
-                                aria-label="Open settings"
-                                className={[
-                                    "w-9 h-9 rounded-full grid place-items-center ring-1 ring-white/10 text-white/90",
-                                    "hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
-                                ].join(" ")}
-                            >
-                                {/* Wrap to catch animation end and reset */}
-                                <span
-                                    onAnimationEnd={() => setGearAnim("idle")}
+                    {/* Right side: gear (logged out) OR avatar (logged in) */}
+                    {!user ? (
+                        <DropdownMenu.Root open={settingsOpen} onOpenChange={handleSettingsOpenChange}>
+                            <DropdownMenu.Trigger asChild>
+                                <button
+                                    type="button"
+                                    aria-label="Open settings"
                                     className={[
-                                        gearAnim === "open" ? "gear-anim-open" : "",
-                                        gearAnim === "close" ? "gear-anim-close" : "",
+                                        "w-9 h-9 rounded-full grid place-items-center ring-1 ring-white/10 text-white/90",
+                                        "hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
                                     ].join(" ")}
                                 >
-                  <GearIcon />
-                </span>
-                            </button>
-                        </DropdownMenu.Trigger>
+                                    {/* Wrap to catch animation end and reset */}
+                                    <span
+                                        onAnimationEnd={() => setGearAnim("idle")}
+                                        className={[
+                                            gearAnim === "open" ? "gear-anim-open" : "",
+                                            gearAnim === "close" ? "gear-anim-close" : "",
+                                        ].join(" ")}
+                                    >
+                    <GearIcon />
+                  </span>
+                                </button>
+                            </DropdownMenu.Trigger>
 
-                        <DropdownMenu.Content
-                            align="end"
-                            sideOffset={8}
-                            className="min-w-[220px] rounded-lg bg-black text-white shadow-2xl ring-1 ring-white/10 p-1"
-                        >
-                            {/* A simple list — no right-side controls */}
-                            <DropdownSection label="Theme" />
-                            <DropdownMenu.Item
-                                onSelect={() => setTheme("dark")}
-                                className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
+                            <DropdownMenu.Content
+                                align="end"
+                                sideOffset={8}
+                                className="min-w-[220px] rounded-lg bg-black text-white shadow-2xl ring-1 ring-white/10 p-1"
                             >
-                                Dark
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Item
-                                onSelect={() => setTheme("light")}
-                                className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
-                            >
-                                Light
-                            </DropdownMenu.Item>
+                                <DropdownSection label="Theme" />
+                                <DropdownMenu.Item
+                                    onSelect={() => setTheme("dark")}
+                                    className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                >
+                                    Dark
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item
+                                    onSelect={() => setTheme("light")}
+                                    className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                >
+                                    Light
+                                </DropdownMenu.Item>
 
-                            <div className="my-1 h-px bg-white/10" />
+                                <div className="my-1 h-px bg-white/10" />
 
-                            <DropdownSection label="Language" />
-                            <DropdownMenu.Item
-                                onSelect={() => setLang("en")}
-                                className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
-                            >
-                                English
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Item
-                                onSelect={() => setLang("de")}
-                                className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
-                            >
-                                Deutsch
-                            </DropdownMenu.Item>
+                                <DropdownSection label="Language" />
+                                <DropdownMenu.Item
+                                    onSelect={() => setLang("en")}
+                                    className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                >
+                                    English
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item
+                                    onSelect={() => setLang("de")}
+                                    className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                >
+                                    Deutsch
+                                </DropdownMenu.Item>
 
-                            <div className="my-1 h-px bg-white/10" />
+                                <div className="my-1 h-px bg-white/10" />
 
-                            <DropdownMenu.Item
-                                onSelect={() => setLoginOpen(true)}
-                                className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                <DropdownMenu.Item
+                                    onSelect={() => setLoginOpen(true)}
+                                    className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                >
+                                    Log in
+                                </DropdownMenu.Item>
+                            </DropdownMenu.Content>
+                        </DropdownMenu.Root>
+                    ) : (
+                        <DropdownMenu.Root>
+                            <DropdownMenu.Trigger asChild>
+                                <button
+                                    type="button"
+                                    aria-label="Open account menu"
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg ring-1 ring-white/10 text-white/90 hover:bg-white/10"
+                                >
+                                    <Avatar label={user.member?.name || user.email} src={user.member?.avatarUrl || undefined} />
+                                    <span className="text-sm">{user.member?.name || user.email}</span>
+                                </button>
+                            </DropdownMenu.Trigger>
+                            <DropdownMenu.Content
+                                align="end"
+                                sideOffset={8}
+                                className="min-w-[240px] rounded-lg bg-black text-white shadow-2xl ring-1 ring-white/10 p-1"
                             >
-                                Log in
-                            </DropdownMenu.Item>
-                        </DropdownMenu.Content>
-                    </DropdownMenu.Root>
+                                <DropdownSection label="Theme" />
+                                <DropdownMenu.Item onSelect={() => setTheme("dark")} className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10">
+                                    Dark
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item onSelect={() => setTheme("light")} className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10">
+                                    Light
+                                </DropdownMenu.Item>
+
+                                <div className="my-1 h-px bg-white/10" />
+
+                                <DropdownSection label="Language" />
+                                <DropdownMenu.Item onSelect={() => setLang("en")} className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10">
+                                    English
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item onSelect={() => setLang("de")} className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10">
+                                    Deutsch
+                                </DropdownMenu.Item>
+
+                                <div className="my-1 h-px bg-white/10" />
+
+                                <DropdownMenu.Item asChild className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10">
+                                    <Link href="/account">Profile</Link>
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item
+                                    onSelect={async () => { await logout(); }}
+                                    className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                >
+                                    Log out
+                                </DropdownMenu.Item>
+                            </DropdownMenu.Content>
+                        </DropdownMenu.Root>
+                    )}
                 </div>
 
                 {/* Mobile: hamburger -> Drawer */}
@@ -267,7 +329,7 @@ export default function NavBar() {
                                         );
                                     })}
 
-                                    {/* “Sub-pages” inside the drawer (no icon for Settings) */}
+                                    {/* Sub-pages inside the drawer */}
                                     <button
                                         type="button"
                                         onClick={() => setDrawerView("settings")}
@@ -275,13 +337,32 @@ export default function NavBar() {
                                     >
                                         Settings
                                     </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setDrawerView("login")}
-                                        className="w-full text-left mt-2 block px-3 py-2 rounded-lg text-base ring-1 ring-white/10 bg-black text-white/90 hover:bg-white/5"
-                                    >
-                                        Log in
-                                    </button>
+                                    {!user ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setDrawerView("login")}
+                                            className="w-full text-left mt-2 block px-3 py-2 rounded-lg text-base ring-1 ring-white/10 bg-black text-white/90 hover:bg-white/5"
+                                        >
+                                            Log in
+                                        </button>
+                                    ) : (
+                                        <>
+                                            <Link
+                                                href="/account"
+                                                className="mt-2 block px-3 py-2 rounded-lg text-base ring-1 ring-white/10 bg-black text-white/90 hover:bg-white/5"
+                                                onClick={() => setDrawerOpen(false)}
+                                            >
+                                                Profile
+                                            </Link>
+                                            <button
+                                                type="button"
+                                                className="mt-2 block w-full text-left px-3 py-2 rounded-lg text-base ring-1 ring-white/10 bg-black text-white/90 hover:bg-white/5"
+                                                onClick={async () => { await logout(); setDrawerOpen(false); }}
+                                            >
+                                                Log out
+                                            </button>
+                                        </>
+                                    )}
                                 </nav>
                             )}
 
@@ -298,11 +379,14 @@ export default function NavBar() {
                                 </div>
                             )}
 
-                            {/* LOGIN SUBPAGE (simple form; UI only) */}
+                            {/* LOGIN SUBPAGE (real auth) */}
                             {drawerView === "login" && (
                                 <div className="p-4">
                                     <h3 className="text-lg font-semibold mb-2">Log in</h3>
-                                    <LoginForm onSubmit={() => setDrawerOpen(false)} />
+                                    <LoginForm
+                                        mode="drawer"
+                                        onSubmit={async (email, pw) => { await handleLogin(email, pw); }}
+                                    />
                                 </div>
                             )}
                         </Dialog.Content>
@@ -324,7 +408,10 @@ export default function NavBar() {
                                 <button className="rounded-md px-2 py-1 ring-1 ring-white/10 hover:bg-white/10" aria-label="Close">✕</button>
                             </Dialog.Close>
                         </div>
-                        <LoginForm onSubmit={() => setLoginOpen(false)} />
+                        <LoginForm
+                            mode="dialog"
+                            onSubmit={async (email, pw) => { await handleLogin(email, pw); }}
+                        />
                     </Dialog.Content>
                 </Dialog.Portal>
             </Dialog.Root>
@@ -355,23 +442,40 @@ function MobileSection({ label }: { label: string }) {
     return <div className="px-1 pt-1 pb-2 text-[11px] uppercase tracking-widest text-white/50">{label}</div>;
 }
 
-function LoginForm({ onSubmit }: { onSubmit: () => void }) {
+function LoginForm({
+                       onSubmit,
+                       mode,
+                   }: {
+    onSubmit: (email: string, password: string) => void | Promise<void>;
+    mode: "dialog" | "drawer";
+}) {
     const [email, setEmail] = React.useState("");
     const [pw, setPw] = React.useState("");
-    const canSubmit = email.length > 3 && pw.length >= 8;
+    const [loading, setLoading] = React.useState(false);
+    const [error, setError] = React.useState<string | null>(null);
+    const canSubmit = email.length > 3 && pw.length >= 8 && !loading;
 
-    function submit(e: React.FormEvent) {
+    async function submit(e: React.FormEvent) {
         e.preventDefault();
-        // UI only for now; hook API later.
-        onSubmit();
+        if (!canSubmit) return;
+        setLoading(true);
+        setError(null);
+        try {
+            await onSubmit(email, pw);
+        } catch (e: any) {
+            setError(e?.message || "Login failed");
+        } finally {
+            setLoading(false);
+        }
     }
 
     return (
         <form onSubmit={submit} className="space-y-3">
+            {error && <div className="text-red-400 text-sm">{error}</div>}
             <div className="space-y-1">
-                <label htmlFor="email" className="text-sm text-white/80">Email</label>
+                <label htmlFor={`email-${mode}`} className="text-sm text-white/80">Email</label>
                 <input
-                    id="email"
+                    id={`email-${mode}`}
                     type="email"
                     autoComplete="email"
                     required
@@ -381,9 +485,9 @@ function LoginForm({ onSubmit }: { onSubmit: () => void }) {
                 />
             </div>
             <div className="space-y-1">
-                <label htmlFor="password" className="text-sm text-white/80">Password</label>
+                <label htmlFor={`password-${mode}`} className="text-sm text-white/80">Password</label>
                 <input
-                    id="password"
+                    id={`password-${mode}`}
                     type="password"
                     autoComplete="current-password"
                     required
@@ -405,7 +509,7 @@ function LoginForm({ onSubmit }: { onSubmit: () => void }) {
                     disabled={!canSubmit}
                     className="px-3 py-2 rounded-md bg-white text-black text-sm font-semibold disabled:opacity-40"
                 >
-                    Log in
+                    {loading ? "Logging in…" : "Log in"}
                 </button>
             </div>
         </form>
@@ -422,5 +526,18 @@ function GearIcon({ className = "" }: { className?: string }) {
                 strokeLinejoin="round"
             />
         </svg>
+    );
+}
+
+function Avatar({ label, src }: { label: string; src?: string }) {
+    const initials = React.useMemo(() => {
+        const parts = label.split(" ").filter(Boolean);
+        const s = (parts[0]?.[0] || "") + (parts[1]?.[0] || "");
+        return s.toUpperCase() || "U";
+    }, [label]);
+    return (
+        <div className="w-5 h-5 rounded-full bg-white text-black grid place-items-center text-xs font-bold overflow-hidden">
+            {src ? <img src={src} alt={label} className="w-full h-full object-cover" /> : initials}
+        </div>
     );
 }

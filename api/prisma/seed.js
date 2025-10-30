@@ -2,6 +2,7 @@
 const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const path = require('path');
+const argon2 = require("argon2");
 const prisma = new PrismaClient();
 
 async function upsertSkill(name){ return prisma.skill.upsert({ where:{ name }, create:{ name }, update:{} }); }
@@ -145,6 +146,25 @@ async function main(){
             });
         }
     }
+
+    const email = process.env.SEED_ADMIN_EMAIL || "admin@pum.local";
+    const password = process.env.SEED_ADMIN_PASSWORD || "ChangeMe!123";
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+
+    const user = await prisma.user.upsert({
+        where: { email },
+        update: {},
+        create: {
+            email,
+            passwordHash,
+            roles: { create: [{ role: "ADMIN" }, { role: "MEMBER" }] },
+        },
+        include: { roles: true },
+    });
+
+    console.log("✅ Seeded admin user:");
+    console.log("   email   :", email);
+    console.log("   password:", password);
 }
 
 main().then(()=>prisma.$disconnect()).catch(async e=>{ console.error(e); await prisma.$disconnect(); process.exit(1); });
