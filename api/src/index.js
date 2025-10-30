@@ -1,14 +1,19 @@
+// api/src/index.js
 const express = require("express");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const cors = require("cors");
 const z = require("zod");
+const path = require("path");
+const fs = require("fs");
+
 const { prisma } = require("./db");
 const { authRouter } = require("./auth");
+const { accountRouter } = require("./account");
 
 const app = express();
 
-// ---------- CORS (must be early) ----------
+/* ------------------------ CORS (must be early) ------------------------ */
 const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:3000";
 const corsOptions = {
     origin: WEB_ORIGIN,
@@ -17,14 +22,12 @@ const corsOptions = {
     allowedHeaders: ["Content-Type", "X-CSRF-Token", "Authorization"],
     optionsSuccessStatus: 204,
 };
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // respond to preflight
+app.use(cors(corsOptions));                 // handles preflight globally
+// app.options("*", cors(corsOptions));     // not strictly needed with app.use(cors(...)) per docs
 
-// If you’re behind a proxy (Docker/NGINX), this helps cookie “secure” logic
-app.set("trust proxy", 1);
-
-// ---------- Standard middleware ----------
-app.use(express.json({ limit: "1mb" }));
+/* ---------------- Proxy + std middleware ---------------- */
+app.set("trust proxy", 1); // so cookie "secure" logic & IPs work behind reverse proxies
+app.use(express.json({ limit: "2mb" }));
 app.use(helmet());
 app.use(
     rateLimit({
@@ -35,7 +38,13 @@ app.use(
     })
 );
 
-app.get("/healthz", async (_, res) => {
+/* ------------------------ Static uploads ------------------------ */
+const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
+fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
+app.use("/uploads", express.static(UPLOAD_ROOT, { maxAge: "1h", etag: true }));
+
+/* ------------------------------ Health ------------------------------ */
+app.get("/healthz", async (_req, res) => {
     try {
         const dbOk = await prisma.$queryRaw`SELECT 1`;
         res.json({ ok: true, service: "api", db: !!dbOk });
@@ -139,8 +148,8 @@ app.get("/api/members/:slug", async (req, res) => {
             contribution: r.contribution,
             cover: r.project.cover || r.project.imageUrl,
             year: r.project.year,
-            tech: [], // optional
-            techStack: [], // optional
+            tech: [],
+            techStack: [],
             summary: r.project.summary || null,
         })),
         events: m.events.map((r) => ({
@@ -286,7 +295,7 @@ app.get("/api/projects/graph", async (_req, res) => {
     });
 });
 
-/* ------------------------------ Members categories/graph ------------------------------ */
+/* ---------------- Members categories/graph ---------------- */
 app.get("/api/members/categories", async (_req, res) => {
     const [skills, tech] = await Promise.all([
         prisma.skill.findMany({ select: { name: true, _count: { select: { members: true } } }, orderBy: { name: "asc" } }),
@@ -314,8 +323,8 @@ app.get("/api/members/graph", async (_req, res) => {
     });
 });
 
-/* ------------------------------ Events (NEW) ------------------------------ */
-// --- Events list ---
+/* -------------------------------- Events -------------------------------- */
+// list
 app.get("/api/events", async (req, res) => {
     const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
     const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
@@ -365,7 +374,6 @@ app.get("/api/events", async (req, res) => {
             lng: e.lng,
             description: e.description,
             photos: Array.isArray(e.photos) ? e.photos : [],
-            // if you added tags Json? in schema, return it here; otherwise a safe default:
             tags: Array.isArray(e.tags) ? e.tags : [],
             attendeesCount: e.attendees.length,
         })),
@@ -375,7 +383,7 @@ app.get("/api/events", async (req, res) => {
     });
 });
 
-// --- Event detail ---
+// detail
 app.get("/api/events/:slug", async (req, res) => {
     const e = await prisma.event.findUnique({
         where: { slug: req.params.slug },
@@ -449,10 +457,8 @@ app.post("/api/contact", (req, res) => {
     res.status(201).json({ id: Math.random().toString(36).slice(2), received: true });
 });
 
-const PORT = Number(process.env.PORT || 3001);
-app.listen(PORT, () => console.log(`API on :${PORT}`));
-
-// --- Blogs (list) ---
+/* ------------------------------ Blogs ------------------------------ */
+// list
 app.get("/api/blogs", async (req, res) => {
     const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
     const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
@@ -520,7 +526,7 @@ app.get("/api/blogs", async (req, res) => {
     });
 });
 
-// --- Blog detail ---
+// detail
 app.get("/api/blogs/:slug", async (req, res) => {
     const b = await prisma.blog.findUnique({
         where: { slug: req.params.slug },
@@ -554,7 +560,7 @@ app.get("/api/blogs/:slug", async (req, res) => {
     });
 });
 
-// --- Blog categories (tech + tags) ---
+// categories
 app.get("/api/blogs/categories", async (_req, res) => {
     const [tech, tags] = await Promise.all([
         prisma.tech.findMany({ select: { name: true, _count: { select: { blogs: true } } }, orderBy: { name: "asc" } }),
@@ -566,5 +572,10 @@ app.get("/api/blogs/categories", async (_req, res) => {
     });
 });
 
-// --- Auth routes ---
+/* ------------------------------ Routers ------------------------------ */
 app.use("/api/auth", authRouter);
+app.use("/api/account", accountRouter);
+
+/* ------------------------------ Start ------------------------------ */
+const PORT = Number(process.env.PORT || 3001);
+app.listen(PORT, () => console.log(`API on :${PORT}`));
