@@ -4,14 +4,25 @@ import { API_BASE } from "@/lib/config";
 type Json = Record<string, any>;
 
 async function fetchAuth(path: string, opts: RequestInit & { token: string }) {
+    const bodyIsFormData = (typeof FormData !== "undefined") && (opts as any).body instanceof FormData;
+
+    const headers: Record<string, string> = {
+        Authorization: `Bearer ${opts.token}`,
+    };
+    // merge user headers first so we don't stomp explicit overrides
+    if (opts.headers) {
+        for (const [k, v] of Object.entries(opts.headers as Record<string, string>)) {
+            if (typeof v !== "undefined") headers[k] = v as any;
+        }
+    }
+    if (!bodyIsFormData) {
+        headers["Content-Type"] = "application/json";
+    }
+
     const res = await fetch(`${API_BASE}${path}`, {
         ...opts,
         credentials: "include",
-        headers: {
-            ...(opts.headers || {}),
-            Authorization: `Bearer ${opts.token}`,
-            "Content-Type": (opts as any).body instanceof FormData ? undefined : "application/json",
-        } as any,
+        headers,
     });
     if (!res.ok) {
         let msg = res.statusText;

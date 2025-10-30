@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAuth } from "@/context/AuthProvider";
 import * as api from "@/lib/api";
+import { toImageSrc } from "@/lib/images";
 
 type Profile = {
     id: string;
@@ -14,7 +15,7 @@ type Profile = {
     shortBio: string | null;
     markdown: string;
     links: Record<string, string>;
-    avatarUrl: string | null;
+    avatarUrl: string | null; // may be relative from API
     skills: string[];
     techStack: string[];
 };
@@ -23,6 +24,7 @@ export default function AccountEditor() {
     const { user, accessToken } = useAuth();
     const [loading, setLoading] = React.useState(true);
     const [saving, setSaving] = React.useState(false);
+    const [justSaved, setJustSaved] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
 
     const [profile, setProfile] = React.useState<Profile | null>(null);
@@ -46,14 +48,16 @@ export default function AccountEditor() {
                 const data = await api.getMyProfile(accessToken);
                 if (!active) return;
                 const p: Profile = data.profile;
-                setProfile(p);
-                setName(p.name || "");
-                setHeadline(p.headline || "");
-                setShortBio(p.shortBio || "");
-                setMarkdown(p.markdown || "");
-                setLinks(Object.entries(p.links || {}).map(([label, url]) => ({ label, url })));
-                setSkills((p.skills || []).join(", "));
-                setTech((p.techStack || []).join(", "));
+                // Normalize avatar to absolute URL for the browser
+                const normalized: Profile = { ...p, avatarUrl: toImageSrc(p.avatarUrl) };
+                setProfile(normalized);
+                setName(normalized.name || "");
+                setHeadline(normalized.headline || "");
+                setShortBio(normalized.shortBio || "");
+                setMarkdown(normalized.markdown || "");
+                setLinks(Object.entries(normalized.links || {}).map(([label, url]) => ({ label, url })));
+                setSkills((normalized.skills || []).join(", "));
+                setTech((normalized.techStack || []).join(", "));
             } catch (e: any) {
                 setError(e.message || "Failed to load profile");
             } finally {
@@ -78,7 +82,10 @@ export default function AccountEditor() {
                 techStack: tech.split(",").map(s => s.trim()).filter(Boolean),
             };
             const res = await api.updateMyProfile(accessToken, body);
-            setProfile(res.profile);
+            const updated: Profile = { ...res.profile, avatarUrl: toImageSrc(res.profile?.avatarUrl) };
+            setProfile(updated);
+            setJustSaved(true);
+            setTimeout(() => setJustSaved(false), 1600);
         } catch (e: any) {
             setError(e.message || "Failed to save profile");
         } finally {
@@ -93,8 +100,12 @@ export default function AccountEditor() {
         setSaving(true);
         setError(null);
         try {
+            // API returns a relative path in { url }
             const { url } = await api.uploadAvatar(accessToken, file);
-            setProfile((p) => (p ? { ...p, avatarUrl: url } : p));
+            const absolute = toImageSrc(url);
+            setProfile((p) => (p ? { ...p, avatarUrl: absolute } : p));
+            setJustSaved(true);
+            setTimeout(() => setJustSaved(false), 1600);
         } catch (e: any) {
             setError(e.message || "Avatar upload failed");
         } finally {
@@ -108,14 +119,16 @@ export default function AccountEditor() {
     if (error) return <p className="text-red-400 px-4 py-10">{error}</p>;
     if (!profile) return null;
 
+    const avatarSrc = toImageSrc(profile.avatarUrl);
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <section className="space-y-4">
                 <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-full bg-white text-black font-bold grid place-items-center overflow-hidden">
-                        {profile.avatarUrl ? (
+                        {avatarSrc ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={profile.avatarUrl} alt={profile.name} className="w-full h-full object-cover" />
+                            <img src={avatarSrc} alt={profile.name || "avatar"} className="w-full h-full object-cover" />
                         ) : (
                             (profile.name || "U").slice(0, 2).toUpperCase()
                         )}
@@ -188,7 +201,7 @@ export default function AccountEditor() {
                     <input value={tech} onChange={(e) => setTech(e.target.value)} className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2" />
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-2 flex items-center gap-3">
                     <button
                         onClick={save}
                         disabled={saving}
@@ -196,6 +209,7 @@ export default function AccountEditor() {
                     >
                         {saving ? "Saving…" : "Save changes"}
                     </button>
+                    {justSaved ? <span className="text-sm text-emerald-300">Saved ✓</span> : null}
                 </div>
             </section>
 

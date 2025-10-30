@@ -36,11 +36,15 @@ type ProjectData = {
 
 /* ---------- API helpers (no seeds, API-only) ---------- */
 async function fetchAllMembers() {
-    const url = new URL("/api/members", API_BASE);
-    url.searchParams.set("size", "999");
-    const res = await fetch(url.toString(), { cache: "no-store" });
-    if (!res.ok) throw new Error("Failed to load members");
-    return res.json() as Promise<{ items: Member[]; total: number }>;
+    try {
+        const url = new URL("/api/members", API_BASE);
+        url.searchParams.set("size", "999");
+        const res = await fetch(url.toString(), { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed to load members");
+        return res.json() as Promise<{ items: Member[]; total: number }>;
+    } catch {
+        return { items: [], total: 0 };
+    }
 }
 
 async function fetchApiProjects(): Promise<ProjectData[]> {

@@ -103,12 +103,16 @@ function mergeApiWithSeed(api: Event[], seeds: Event[]): Event[] {
 
 // --- data ---
 async function fetchAllEventsFromApi(): Promise<Event[]> {
-    const url = new URL("/api/events", API_BASE);
-    url.searchParams.set("size", "999");
-    const res = await fetch(url.toString(), { cache: "no-store" });
-    if (!res.ok) return [];
-    const json = (await res.json()) as { items?: Event[] };
-    return (json.items || []).map(normalizeEvent);
+    try {
+        const url = new URL("/api/events", API_BASE);
+        url.searchParams.set("size", "999");
+        const res = await fetch(url.toString(), { cache: "no-store" });
+        if (!res.ok) return [];
+        const json = (await res.json()) as { items?: Event[] };
+        return (json.items || []).map(normalizeEvent);
+    } catch {
+        return [];
+    }
 }
 
 export default async function EventsPage({
