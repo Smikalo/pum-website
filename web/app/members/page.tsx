@@ -4,126 +4,70 @@ import Link from "next/link";
 import { API_BASE } from "@/lib/config";
 import MembersGraph from "@/components/MembersGraph";
 import MembersSearchBar from "@/components/MembersSearchBar";
+import { toImageSrc } from "@/lib/images";
 
 export const dynamic = "force-dynamic";
 
-/* ---------- Types matching your existing UI ---------- */
-type Member = {
+/** ------------------------------------------------------------
+ *  Types (API → UI)
+ *  ------------------------------------------------------------ */
+type ApiListMember = {
+    id: string;
+    slug: string;
+    name: string;
+    shortBio?: string | null;
+    skills?: (string | null)[] | null;
+    techStack?: (string | null)[] | null;
+    avatarUrl?: string | null;
+
+    /** ✅ Source of truth for categorization & color */
+    focusArea?: string | null;
+
+    // Possible legacy extras
+    expertise?: (string | null)[] | null;
+    specialty?: string | null;
+    specialtyArea?: string | null;
+};
+
+type UiMember = {
     id: string;
     slug: string;
     name: string;
     shortBio?: string;
-    skills?: string[];
-    techStack?: string[];
-    avatarUrl?: string;
+    skills: string[];     // informational only; DOES NOT drive category/color
+    techStack: string[];
+    avatarUrl?: string;   // normalized, never null
+    focusArea?: string;   // <- drives category + graph color
 };
 
-type ProjectData = {
-    id: string; // required
-    slug: string;
-    title: string;
-    members?: { memberId?: string; memberSlug?: string }[];
-    techStack?: string[];
-    tags?: string[];
-    imageUrl?: string;
+type ApiProject = any;
 
-    // optional detail fields
-    summary?: string;
-    description?: string;
-    year?: number;
-    cover?: string;
-};
-
-/* ---------- API helpers (no seeds, API-only) ---------- */
-async function fetchAllMembers() {
-    try {
-        const url = new URL("/api/members", API_BASE);
-        url.searchParams.set("size", "999");
-        const res = await fetch(url.toString(), { cache: "no-store" });
-        if (!res.ok) throw new Error("Failed to load members");
-        return res.json() as Promise<{ items: Member[]; total: number }>;
-    } catch {
-        return { items: [], total: 0 };
-    }
+/** ------------------------------------------------------------
+ *  Utilities
+ *  ------------------------------------------------------------ */
+function isString(x: unknown): x is string {
+    return typeof x === "string" && x.trim().length > 0;
 }
-
-async function fetchApiProjects(): Promise<ProjectData[]> {
-    try {
-        const res = await fetch(`${API_BASE}/api/projects?size=999`, { cache: "no-store" });
-        if (!res.ok) return [];
-        const json = await res.json();
-        const items: any[] = Array.isArray(json) ? json : json.items ?? [];
-        return items.map(normalizeProject);
-    } catch {
-        return [];
-    }
-}
-
-function normalizeProject(p: any): ProjectData {
-    const slug: string = p.slug ?? p.id ?? "";
-    const id: string = (p.id ?? slug) as string;
-    return {
-        id,
-        slug,
-        title: p.title ?? p.name ?? slug,
-        tags: p.tags ?? [],
-        techStack: p.techStack ?? p.tech ?? [],
-        members: (p.members ?? []).map((m: any) => ({
-            memberId: m.memberId ?? m.id,
-            memberSlug: m.memberSlug ?? m.slug,
-        })),
-        imageUrl: p.imageUrl ?? p.cover,
-        summary: p.summary,
-        description: p.description,
-        year: typeof p.year === "number" ? p.year : undefined,
-        cover: p.cover ?? p.imageUrl,
-    };
-}
-
-/* ---------- Local helpers (preserve old behavior) ---------- */
 function uniq<T>(arr: T[]): T[] {
     return Array.from(new Set(arr));
-}
-function niceSkillLabel(s: string) {
-    const m: Record<string, string> = {
-        frontend: "Frontend",
-        backend: "Backend",
-        fullstack: "Full-stack",
-        ml: "ML",
-        ai: "AI",
-        business: "Business",
-        management: "Management",
-        design: "Design",
-        data: "Data",
-    };
-    return m[s.toLowerCase()] || s;
 }
 function parseMulti(param?: string): string[] {
     if (!param) return [];
     return param.split(",").map((x) => x.trim()).filter(Boolean);
 }
-// AND logic for tag categories
 function includesAll(haystack: string[] | undefined, needles: string[]): boolean {
     if (!needles.length) return true;
-    const h = new Set((haystack || []).map((s) => s.toLowerCase()));
-    return needles.every((n) => h.has(n.toLowerCase()));
+    const set = new Set((haystack || []).map((s) => s.toLowerCase()));
+    return needles.every((n) => set.has(n.toLowerCase()));
 }
-// Case-insensitive substring over name/bio/tags
-function matchesQuery(m: Member, q: string): boolean {
-    if (!q) return true;
-    const needle = q.toLowerCase();
-    const fields: string[] = [m.name || "", m.shortBio || "", ...(m.skills || []), ...(m.techStack || [])];
-    return fields.some((f) => f.toLowerCase().includes(needle));
-}
-// highlight utility for server components
-function highlight(text: string | undefined, q: string) {
+function highlight(text: string | undefined | null, q: string) {
     if (!text) return null;
     if (!q) return text;
     const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const re = new RegExp(`(${esc})`, "ig");
     const parts = text.split(re);
     return parts.map((p, i) =>
-        re.test(p) ? (
+        i % 2 === 1 ? (
             <mark key={i} className="px-0.5 rounded bg-yellow-300/30 text-yellow-200">
                 {p}
             </mark>
@@ -132,53 +76,177 @@ function highlight(text: string | undefined, q: string) {
         ),
     );
 }
+function matchesQuery(m: UiMember, q: string): boolean {
+    if (!q) return true;
+    const needle = q.toLowerCase();
+    const fields: string[] = [
+        m.name || "",
+        m.shortBio || "",
+        ...(m.skills || []),
+        ...(m.techStack || []),
+        m.focusArea || "",
+    ];
+    return fields.some((f) => f.toLowerCase().includes(needle));
+}
+/** normalize any image-like value to a proper src (never null) */
+function toImageOrUndef(v?: string | null): string | undefined {
+    if (!isString(v)) return undefined;
+    const r = toImageSrc(v);
+    return isString(r) ? r : undefined;
+}
+/** If the API doesn’t send focusArea, try common fallbacks */
+function pickFocusArea(m: Partial<ApiListMember>): string | undefined {
+    if (isString(m.focusArea)) return m.focusArea.trim();
+    if (isString(m.specialty)) return m.specialty.trim();
+    if (isString(m.specialtyArea)) return m.specialtyArea.trim();
+    const firstExpertise = (m.expertise ?? []).filter(isString)[0];
+    if (firstExpertise) return firstExpertise.trim();
+    return undefined;
+}
+/** Keep focusArea first in the skills array so the graph color uses it */
+function skillsWithFocusFirst(focus: string | undefined, skills: string[]): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    if (isString(focus)) {
+        out.push(focus);
+        seen.add(focus);
+    }
+    for (const s of skills) if (!seen.has(s)) out.push(s);
+    return out;
+}
 
-/* ---------- Page (same UI/UX, API data only) ---------- */
+/** ------------------------------------------------------------
+ *  Fetchers
+ *  ------------------------------------------------------------ */
+async function fetchAllMembers(): Promise<{ items: UiMember[]; total: number }> {
+    try {
+        const url = new URL("/api/members", API_BASE);
+        url.searchParams.set("size", "999");
+        const res = await fetch(url.toString(), { cache: "no-store" });
+        if (!res.ok) return { items: [], total: 0 };
+
+        const json = (await res.json()) as { items: ApiListMember[]; total?: number };
+        const items: UiMember[] = (json.items || []).map((m) => {
+            const focusArea = pickFocusArea(m);
+            const skills = (m.skills ?? []).filter(isString);
+            const techStack = (m.techStack ?? []).filter(isString);
+            return {
+                id: m.id,
+                slug: m.slug,
+                name: m.name,
+                shortBio: m.shortBio ?? undefined,
+                skills: skillsWithFocusFirst(focusArea, skills),
+                techStack,
+                avatarUrl: toImageOrUndef(m.avatarUrl),
+                focusArea,
+            };
+        });
+
+        return { items, total: json.total ?? items.length };
+    } catch {
+        return { items: [], total: 0 };
+    }
+}
+
+function normalizeProject(p: ApiProject) {
+    const slug: string = p.slug ?? p.id ?? "";
+    const id: string = (p.id ?? slug) as string;
+    const image = toImageOrUndef(p.imageUrl) ?? toImageOrUndef(p.cover);
+    return {
+        id,
+        slug,
+        title: (p.title ?? p.name ?? slug) as string,
+        tags: (p.tags ?? []).filter(isString) as string[],
+        techStack: (p.techStack ?? p.tech ?? []).filter(isString) as string[],
+        members: (p.members ?? []).map((m: any) => ({
+            memberId: m.memberId ?? m.id,
+            memberSlug: m.memberSlug ?? m.slug,
+        })) as { memberId?: string; memberSlug?: string }[],
+        imageUrl: (isString(image) ? image : undefined) as string | undefined,
+    };
+}
+
+async function fetchApiProjects() {
+    try {
+        const res = await fetch(`${API_BASE}/api/projects?size=999`, { cache: "no-store" });
+        if (!res.ok) return [];
+        const json = await res.json();
+        const items: ApiProject[] = Array.isArray(json) ? json : json.items ?? [];
+        return items.map(normalizeProject);
+    } catch {
+        return [];
+    }
+}
+
+/** ------------------------------------------------------------
+ *  Page
+ *  ------------------------------------------------------------ */
 export default async function MembersPage({
                                               searchParams,
                                           }: {
     searchParams?: { q?: string; skill?: string; tech?: string; view?: string };
 }) {
     const q = searchParams?.q || "";
-    const skillList = parseMulti(searchParams?.skill);
-    const techList = parseMulti(searchParams?.tech);
+    // We keep the URL param name "skill" for backward-compat, but it now means **focus area**
+    const focusFilter = parseMulti(searchParams?.skill);
+    const techFilter = parseMulti(searchParams?.tech);
     const view = (searchParams?.view || "list") as "list" | "graph" | "groups";
 
-    // API-only data
-    const [allMembersRes, apiProjects] = await Promise.all([fetchAllMembers(), fetchApiProjects()]);
+    const [membersRes, apiProjects] = await Promise.all([fetchAllMembers(), fetchApiProjects()]);
+    const allMembers = membersRes.items;
 
-    const allMembers: Member[] = allMembersRes.items;
-    const allProjects: ProjectData[] = apiProjects;
+    // vocabularies
+    const allFocusAreas = uniq(allMembers.map((m) => m.focusArea).filter(isString)).sort();
+    const allTech = uniq(allMembers.flatMap((m) => m.techStack)).sort();
 
-    // Build vocabularies from API results
-    const allSkills = uniq(allMembers.flatMap((m) => m.skills || [])).sort();
-    const allTech = uniq(allMembers.flatMap((m) => m.techStack || [])).sort();
-
-    // Preserve server-side filtering semantics
+    // filter strictly by focusArea (NOT by skills)
     const filteredMembers = allMembers.filter(
-        (m) => includesAll(m.skills, skillList) && includesAll(m.techStack, techList) && matchesQuery(m, q),
+        (m) =>
+            includesAll(m.focusArea ? [m.focusArea] : [], focusFilter) &&
+            includesAll(m.techStack, techFilter) &&
+            matchesQuery(m, q),
     );
     const total = filteredMembers.length;
 
-    // Graph: limit projects to those touching visible members
+    // limit projects to visible members
     const visibleSlugs = new Set(filteredMembers.map((m) => m.slug));
-    const filteredProjects = allProjects.filter((p) =>
-        (p.members || []).some((r) => {
-            const slug = r.memberSlug || filteredMembers.find((mm) => mm.id === r.memberId)?.slug;
-            return !!slug && visibleSlugs.has(slug);
-        }),
+    const filteredProjects = apiProjects.filter((p: any) =>
+        (p.members || []).some((r: any) => visibleSlugs.has(r.memberSlug)),
     );
 
-    // Match MembersGraph prop contract exactly
+    // Build graph props:
+    //  - color driver: first skill = focusArea
+    //  - ✅ ensure avatar is available via multiple common keys (some graph UIs expect `avatar` or `imageUrl`)
     type MembersGraphProps = React.ComponentProps<typeof MembersGraph>;
-    const graphProjects: MembersGraphProps["projects"] = filteredProjects.map((p) => ({
-        id: p.id,
-        slug: p.slug,
-        title: p.title,
-        members: p.members?.map((m) => ({ memberId: m.memberId, memberSlug: m.memberSlug })) ?? [],
-        techStack: p.techStack ?? [],
-        tags: p.tags ?? [],
-        imageUrl: p.imageUrl,
+    const graphMembers: MembersGraphProps["members"] = filteredMembers.map((m) => {
+        const skillsForGraph = skillsWithFocusFirst(m.focusArea, (m.skills || []).filter(isString));
+        const node: any = {
+            id: m.id,
+            slug: m.slug,
+            name: m.name,
+            skills: skillsForGraph,
+            techStack: m.techStack,
+            avatarUrl: m.avatarUrl,                // expected by current MembersGraph
+            // --- image fallbacks for card UIs that read different keys ---
+            avatar: m.avatarUrl,                   // some UIs read `avatar`
+            imageUrl: m.avatarUrl,                 // some UIs read `imageUrl`
+            photoUrl: m.avatarUrl,                 // belt & suspenders
+        };
+        return node as MembersGraphProps["members"][number];
+    });
+
+    const graphProjects: MembersGraphProps["projects"] = filteredProjects.map((p: any) => ({
+        id: p.id as string,
+        slug: p.slug as string,
+        title: p.title as string,
+        members:
+            (p.members as { memberId?: string; memberSlug?: string }[] | undefined)?.map((m) => ({
+                memberId: m.memberId,
+                memberSlug: m.memberSlug,
+            })) ?? [],
+        techStack: (p.techStack as string[] | undefined) ?? [],
+        tags: (p.tags as string[] | undefined) ?? [],
+        imageUrl: (isString(p.imageUrl) ? p.imageUrl : undefined) as string | undefined,
     }));
 
     return (
@@ -187,15 +255,14 @@ export default async function MembersPage({
                 <p className="kicker">PEOPLE</p>
                 <h1 className="display">Meet the minds behind PUM</h1>
                 <p className="mt-3 text-white/70 max-w-2xl">
-                    We’re a collective of initiative TUM students shipping production-grade prototypes, hackathon winners and
-                    startups. Browse by expertise, tech, or explore our network graph to see who built what.
+                    Browse by <strong>focus area</strong>, tech, or explore our network graph to see who built what.
                 </p>
             </header>
 
             {/* Controls */}
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
                 <div className="flex-1">
-                    <MembersSearchBar placeholder="Search members by name, bio, expertise, tech…" paramKey="q" />
+                    <MembersSearchBar placeholder="Search members by name, bio, focus area, tech…" paramKey="q" />
                 </div>
                 <div className="flex items-center gap-2">
                     {["list", "graph", "groups"].map((v) => (
@@ -203,8 +270,8 @@ export default async function MembersPage({
                             key={v}
                             href={`/members?${new URLSearchParams({
                                 q,
-                                ...(skillList.length ? { skill: skillList.join(",") } : {}),
-                                ...(techList.length ? { tech: techList.join(",") } : {}),
+                                ...(focusFilter.length ? { skill: focusFilter.join(",") } : {}),
+                                ...(techFilter.length ? { tech: techFilter.join(",") } : {}),
                                 view: v,
                             }).toString()}`}
                             className={`px-3 py-2 rounded-lg text-sm ring-1 ring-white/10 ${
@@ -220,15 +287,14 @@ export default async function MembersPage({
             {/* Filters */}
             <div className="mb-8 grid md:grid-cols-2 gap-3">
                 <div className="card p-3">
-                    <div className="text-xs uppercase tracking-widest text-white/60 mb-2">Expertise</div>
+                    <div className="text-xs uppercase tracking-widest text-white/60 mb-2">Focus area</div>
                     <div className="flex flex-wrap gap-2">
                         <MultiFilterChips
                             base="/members"
-                            params={{ q, tech: techList.join(","), view }}
-                            values={allSkills}
-                            selected={skillList}
-                            name="skill"
-                            labelize={niceSkillLabel}
+                            params={{ q, tech: techFilter.join(","), view }}
+                            values={allFocusAreas}
+                            selected={focusFilter}
+                            name="skill" /* keep URL key for backward-compat */
                         />
                     </div>
                 </div>
@@ -237,9 +303,9 @@ export default async function MembersPage({
                     <div className="flex flex-wrap gap-2">
                         <MultiFilterChips
                             base="/members"
-                            params={{ q, skill: skillList.join(","), view }}
+                            params={{ q, skill: focusFilter.join(","), view }}
                             values={allTech}
-                            selected={techList}
+                            selected={techFilter}
                             name="tech"
                         />
                     </div>
@@ -248,7 +314,7 @@ export default async function MembersPage({
 
             {/* Content */}
             {view === "graph" ? (
-                <MembersGraph members={filteredMembers} projects={graphProjects} query={q} />
+                <MembersGraph members={graphMembers} projects={graphProjects} query={q} />
             ) : view === "groups" ? (
                 <GroupsView members={filteredMembers} q={q} />
             ) : (
@@ -258,21 +324,21 @@ export default async function MembersPage({
     );
 }
 
-/* ---------- Small presentational helpers (unchanged look) ---------- */
+/** ------------------------------------------------------------
+ *  Presentational helpers
+ *  ------------------------------------------------------------ */
 function MultiFilterChips({
                               base,
                               params,
                               values,
                               selected,
                               name,
-                              labelize,
                           }: {
     base: string;
     params: Record<string, string>;
     values: string[];
     selected: string[];
     name: string;
-    labelize?: (s: string) => string;
 }) {
     const makeHref = (nextSelected: string[]) => {
         const p = new URLSearchParams();
@@ -305,7 +371,7 @@ function MultiFilterChips({
                         selected.includes(v) ? "bg-white text-black font-semibold" : "bg-white/5 hover:bg-white/10"
                     }`}
                 >
-                    {labelize ? labelize(v) : v}
+                    {v}
                 </Link>
             ))}
         </>
@@ -319,8 +385,14 @@ function Avatar({ name, src, size = 40 }: { name: string; src?: string; size?: n
         .slice(0, 2)
         .join("")
         .toUpperCase();
+
     return src ? (
-        <img src={src} alt={name} className="rounded-full object-cover ring-1 ring-white/10" style={{ width: size, height: size }} />
+        <img
+            src={src}
+            alt={name}
+            className="rounded-full object-cover ring-1 ring-white/10"
+            style={{ width: size, height: size }}
+        />
     ) : (
         <div
             className="rounded-full grid place-items-center bg-white/10 ring-1 ring-white/10 text-white/80"
@@ -332,12 +404,10 @@ function Avatar({ name, src, size = 40 }: { name: string; src?: string; size?: n
     );
 }
 
-function ListView({ members, total, q }: { members: Member[]; total: number; q: string }) {
+function ListView({ members, total, q }: { members: UiMember[]; total: number; q: string }) {
     return (
         <>
-            <div className="mb-3 text-sm text-white/60">
-                {total} member{total === 1 ? "" : "s"} found
-            </div>
+            <div className="mb-3 text-sm text-white/60">{total} member{total === 1 ? "" : "s"} found</div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {members.map((m) => (
                     <Link
@@ -349,14 +419,12 @@ function ListView({ members, total, q }: { members: Member[]; total: number; q: 
                             <Avatar name={m.name} src={m.avatarUrl} size={44} />
                             <div className="min-w-0">
                                 <div className="font-semibold text-lg">{highlight(m.name, q)}</div>
+                                {m.focusArea && (
+                                    <div className="mt-1">
+                                        <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">{m.focusArea}</span>
+                                    </div>
+                                )}
                                 {m.shortBio ? <div className="text-sm text-white/70 mt-1 line-clamp-3">{highlight(m.shortBio, q)}</div> : null}
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    {(m.skills || []).slice(0, 3).map((s) => (
-                                        <span key={s} className="text-xs px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
-                      {highlight(s, q)}
-                    </span>
-                                    ))}
-                                </div>
                                 <div className="mt-3 text-xs text-white/50 truncate">
                                     {(m.techStack || []).map((t, i) => (
                                         <span key={t}>
@@ -374,19 +442,20 @@ function ListView({ members, total, q }: { members: Member[]; total: number; q: 
     );
 }
 
-function GroupsView({ members, q }: { members: Member[]; q: string }) {
-    const buckets: Record<string, Member[]> = {};
+function GroupsView({ members, q }: { members: UiMember[]; q: string }) {
+    // Group STRICTLY by focusArea (never by skills)
+    const buckets: Record<string, UiMember[]> = {};
     for (const m of members) {
-        const key = (m.skills && m.skills[0]) || "other";
+        const key = m.focusArea || "Other";
         if (!buckets[key]) buckets[key] = [];
         buckets[key].push(m);
     }
     const groups = Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b));
     return (
         <div className="space-y-8">
-            {groups.map(([skill, arr]) => (
-                <div key={skill}>
-                    <h3 className="text-xl font-bold mb-3">{highlight(niceSkillLabel(skill), q)}</h3>
+            {groups.map(([focus, arr]) => (
+                <div key={focus}>
+                    <h3 className="text-xl font-bold mb-3">{highlight(focus, q)}</h3>
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {arr.map((m) => (
                             <Link key={m.slug} href={`/members/${m.slug}`} className="card p-4 hover:bg-white/10 transition">

@@ -28,6 +28,7 @@ model Member {
   events    MemberEvent[]
   blogs     BlogAuthor[]
   user      User?           @relation("UserMember")
+  focusArea String?
 }
 
 model Skill {

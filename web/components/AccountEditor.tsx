@@ -7,6 +7,9 @@ import { useAuth } from "@/context/AuthProvider";
 import * as api from "@/lib/api";
 import { toImageSrc } from "@/lib/images";
 
+const AREAS = ["FRONTEND","BACKEND","ML","DATA","DEVOPS","DESIGN","PM","OTHER"] as const;
+type Area = (typeof AREAS)[number];
+
 type Profile = {
     id: string;
     slug: string;
@@ -15,7 +18,8 @@ type Profile = {
     shortBio: string | null;
     markdown: string;
     links: Record<string, string>;
-    avatarUrl: string | null; // may be relative from API
+    avatarUrl: string | null;
+    focusArea: Area | null;
     skills: string[];
     techStack: string[];
 };
@@ -37,6 +41,7 @@ export default function AccountEditor() {
     const [links, setLinks] = React.useState<{ label: string; url: string }[]>([]);
     const [skills, setSkills] = React.useState("");
     const [tech, setTech] = React.useState("");
+    const [focusArea, setFocusArea] = React.useState<Area | "">( "" );
 
     React.useEffect(() => {
         let active = true;
@@ -48,7 +53,6 @@ export default function AccountEditor() {
                 const data = await api.getMyProfile(accessToken);
                 if (!active) return;
                 const p: Profile = data.profile;
-                // Normalize avatar to absolute URL for the browser
                 const normalized: Profile = { ...p, avatarUrl: toImageSrc(p.avatarUrl) };
                 setProfile(normalized);
                 setName(normalized.name || "");
@@ -58,6 +62,7 @@ export default function AccountEditor() {
                 setLinks(Object.entries(normalized.links || {}).map(([label, url]) => ({ label, url })));
                 setSkills((normalized.skills || []).join(", "));
                 setTech((normalized.techStack || []).join(", "));
+                setFocusArea((normalized.focusArea as Area) || "");
             } catch (e: any) {
                 setError(e.message || "Failed to load profile");
             } finally {
@@ -72,7 +77,7 @@ export default function AccountEditor() {
         setSaving(true);
         setError(null);
         try {
-            const body = {
+            const body: any = {
                 name,
                 headline: headline || null,
                 shortBio: shortBio || null,
@@ -81,6 +86,7 @@ export default function AccountEditor() {
                 skills: skills.split(",").map(s => s.trim()).filter(Boolean),
                 techStack: tech.split(",").map(s => s.trim()).filter(Boolean),
             };
+            if (focusArea) body.focusArea = focusArea;
             const res = await api.updateMyProfile(accessToken, body);
             const updated: Profile = { ...res.profile, avatarUrl: toImageSrc(res.profile?.avatarUrl) };
             setProfile(updated);
@@ -100,7 +106,6 @@ export default function AccountEditor() {
         setSaving(true);
         setError(null);
         try {
-            // API returns a relative path in { url }
             const { url } = await api.uploadAvatar(accessToken, file);
             const absolute = toImageSrc(url);
             setProfile((p) => (p ? { ...p, avatarUrl: absolute } : p));
@@ -156,38 +161,25 @@ export default function AccountEditor() {
                 </div>
 
                 <div>
+                    <label className="block text-sm text-white/70 mb-1">Primary area</label>
+                    <select value={focusArea} onChange={(e) => setFocusArea(e.target.value as Area)} className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2">
+                        <option value="">(Choose…)</option>
+                        {AREAS.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                    <p className="text-xs text-white/50 mt-1">This drives categorization on the Members graph & filters.</p>
+                </div>
+
+                <div>
                     <label className="block text-sm text-white/70 mb-1">Links</label>
                     <div className="space-y-2">
                         {links.map((row, i) => (
                             <div key={i} className="flex gap-2">
-                                <input
-                                    placeholder="Label (e.g., GitHub)"
-                                    value={row.label}
-                                    onChange={(e) => setLinks((v) => v.map((r, idx) => (idx === i ? { ...r, label: e.target.value } : r)))}
-                                    className="flex-1 rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
-                                />
-                                <input
-                                    placeholder="https://…"
-                                    value={row.url}
-                                    onChange={(e) => setLinks((v) => v.map((r, idx) => (idx === i ? { ...r, url: e.target.value } : r)))}
-                                    className="flex-[2] rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setLinks((v) => v.filter((_r, idx) => idx !== i))}
-                                    className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10"
-                                >
-                                    ✕
-                                </button>
+                                <input placeholder="Label (e.g., GitHub)" value={row.label} onChange={(e) => setLinks((v) => v.map((r, idx) => (idx === i ? { ...r, label: e.target.value } : r)))} className="flex-1 rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2" />
+                                <input placeholder="https://…" value={row.url} onChange={(e) => setLinks((v) => v.map((r, idx) => (idx === i ? { ...r, url: e.target.value } : r)))} className="flex-[2] rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2" />
+                                <button type="button" onClick={() => setLinks((v) => v.filter((_r, idx) => idx !== i))} className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10">✕</button>
                             </div>
                         ))}
-                        <button
-                            type="button"
-                            onClick={() => setLinks((v) => [...v, { label: "", url: "" }])}
-                            className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10"
-                        >
-                            + Add link
-                        </button>
+                        <button type="button" onClick={() => setLinks((v) => [...v, { label: "", url: "" }])} className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10">+ Add link</button>
                     </div>
                 </div>
 
@@ -202,11 +194,7 @@ export default function AccountEditor() {
                 </div>
 
                 <div className="pt-2 flex items-center gap-3">
-                    <button
-                        onClick={save}
-                        disabled={saving}
-                        className="px-4 py-2 rounded-md bg-white text-black font-semibold disabled:opacity-50"
-                    >
+                    <button onClick={save} disabled={saving} className="px-4 py-2 rounded-md bg-white text-black font-semibold disabled:opacity-50">
                         {saving ? "Saving…" : "Save changes"}
                     </button>
                     {justSaved ? <span className="text-sm text-emerald-300">Saved ✓</span> : null}
@@ -215,13 +203,7 @@ export default function AccountEditor() {
 
             <section className="space-y-3">
                 <label className="block text-sm text-white/70">Profile Markdown</label>
-                <textarea
-                    value={markdown}
-                    onChange={(e) => setMarkdown(e.target.value)}
-                    rows={14}
-                    className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 font-mono text-sm"
-                    placeholder="### About me"
-                />
+                <textarea value={markdown} onChange={(e) => setMarkdown(e.target.value)} rows={14} className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 font-mono text-sm" placeholder="### About me" />
                 <div className="text-sm text-white/60">Preview</div>
                 <div className="prose prose-invert max-w-none rounded-md border border-white/10 p-4 bg-white/5">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown || "_Nothing yet…_"}</ReactMarkdown>

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import React from "react";
 import { useAuth } from "@/context/AuthProvider";
+import { toImageSrc } from "@/lib/images";
 
 type NavItem = { href: string; label: string };
 
@@ -90,6 +91,10 @@ export default function NavBar() {
         setDrawerView("menu");
         router.push("/account");
     }
+
+    // ---- FIX: ensure `avatarSrc` is strictly `string | undefined` (never `null`) ----
+    const avatarRaw = user?.member?.avatarUrl ?? undefined; // null -> undefined
+    const avatarSrc: string | undefined = avatarRaw ? (toImageSrc(avatarRaw) ?? undefined) : undefined;
 
     return (
         <header className="sticky top-0 z-50 bg-black/60 backdrop-blur border-b border-white/10">
@@ -202,7 +207,7 @@ export default function NavBar() {
                                     aria-label="Open account menu"
                                     className="inline-flex items-center gap-2 px-3 py-2 rounded-lg ring-1 ring-white/10 text-white/90 hover:bg-white/10"
                                 >
-                                    <Avatar label={user.member?.name || user.email} src={user.member?.avatarUrl || undefined} />
+                                    <Avatar label={user.member?.name || user.email} src={avatarSrc} />
                                     <span className="text-sm">{user.member?.name || user.email}</span>
                                 </button>
                             </DropdownMenu.Trigger>
@@ -235,7 +240,9 @@ export default function NavBar() {
                                     <Link href="/account">Profile</Link>
                                 </DropdownMenu.Item>
                                 <DropdownMenu.Item
-                                    onSelect={async () => { await logout(); }}
+                                    onSelect={async () => {
+                                        await logout();
+                                    }}
                                     className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
                                 >
                                     Log out
@@ -323,6 +330,7 @@ export default function NavBar() {
                                                     active ? "bg-white text-black font-semibold" : "bg-black text-white/90 hover:bg-white/5",
                                                 ].join(" ")}
                                                 aria-current={active ? "page" : undefined}
+                                                onClick={() => setDrawerOpen(false)}
                                             >
                                                 {item.label}
                                             </Link>
@@ -357,7 +365,10 @@ export default function NavBar() {
                                             <button
                                                 type="button"
                                                 className="mt-2 block w-full text-left px-3 py-2 rounded-lg text-base ring-1 ring-white/10 bg-black text-white/90 hover:bg-white/5"
-                                                onClick={async () => { await logout(); setDrawerOpen(false); }}
+                                                onClick={async () => {
+                                                    await logout();
+                                                    setDrawerOpen(false);
+                                                }}
                                             >
                                                 Log out
                                             </button>
@@ -385,7 +396,9 @@ export default function NavBar() {
                                     <h3 className="text-lg font-semibold mb-2">Log in</h3>
                                     <LoginForm
                                         mode="drawer"
-                                        onSubmit={async (email, pw) => { await handleLogin(email, pw); }}
+                                        onSubmit={async (email, pw) => {
+                                            await handleLogin(email, pw);
+                                        }}
                                     />
                                 </div>
                             )}
@@ -410,7 +423,9 @@ export default function NavBar() {
                         </div>
                         <LoginForm
                             mode="dialog"
-                            onSubmit={async (email, pw) => { await handleLogin(email, pw); }}
+                            onSubmit={async (email, pw) => {
+                                await handleLogin(email, pw);
+                            }}
                         />
                     </Dialog.Content>
                 </Dialog.Portal>
@@ -418,17 +433,17 @@ export default function NavBar() {
 
             {/* local CSS for gear animation */}
             <style jsx>{`
-        @keyframes gear-open {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(180deg); }
-        }
-        @keyframes gear-close {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(-180deg); }
-        }
-        .gear-anim-open { animation: gear-open 220ms linear; }
-        .gear-anim-close { animation: gear-close 220ms linear; }
-      `}</style>
+                @keyframes gear-open {
+                    from { transform: rotate(0deg); }
+                    to   { transform: rotate(180deg); }
+                }
+                @keyframes gear-close {
+                    from { transform: rotate(0deg); }
+                    to   { transform: rotate(-180deg); }
+                }
+                .gear-anim-open { animation: gear-open 220ms linear; }
+                .gear-anim-close { animation: gear-close 220ms linear; }
+            `}</style>
         </header>
     );
 }
@@ -535,8 +550,10 @@ function Avatar({ label, src }: { label: string; src?: string }) {
         const s = (parts[0]?.[0] || "") + (parts[1]?.[0] || "");
         return s.toUpperCase() || "U";
     }, [label]);
+
     return (
         <div className="w-5 h-5 rounded-full bg-white text-black grid place-items-center text-xs font-bold overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             {src ? <img src={src} alt={label} className="w-full h-full object-cover" /> : initials}
         </div>
     );

@@ -13,43 +13,36 @@ const { accountRouter } = require("./account");
 
 const app = express();
 
-/* ------------------------ CORS (must be early) ------------------------ */
+/* ------------------------ CORS ------------------------ */
 const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:3000";
-const corsOptions = {
+app.use(cors({
     origin: WEB_ORIGIN,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "X-CSRF-Token", "Authorization"],
     optionsSuccessStatus: 204,
-};
-app.use(cors(corsOptions));
+}));
 
-/* ---------------- Proxy + std middleware ---------------- */
+/* ---------------- Proxy + middleware ---------------- */
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "2mb" }));
-
-// Allow cross-origin embedding of static assets (avatars, CVs) and avoid COEP breaking embeds.
-// See helmet docs/threads re CORP/COEP.
-app.use(
-    helmet({
-        crossOriginResourcePolicy: { policy: "cross-origin" },
-        crossOriginEmbedderPolicy: false,
-    })
-);
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" }, crossOriginEmbedderPolicy: false }));
 
 /* ------------------------ Static uploads ------------------------ */
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
 fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
+app.use("/uploads", (req, res, next) => { res.setHeader("Cross-Origin-Resource-Policy", "cross-origin"); next(); }, express.static(UPLOAD_ROOT, { maxAge: "1h", etag: true }));
 
-// Ensure the CORP header is permissive on the file responses themselves.
-app.use(
-    "/uploads",
-    (req, res, next) => {
-        res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-        next();
-    },
-    express.static(UPLOAD_ROOT, { maxAge: "1h", etag: true })
-);
+/* ------------------------ Helpers ------------------------ */
+const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || null;
+function abs(u, req) {
+    if (!u) return null;
+    if (/^https?:\/\//i.test(u)) return u;
+    const base = PUBLIC_API_BASE || `${req.protocol}://${req.get("host")}`;
+    const rel = u.startsWith("/") ? u : `/${u}`;
+    return `${base}${rel}`;
+}
+const toInt = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
 /* ------------------------------ Health ------------------------------ */
 app.get("/healthz", async (_req, res) => {
@@ -61,7 +54,6 @@ app.get("/healthz", async (_req, res) => {
     }
 });
 
-const toInt = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const qpSchema = z.object({
     q: z.string().optional(),
     skill: z.string().optional(),
@@ -111,11 +103,13 @@ app.get("/api/members", async (req, res) => {
             id: m.id,
             slug: m.slug,
             name: m.name,
-            avatarUrl: m.avatarUrl || m.avatar || null,
+            avatarUrl: abs(m.avatarUrl || m.avatar || null, req),
             shortBio: m.shortBio || m.bio || null,
             headline: m.headline || null,
             skills: m.skills.map((x) => x.skill.name),
             techStack: m.techs.map((x) => x.tech.name),
+            focusArea: m.focusArea || null,
+            links: m.links || {},
         })),
         page,
         size,
@@ -138,8 +132,8 @@ app.get("/api/members/:slug", async (req, res) => {
         id: m.id,
         slug: m.slug,
         name: m.name,
-        avatar: m.avatar || m.avatarUrl || null,
-        avatarUrl: m.avatarUrl || m.avatar || null,
+        avatar: abs(m.avatar || m.avatarUrl || null, req),
+        avatarUrl: abs(m.avatarUrl || m.avatar || null, req),
         headline: m.headline,
         shortBio: m.shortBio,
         bio: m.bio || m.longBio,
@@ -148,13 +142,14 @@ app.get("/api/members/:slug", async (req, res) => {
         photos: m.photos || [],
         skills: m.skills.map((x) => x.skill.name),
         techStack: m.techs.map((x) => x.tech.name),
+        focusArea: m.focusArea || null,
         projects: m.projects.map((r) => ({
             id: r.project.id,
             slug: r.project.slug,
             title: r.project.title,
             role: r.role,
             contribution: r.contribution,
-            cover: r.project.cover || r.project.imageUrl,
+            cover: abs(r.project.cover || r.project.imageUrl || null, req),
             year: r.project.year,
             tech: [],
             techStack: [],
@@ -218,8 +213,8 @@ app.get("/api/projects", async (req, res) => {
             slug: p.slug,
             title: p.title,
             summary: p.summary || null,
-            cover: p.cover || p.imageUrl || null,
-            imageUrl: p.imageUrl || p.cover || null,
+            cover: abs(p.cover || p.imageUrl || null, req),
+            imageUrl: abs(p.imageUrl || p.cover || null, req),
             year: p.year || null,
             techStack: p.techs.map((x) => x.tech.name),
             tags: p.tags.map((x) => x.tag.name),
@@ -227,7 +222,7 @@ app.get("/api/projects", async (req, res) => {
                 memberId: r.member.id,
                 memberSlug: r.member.slug,
                 memberName: r.member.name,
-                avatarUrl: r.member.avatarUrl || null,
+                avatarUrl: abs(r.member.avatarUrl || null, req),
             })),
         })),
         page,
@@ -256,9 +251,9 @@ app.get("/api/projects/:slug", async (req, res) => {
         description: p.description || null,
         status: p.status || null,
         demoUrl: p.demoUrl || null,
-        imageUrl: p.imageUrl || null,
-        cover: p.cover || null,
-        images: Array.isArray(p.images) ? p.images : [],
+        imageUrl: abs(p.imageUrl || null, req),
+        cover: abs(p.cover || null, req),
+        images: Array.isArray(p.images) ? p.images.map((u) => abs(u, req)) : [],
         year: p.year || null,
         event: p.event ? { slug: p.event.slug, name: p.event.name, dateStart: p.event.dateStart } : null,
         techStack: p.techs.map((x) => x.tech.name),
@@ -266,33 +261,45 @@ app.get("/api/projects/:slug", async (req, res) => {
         members: p.members.map((r) => ({
             slug: r.member.slug,
             name: r.member.name,
-            avatarUrl: r.member.avatarUrl || null,
+            avatarUrl: abs(r.member.avatarUrl || null, req),
         })),
     });
 });
 
 /* ---------------- Members categories/graph ---------------- */
 app.get("/api/members/categories", async (_req, res) => {
-    const [skills, tech] = await Promise.all([
+    const [skills, tech, areas] = await Promise.all([
         prisma.skill.findMany({ select: { name: true, _count: { select: { members: true } } }, orderBy: { name: "asc" } }),
         prisma.tech.findMany({ select: { name: true, _count: { select: { members: true } } }, orderBy: { name: "asc" } }),
+        prisma.member.groupBy({ by: ["focusArea"], where: { NOT: { focusArea: null } }, _count: { focusArea: true } }),
     ]);
     res.json({
         skills: skills.map((s) => ({ name: s.name, count: s._count.members })),
         tech: tech.map((t) => ({ name: t.name, count: t._count.members })),
+        areas: areas
+            .filter((a) => a.focusArea)
+            .map((a) => ({ name: a.focusArea, count: a._count.focusArea })),
     });
 });
 
 app.get("/api/members/graph", async (_req, res) => {
     const members = await prisma.member.findMany({
-        select: { id: true, slug: true, name: true, skills: { include: { skill: true } } },
+        select: { id: true, slug: true, name: true, focusArea: true, skills: { include: { skill: true } }, avatarUrl: true },
     });
     const projects = await prisma.project.findMany({
         select: { id: true, slug: true, title: true, members: { select: { memberId: true } } },
     });
     res.json({
         nodes: [
-            ...members.map((m) => ({ id: `m:${m.id}`, type: "member", slug: m.slug, name: m.name, skills: m.skills.map((s) => s.skill.name) })),
+            ...members.map((m) => ({
+                id: `m:${m.id}`,
+                type: "member",
+                slug: m.slug,
+                name: m.name,
+                area: m.focusArea || null,
+                avatarUrl: m.avatarUrl || null,
+                skills: m.skills.map((s) => s.skill.name),
+            })),
             ...projects.map((p) => ({ id: `p:${p.id}`, type: "project", slug: p.slug, title: p.title })),
         ],
         links: projects.flatMap((p) => p.members.map((r) => ({ source: `m:${r.memberId}`, target: `p:${p.id}` }))),
@@ -330,7 +337,7 @@ app.get("/api/events", async (req, res) => {
         prisma.event.count({ where }),
         prisma.event.findMany({
             where,
-            include: { attendees: true },
+            include: { attendees: { include: { member: { select: { slug: true, name: true, avatarUrl: true, headline: true, id: true } } } } },
             orderBy: [{ dateStart: "desc" }, { name: "asc" }],
             skip: (page - 1) * size,
             take: size,
@@ -348,62 +355,19 @@ app.get("/api/events", async (req, res) => {
             lat: e.lat,
             lng: e.lng,
             description: e.description,
-            photos: Array.isArray(e.photos) ? e.photos : [],
+            photos: Array.isArray(e.photos) ? e.photos.map((u) => abs(u, req)) : [],
             tags: Array.isArray(e.tags) ? e.tags : [],
             attendeesCount: e.attendees.length,
+            attendees: e.attendees.map((a) => ({
+                slug: a.member.slug,
+                name: a.member.name,
+                avatarUrl: abs(a.member.avatarUrl || null, req),
+                headline: a.member.headline || null,
+            })),
         })),
         page,
         size,
         total,
-    });
-});
-
-app.get("/api/events/:slug", async (req, res) => {
-    const e = await prisma.event.findUnique({
-        where: { slug: req.params.slug },
-        include: {
-            attendees: { include: { member: { select: { slug: true, name: true, avatarUrl: true, headline: true, id: true } } } },
-            projects: {
-                include: {
-                    members: { include: { member: { select: { slug: true, name: true, avatarUrl: true, id: true } } } },
-                    techs: { include: { tech: true } },
-                },
-            },
-        },
-    });
-    if (!e) return res.status(404).json({ error: "Not found" });
-
-    res.json({
-        id: e.id,
-        slug: e.slug,
-        name: e.name,
-        dateStart: e.dateStart,
-        dateEnd: e.dateEnd,
-        locationName: e.locationName,
-        lat: e.lat,
-        lng: e.lng,
-        description: e.description,
-        photos: Array.isArray(e.photos) ? e.photos : [],
-        tags: Array.isArray(e.tags) ? e.tags : [],
-        attendees: e.attendees.map((a) => ({
-            slug: a.member.slug,
-            name: a.member.name,
-            avatarUrl: a.member.avatarUrl || null,
-            role: a.role || null,
-            headline: a.member.headline || null,
-        })),
-        projects: e.projects.map((p) => ({
-            slug: p.slug,
-            title: p.title,
-            imageUrl: p.imageUrl || p.cover || null,
-            year: p.year || null,
-            summary: p.summary || null,
-            techStack: p.techs.map((t) => t.tech.name),
-            members: p.members.map((r) => ({
-                memberSlug: r.member.slug,
-                memberId: r.member.id,
-            })),
-        })),
     });
 });
 
@@ -458,53 +422,19 @@ app.get("/api/blogs", async (req, res) => {
             slug: b.slug,
             title: b.title,
             summary: b.summary || null,
-            cover: b.cover || b.imageUrl || null,
-            imageUrl: b.imageUrl || null,
+            cover: abs(b.cover || b.imageUrl || null, req),
+            imageUrl: abs(b.imageUrl || null, req),
             publishedAt: b.publishedAt || null,
             techStack: b.techs.map(x => x.tech.name),
             tags: b.tags.map(x => x.tag.name),
             authors: b.authors.map(r => ({
                 slug: r.member.slug,
                 name: r.member.name,
-                avatarUrl: r.member.avatarUrl || null,
+                avatarUrl: abs(r.member.avatarUrl || null, req),
                 headline: r.member.headline || null,
-                role: r.role || null,
             })),
         })),
         page, size, total,
-    });
-});
-
-app.get("/api/blogs/:slug", async (req, res) => {
-    const b = await prisma.blog.findUnique({
-        where: { slug: req.params.slug },
-        include: {
-            techs: { include: { tech: true } },
-            tags:  { include: { tag:  true } },
-            authors: { include: { member: { select: { slug:true, name:true, avatarUrl:true, headline:true, id:true } } } },
-        },
-    });
-    if (!b) return res.status(404).json({ error: "Not found" });
-
-    res.json({
-        id: b.id,
-        slug: b.slug,
-        title: b.title,
-        summary: b.summary || null,
-        content: b.content || null,
-        imageUrl: b.imageUrl || null,
-        cover: b.cover || null,
-        images: Array.isArray(b.images) ? b.images : [],
-        publishedAt: b.publishedAt || null,
-        techStack: b.techs.map(x => x.tech.name),
-        tags: b.tags.map(x => x.tag.name),
-        authors: b.authors.map(r => ({
-            slug: r.member.slug,
-            name: r.member.name,
-            avatarUrl: r.member.avatarUrl || null,
-            headline: r.member.headline || null,
-            role: r.role || null,
-        })),
     });
 });
 

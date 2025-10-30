@@ -1,82 +1,60 @@
-'use client';
+"use client";
 
 import React from "react";
-import * as auth from "@/lib/authClient";
+import { login as apiLogin, refresh as apiRefresh, me as apiMe, logout as apiLogout } from "@/lib/authClient";
+import { toImageSrc } from "@/lib/images";
 
-type UserInfo = {
-    id: string;
-    email: string;
-    roles: string[];
-    member: { slug: string; name: string; avatarUrl: string | null } | null;
-};
+type MemberLite = { slug: string; name: string; avatarUrl: string | null; focusArea?: string | null };
+type User = { id: string; email: string; roles: string[]; member: MemberLite | null };
 
 type AuthContextType = {
-    user: UserInfo | null;
+    user: User | null;
     accessToken: string | null;
     login: (email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
 };
 
-const AuthContext = React.createContext<AuthContextType | undefined>(undefined);
+const AuthContext = React.createContext<AuthContextType>({} as any);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = React.useState<UserInfo | null>(null);
+    const [user, setUser] = React.useState<User | null>(null);
     const [accessToken, setAccessToken] = React.useState<string | null>(null);
 
-    const scheduleRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const normalizeUser = (u: any): User => {
+        if (!u) return null as any;
+        const member = u.member
+            ? { ...u.member, avatarUrl: toImageSrc(u.member.avatarUrl) }
+            : null;
+        return { ...u, member };
+    };
 
-    function scheduleRefresh() {
-        if (scheduleRef.current) clearTimeout(scheduleRef.current);
-        // refresh ~12 minutes after login (access token is 15 min)
-        scheduleRef.current = setTimeout(async () => {
-            try {
-                const r = await auth.refresh();
-                setAccessToken(r.accessToken);
-            } catch {
-                setAccessToken(null);
-                setUser(null);
-            }
-        }, 12 * 60 * 1000);
-    }
-
-    const doLogin = React.useCallback(async (email: string, password: string) => {
-        const r = await auth.login(email, password);
-        setAccessToken(r.accessToken);
-        setUser(r.user);
-        scheduleRefresh();
-    }, []);
-
-    const doLogout = React.useCallback(async () => {
-        try { await auth.logout(); } finally {
+    const silentRefresh = React.useCallback(async () => {
+        try {
+            const r = await apiRefresh();
+            setAccessToken(r.accessToken);
+            const me = await apiMe(r.accessToken);
+            setUser(normalizeUser(me.user));
+        } catch {
             setUser(null);
             setAccessToken(null);
-            if (scheduleRef.current) clearTimeout(scheduleRef.current);
         }
     }, []);
 
-    // Silent sign-in on first mount
-    React.useEffect(() => {
-        (async () => {
-            try {
-                const r = await auth.refresh();
-                setAccessToken(r.accessToken);
-                const me = await auth.me(r.accessToken);
-                setUser(me.user);
-                scheduleRefresh();
-            } catch {
-                // not signed in — nothing to do
-            }
-        })();
-        return () => { if (scheduleRef.current) clearTimeout(scheduleRef.current); };
-    }, []);
+    React.useEffect(() => { silentRefresh(); }, [silentRefresh]);
 
-    const value: AuthContextType = { user, accessToken, login: doLogin, logout: doLogout };
+    const login = async (email: string, password: string) => {
+        const r = await apiLogin(email, password);
+        setAccessToken(r.accessToken);
+        setUser(normalizeUser(r.user));
+    };
 
-    return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+    const logout = async () => {
+        await apiLogout();
+        setUser(null);
+        setAccessToken(null);
+    };
+
+    return <AuthContext.Provider value={{ user, accessToken, login, logout }}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth() {
-    const ctx = React.useContext(AuthContext);
-    if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-    return ctx;
-}
+export const useAuth = () => React.useContext(AuthContext);

@@ -10,16 +10,14 @@ const fs = require("fs");
 const multer = require("multer");
 const mime = require("mime-types");
 
-// ---- Config ----
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
 const AVATAR_DIR = path.join(UPLOAD_ROOT, "avatars");
 const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || null;
 
-// ensure upload dir exists
 fs.mkdirSync(AVATAR_DIR, { recursive: true });
 
-function toAbsoluteUrl(u, req) {
+function abs(u, req) {
     if (!u) return null;
     if (/^https?:\/\//i.test(u)) return u;
     const base = PUBLIC_API_BASE || `${req.protocol}://${req.get("host")}`;
@@ -27,7 +25,6 @@ function toAbsoluteUrl(u, req) {
     return `${base}${rel}`;
 }
 
-// ---- Auth middleware ----
 function authRequired(req, res, next) {
     const auth = req.get("authorization") || "";
     const m = auth.match(/^Bearer (.+)$/i);
@@ -41,7 +38,6 @@ function authRequired(req, res, next) {
     }
 }
 
-// ---- Multer (avatar uploads) ----
 const upload = multer({
     storage: multer.diskStorage({
         destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
@@ -54,29 +50,20 @@ const upload = multer({
         const ok = ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype);
         cb(ok ? null : new Error("Invalid image type"), ok);
     },
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-// ---- Helpers ----
 async function ensureMemberForUser(user) {
-    if (user.memberId) {
-        return prisma.member.findUnique({ where: { id: user.memberId } });
-    }
+    if (user.memberId) return prisma.member.findUnique({ where: { id: user.memberId } });
     const base = slugify(user.email.split("@")[0] || "user", { lower: true, strict: true }) || "user";
     let slug = base;
-    let attempt = 0;
+    let i = 0;
     while (await prisma.member.findUnique({ where: { slug } })) {
         slug = `${base}-${nanoid(6).toLowerCase()}`;
-        if (++attempt > 5) break;
+        if (++i > 5) break;
     }
     const member = await prisma.member.create({
-        data: {
-            slug,
-            name: user.email.split("@")[0],
-            bio: "",
-            links: {},
-            avatarUrl: null,
-        },
+        data: { slug, name: user.email.split("@")[0], bio: "", links: {}, avatarUrl: null, focusArea: null },
     });
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
     return member;
@@ -91,7 +78,8 @@ function presentMember(m, skills = [], techs = [], req) {
         shortBio: m.shortBio,
         markdown: m.bio || "",
         links: m.links || {},
-        avatarUrl: toAbsoluteUrl(m.avatarUrl || null, req),
+        avatarUrl: abs(m.avatarUrl || null, req),
+        focusArea: m.focusArea || null,
         skills,
         techStack: techs,
     };
@@ -116,7 +104,7 @@ async function upsertStringList(list, modelName) {
 const router = express.Router();
 router.use(authRequired);
 
-// GET /api/account/profile
+// GET profile
 router.get("/profile", async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
     if (!user) return res.status(401).json({ ok: false, error: "Unknown user" });
@@ -138,7 +126,7 @@ router.get("/profile", async (req, res) => {
     });
 });
 
-// PUT /api/account/profile
+// Update profile
 router.put("/profile", async (req, res) => {
     const schema = z.object({
         name: z.string().min(1).max(120).optional(),
@@ -146,6 +134,7 @@ router.put("/profile", async (req, res) => {
         shortBio: z.string().max(500).nullable().optional(),
         markdown: z.string().max(100_000).optional(),
         links: z.record(z.string().url()).optional(),
+        focusArea: z.enum(["FRONTEND", "BACKEND", "ML", "DATA", "DEVOPS", "DESIGN", "PM", "OTHER"]).nullable().optional(),
         skills: z.array(z.string().min(1)).optional(),
         techStack: z.array(z.string().min(1)).optional(),
     });
@@ -157,12 +146,13 @@ router.put("/profile", async (req, res) => {
     const member = user.member || (await ensureMemberForUser(user));
 
     const data = {};
-    const { name, headline, shortBio, markdown, links } = parsed.data;
+    const { name, headline, shortBio, markdown, links, focusArea } = parsed.data;
     if (typeof name !== "undefined") data.name = name;
     if (typeof headline !== "undefined") data.headline = headline;
     if (typeof shortBio !== "undefined") data.shortBio = shortBio;
     if (typeof markdown !== "undefined") data.bio = markdown;
     if (typeof links !== "undefined") data.links = links;
+    if (typeof focusArea !== "undefined") data.focusArea = focusArea;
 
     const skills = parsed.data.skills || null;
     const techStack = parsed.data.techStack || null;
@@ -212,18 +202,16 @@ router.put("/profile", async (req, res) => {
     });
 });
 
-// POST /api/account/avatar  (multipart/form-data: avatar=<file>)
+// Avatar upload
 router.post("/avatar", upload.single("avatar"), async (req, res) => {
     if (!req.file) return res.status(400).json({ ok: false, error: "Missing file" });
-
     const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
     if (!user || !user.memberId) return res.status(401).json({ ok: false, error: "Unknown user" });
 
     const rel = `/uploads/avatars/${req.file.filename}`;
     await prisma.member.update({ where: { id: user.memberId }, data: { avatarUrl: rel } });
 
-    // Return absolute URL so the browser can display it immediately
-    return res.status(201).json({ ok: true, url: toAbsoluteUrl(rel, req) });
+    return res.status(201).json({ ok: true, url: abs(rel, req) });
 });
 
 module.exports = { accountRouter: router };
