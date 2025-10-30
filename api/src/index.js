@@ -435,3 +435,117 @@ app.post("/api/contact", (req, res) => {
 
 const PORT = Number(process.env.PORT || 3001);
 app.listen(PORT, () => console.log(`API on :${PORT}`));
+
+// --- Blogs (list) ---
+app.get("/api/blogs", async (req, res) => {
+    const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
+    const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
+
+    const q = (req.query.q || "").toString().trim();
+    const techCsv = (req.query.tech || "").toString();
+    const tagCsv  = (req.query.tag  || "").toString();
+    const authorCsv = (req.query.author || "").toString();
+
+    const techs = techCsv.split(",").map(s=>s.trim()).filter(Boolean);
+    const tags  = tagCsv .split(",").map(s=>s.trim()).filter(Boolean);
+    const authors = authorCsv.split(",").map(s=>s.trim()).filter(Boolean);
+
+    const AND = [];
+    if (q) {
+        AND.push({
+            OR: [
+                { title: { contains: q, mode: "insensitive" } },
+                { summary: { contains: q, mode: "insensitive" } },
+                { content: { contains: q, mode: "insensitive" } },
+            ],
+        });
+    }
+    for (const t of techs) AND.push({ techs: { some: { tech: { name: t } } } });
+    for (const t of tags)  AND.push({ tags:  { some: { tag:  { name: t } } } });
+    for (const a of authors) AND.push({ authors: { some: { member: { slug: a } } } });
+
+    const where = AND.length ? { AND } : undefined;
+
+    const [total, rows] = await Promise.all([
+        prisma.blog.count({ where }),
+        prisma.blog.findMany({
+            where,
+            include: {
+                techs: { include: { tech: true } },
+                tags:  { include: { tag:  true } },
+                authors: { include: { member: { select: { slug:true, name:true, avatarUrl:true, headline:true } } } },
+            },
+            orderBy: [{ publishedAt: "desc" }, { title: "asc" }],
+            skip: (page - 1) * size,
+            take: size,
+        }),
+    ]);
+
+    res.json({
+        items: rows.map(b => ({
+            id: b.id,
+            slug: b.slug,
+            title: b.title,
+            summary: b.summary || null,
+            cover: b.cover || b.imageUrl || null,
+            imageUrl: b.imageUrl || null,
+            publishedAt: b.publishedAt || null,
+            techStack: b.techs.map(x => x.tech.name),
+            tags: b.tags.map(x => x.tag.name),
+            authors: b.authors.map(r => ({
+                slug: r.member.slug,
+                name: r.member.name,
+                avatarUrl: r.member.avatarUrl || null,
+                headline: r.member.headline || null,
+                role: r.role || null,
+            })),
+        })),
+        page, size, total,
+    });
+});
+
+// --- Blog detail ---
+app.get("/api/blogs/:slug", async (req, res) => {
+    const b = await prisma.blog.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+            techs: { include: { tech: true } },
+            tags:  { include: { tag:  true } },
+            authors: { include: { member: { select: { slug:true, name:true, avatarUrl:true, headline:true, id:true } } } },
+        },
+    });
+    if (!b) return res.status(404).json({ error: "Not found" });
+
+    res.json({
+        id: b.id,
+        slug: b.slug,
+        title: b.title,
+        summary: b.summary || null,
+        content: b.content || null,
+        imageUrl: b.imageUrl || null,
+        cover: b.cover || null,
+        images: Array.isArray(b.images) ? b.images : [],
+        publishedAt: b.publishedAt || null,
+        techStack: b.techs.map(x => x.tech.name),
+        tags: b.tags.map(x => x.tag.name),
+        authors: b.authors.map(r => ({
+            slug: r.member.slug,
+            name: r.member.name,
+            avatarUrl: r.member.avatarUrl || null,
+            headline: r.member.headline || null,
+            role: r.role || null,
+        })),
+    });
+});
+
+// --- Blog categories (tech + tags) ---
+app.get("/api/blogs/categories", async (_req, res) => {
+    const [tech, tags] = await Promise.all([
+        prisma.tech.findMany({ select: { name: true, _count: { select: { blogs: true } } }, orderBy: { name: "asc" } }),
+        prisma.tag.findMany({  select: { name: true, _count: { select: { blogs: true } } }, orderBy: { name: "asc" } }),
+    ]);
+    res.json({
+        tech: tech.map(t => ({ name: t.name, count: t._count.blogs })),
+        tags: tags.map(t => ({ name: t.name, count: t._count.blogs })),
+    });
+});

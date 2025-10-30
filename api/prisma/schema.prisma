@@ -26,6 +26,7 @@ model Member {
   techs     MemberTech[]
   projects  MemberProject[]
   events    MemberEvent[]
+  blogs     BlogAuthor[]
 }
 
 model Skill {
@@ -39,12 +40,14 @@ model Tech {
   name     String  @unique
   members  MemberTech[]
   projects ProjectTech[]
+  blogs    BlogTech[]
 }
 
 model Tag {
   id       Int     @id @default(autoincrement())
   name     String  @unique
   projects ProjectTag[]
+  blogs    BlogTag[]
 }
 
 model Project {
@@ -134,4 +137,48 @@ model ProjectTag {
   project   Project @relation(fields: [projectId], references: [id])
   tag       Tag     @relation(fields: [tagId], references: [id])
   @@id([projectId, tagId])
+}
+
+model Blog {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  summary     String?
+  content     String?     // markdown or HTML
+  publishedAt DateTime?
+  imageUrl    String?
+  cover       String?
+  images      Json?
+
+  authors     BlogAuthor[]
+  techs       BlogTech[]
+  tags        BlogTag[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BlogAuthor {
+  blogId   String
+  memberId String
+  role     String?
+  blog     Blog   @relation(fields: [blogId], references: [id])
+  member   Member @relation(fields: [memberId], references: [id])
+  @@id([blogId, memberId])
+}
+
+model BlogTech {
+  blogId String
+  techId Int
+  blog   Blog @relation(fields: [blogId], references: [id])
+  tech   Tech @relation(fields: [techId], references: [id])
+  @@id([blogId, techId])
+}
+
+model BlogTag {
+  blogId String
+  tagId  Int
+  blog   Blog @relation(fields: [blogId], references: [id])
+  tag    Tag  @relation(fields: [tagId], references: [id])
+  @@id([blogId, tagId])
 }

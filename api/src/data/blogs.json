@@ -1,0 +1,30 @@
+[
+  {
+    "id": "blog-hello-pum",
+    "slug": "blog-hello-pum",
+    "title": "Hello, PUM – Why We Build",
+    "summary": "How we pick ideas, teams and ship fast at PUM.",
+    "content": "We believe in small, focused teams shipping real things...\n\n## How we choose ideas\n- Problems first\n- Users first",
+    "publishedAt": "2025-09-01T10:00:00.000Z",
+    "imageUrl": "/images/blog/hello-pum/cover.jpg",
+    "cover": "/images/blog/hello-pum/cover.jpg",
+    "images": ["/images/blog/hello-pum/1.jpg", "/images/blog/hello-pum/2.jpg"],
+    "authors": [{ "slug": "alice-smith", "role": "Author" }],
+    "techStack": ["Next.js", "TypeScript"],
+    "tags": ["culture", "process"]
+  },
+  {
+    "id": "blog-hacka-recap-2024",
+    "slug": "blog-hacka-recap-2024",
+    "title": "Hacka 2024 – Recap",
+    "summary": "Highlights from Hacka 2024: projects, winners and lessons.",
+    "content": "What a weekend! In this recap we share...\n\n### Winners\n- ...",
+    "publishedAt": "2024-11-22T08:00:00.000Z",
+    "imageUrl": "/images/blog/hacka-2024/cover.jpg",
+    "cover": "/images/blog/hacka-2024/cover.jpg",
+    "images": [],
+    "authors": [{ "slug": "bob-lee", "role": "Editor" }],
+    "techStack": ["React"],
+    "tags": ["recap", "events"]
+  }
+]
