@@ -9,6 +9,61 @@ async function upsertSkill(name){ return prisma.skill.upsert({ where:{ name }, c
 async function upsertTech(name){  return prisma.tech.upsert({  where:{ name }, create:{ name }, update:{} }); }
 async function upsertTag(name){   return prisma.tag.upsert({   where:{ name }, create:{ name }, update:{} }); }
 
+/** Ensure a minimal Member row exists (by slug); return the row */
+async function ensureMember(slug, name){
+    const safeSlug = String(slug).toLowerCase().replace(/[^a-z0-9-]/g,'-');
+    const display = name || slug;
+    return prisma.member.upsert({
+        where: { slug: safeSlug },
+        create: {
+            slug: safeSlug,
+            name: display,
+            links: {},
+            photos: [],
+            shortBio: null,
+            longBio: null,
+            bio: null,
+        },
+        update: {},
+    });
+}
+
+/** Ensure a User with roles exists, linked to a Member */
+async function ensureUserWithRoles({ email, passwordHash, roles, memberSlug, memberName }) {
+    const member = await ensureMember(memberSlug, memberName);
+
+    let user = await prisma.user.findUnique({
+        where: { email },
+        include: { roles: true },
+    });
+
+    if (!user) {
+        user = await prisma.user.create({
+            data: {
+                email,
+                passwordHash,
+                memberId: member.id,
+                roles: { create: roles.map((r) => ({ role: r })) },
+            },
+            include: { roles: true },
+        });
+    } else {
+        // Link member if missing
+        if (!user.memberId) {
+            await prisma.user.update({ where: { email }, data: { memberId: member.id } });
+        }
+        // Ensure required roles exist
+        const has = new Set(user.roles.map((r) => r.role));
+        for (const role of roles) {
+            if (!has.has(role)) {
+                await prisma.userRole.create({ data: { userId: user.id, role } });
+            }
+        }
+    }
+
+    return user;
+}
+
 async function main(){
     const dataDir = path.join(__dirname,'..','src','data');
 
@@ -147,24 +202,74 @@ async function main(){
         }
     }
 
+    /* ================= USERS (ADMIN + MODS + MEMBERS) ================= */
     const email = process.env.SEED_ADMIN_EMAIL || "admin@pum.local";
-    const password = process.env.SEED_ADMIN_PASSWORD || "ChangeMe!123";
-    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    const adminPassword = process.env.SEED_ADMIN_PASSWORD || "ChangeMe!123";
+    const defaultPassword = process.env.SEED_DEFAULT_PASSWORD || adminPassword;
 
-    const user = await prisma.user.upsert({
+    const adminPasswordHash = await argon2.hash(adminPassword, { type: argon2.argon2id });
+    const defaultPasswordHash = await argon2.hash(defaultPassword, { type: argon2.argon2id });
+
+    // Admin (keep existing behavior)
+    const adminUser = await prisma.user.upsert({
         where: { email },
         update: {},
         create: {
             email,
-            passwordHash,
+            passwordHash: adminPasswordHash,
             roles: { create: [{ role: "ADMIN" }, { role: "MEMBER" }] },
         },
         include: { roles: true },
     });
 
-    console.log("✅ Seeded admin user:");
-    console.log("   email   :", email);
-    console.log("   password:", password);
+    // Link admin to a member profile if available or create minimal one
+    const adminLocal = email.split("@")[0];
+    const adminMember = await ensureMember(adminLocal, "Admin");
+    if (!adminUser.memberId) {
+        await prisma.user.update({ where: { email }, data: { memberId: adminMember.id } });
+    }
+
+    // 2 Moderators (also members)
+    await ensureUserWithRoles({
+        email: "mod1@pum.local",
+        passwordHash: defaultPasswordHash,
+        roles: ["MODERATOR", "MEMBER"],
+        memberSlug: "mod1",
+        memberName: "Moderator One",
+    });
+    await ensureUserWithRoles({
+        email: "mod2@pum.local",
+        passwordHash: defaultPasswordHash,
+        roles: ["MODERATOR", "MEMBER"],
+        memberSlug: "mod2",
+        memberName: "Moderator Two",
+    });
+
+    // 2 Members
+    await ensureUserWithRoles({
+        email: "mem1@pum.local",
+        passwordHash: defaultPasswordHash,
+        roles: ["MEMBER"],
+        memberSlug: "mem1",
+        memberName: "Member One",
+    });
+    await ensureUserWithRoles({
+        email: "mem2@pum.local",
+        passwordHash: defaultPasswordHash,
+        roles: ["MEMBER"],
+        memberSlug: "mem2",
+        memberName: "Member Two",
+    });
+
+    console.log("✅ Seeded users:");
+    console.table([
+        { email, role: "ADMIN+MEMBER", password: adminPassword },
+        { email: "mod1@pum.local", role: "MODERATOR+MEMBER", password: defaultPassword },
+        { email: "mod2@pum.local", role: "MODERATOR+MEMBER", password: defaultPassword },
+        { email: "mem1@pum.local", role: "MEMBER", password: defaultPassword },
+        { email: "mem2@pum.local", role: "MEMBER", password: defaultPassword },
+    ]);
+    console.log("   (change passwords in production via /api/auth/password/reset)");
 }
 
 main().then(()=>prisma.$disconnect()).catch(async e=>{ console.error(e); await prisma.$disconnect(); process.exit(1); });

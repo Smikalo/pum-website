@@ -5,6 +5,7 @@ import { API_BASE } from "../../lib/config";
 import MembersSearchBar from "@/components/MembersSearchBar";
 import EventsMap from "@/components/EventsMap";
 import { SEED_EVENTS } from "@/data/events.seed";
+import NewEventButton from "@/components/NewEventButton"; // ← NEW
 
 type Event = {
     id: string;
@@ -39,7 +40,9 @@ function highlight(text: string | undefined, q: string) {
     const parts = text.split(re);
     return parts.map((p, i) =>
         re.test(p) ? (
-            <mark key={i} className="px-0.5 rounded bg-yellow-300/30 text-yellow-200">{p}</mark>
+            <mark key={i} className="px-0.5 rounded bg-yellow-300/30 text-yellow-200">
+                {p}
+            </mark>
         ) : (
             <span key={i}>{p}</span>
         )
@@ -142,11 +145,17 @@ export default async function EventsPage({
         <section className="section">
             <header className="mb-6">
                 <p className="kicker">EVENTS</p>
-                <h1 className="display">Where we hack & build</h1>
-                <p className="mt-3 text-white/70 max-w-2xl">
-                    A map of hackathons, demos, and conferences we’ve attended — discover stories,
-                    projects, and people behind each pin.
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <h1 className="display">Where we hack & build</h1>
+                        <p className="mt-3 text-white/70 max-w-2xl">
+                            A map of hackathons, demos, and conferences we’ve attended — discover stories,
+                            projects, and people behind each pin.
+                        </p>
+                    </div>
+                    {/* Visible only for logged-in users */}
+                    <NewEventButton />
+                </div>
             </header>
 
             {/* Controls */}
