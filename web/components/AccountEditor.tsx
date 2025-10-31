@@ -22,7 +22,14 @@ type Profile = {
     focusArea: Area | null;
     skills: string[];
     techStack: string[];
+    cvUrl?: string | null;
 };
+
+function mergeCsv(existingCsv: string, adds: string[]) {
+    const set = new Set(existingCsv.split(",").map(s => s.trim()).filter(Boolean));
+    for (const a of adds) if (a && !set.has(a)) set.add(a);
+    return Array.from(set).join(", ");
+}
 
 export default function AccountEditor() {
     const { user, accessToken } = useAuth();
@@ -41,7 +48,12 @@ export default function AccountEditor() {
     const [links, setLinks] = React.useState<{ label: string; url: string }[]>([]);
     const [skills, setSkills] = React.useState("");
     const [tech, setTech] = React.useState("");
-    const [focusArea, setFocusArea] = React.useState<Area | "">( "" );
+    const [focusArea, setFocusArea] = React.useState<Area | "">("");
+
+    // CV state
+    const [cvUrl, setCvUrl] = React.useState<string | null>(null);
+    const [foundSkills, setFoundSkills] = React.useState<string[]>([]);
+    const [foundTech, setFoundTech] = React.useState<string[]>([]);
 
     React.useEffect(() => {
         let active = true;
@@ -63,6 +75,7 @@ export default function AccountEditor() {
                 setSkills((normalized.skills || []).join(", "));
                 setTech((normalized.techStack || []).join(", "));
                 setFocusArea((normalized.focusArea as Area) || "");
+                setCvUrl(normalized.cvUrl || null);
             } catch (e: any) {
                 setError(e.message || "Failed to load profile");
             } finally {
@@ -90,6 +103,7 @@ export default function AccountEditor() {
             const res = await api.updateMyProfile(accessToken, body);
             const updated: Profile = { ...res.profile, avatarUrl: toImageSrc(res.profile?.avatarUrl) };
             setProfile(updated);
+            setCvUrl(updated.cvUrl || null);
             setJustSaved(true);
             setTimeout(() => setJustSaved(false), 1600);
         } catch (e: any) {
@@ -113,6 +127,25 @@ export default function AccountEditor() {
             setTimeout(() => setJustSaved(false), 1600);
         } catch (e: any) {
             setError(e.message || "Avatar upload failed");
+        } finally {
+            setSaving(false);
+            e.target.value = "";
+        }
+    }
+
+    async function onCvChange(e: React.ChangeEvent<HTMLInputElement>) {
+        if (!accessToken) return;
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setSaving(true);
+        setError(null);
+        try {
+            const res = await api.uploadCv(accessToken, file);
+            setCvUrl(res.url || null);
+            setFoundSkills(Array.isArray(res.extractedSkills) ? res.extractedSkills : []);
+            setFoundTech(Array.isArray(res.extractedTech) ? res.extractedTech : []);
+        } catch (e: any) {
+            setError(e.message || "CV upload failed");
         } finally {
             setSaving(false);
             e.target.value = "";
@@ -143,6 +176,67 @@ export default function AccountEditor() {
                         <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onAvatarChange} />
                         <p className="text-xs text-white/50">PNG/JPEG/WebP, up to 5MB.</p>
                     </div>
+                </div>
+
+                {/* CV upload + link (minimal UI) */}
+                <div>
+                    <label className="block text-sm text-white/70 mb-1">Curriculum Vitae (PDF)</label>
+                    <div className="flex items-center gap-3">
+                        <input type="file" accept="application/pdf" onChange={onCvChange} />
+                        {cvUrl ? (
+                            <a href={cvUrl} className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10 text-sm" target="_blank" rel="noopener noreferrer" download>
+                                Download CV
+                            </a>
+                        ) : null}
+                    </div>
+
+                    {/* Clickable suggestions */}
+                    {(foundSkills.length || foundTech.length) ? (
+                        <div className="mt-2 space-y-2">
+                            {foundSkills.length ? (
+                                <div className="text-xs">
+                                    <span className="text-white/70 mr-2">Skills found:</span>
+                                    <button
+                                        className="mr-2 px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
+                                        onClick={() => setSkills(s => mergeCsv(s, foundSkills))}
+                                    >
+                                        + Add all
+                                    </button>
+                                    {foundSkills.map((s) => (
+                                        <button
+                                            key={`sk-${s}`}
+                                            className="mr-1 mb-1 inline-flex px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
+                                            onClick={() => setSkills(v => mergeCsv(v, [s]))}
+                                            title="Add to Skills"
+                                        >
+                                            + {s}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : null}
+                            {foundTech.length ? (
+                                <div className="text-xs">
+                                    <span className="text-white/70 mr-2">Tech found:</span>
+                                    <button
+                                        className="mr-2 px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
+                                        onClick={() => setTech(t => mergeCsv(t, foundTech))}
+                                    >
+                                        + Add all
+                                    </button>
+                                    {foundTech.map((t) => (
+                                        <button
+                                            key={`te-${t}`}
+                                            className="mr-1 mb-1 inline-flex px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
+                                            onClick={() => setTech(v => mergeCsv(v, [t]))}
+                                            title="Add to Tech stack"
+                                        >
+                                            + {t}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
                 </div>
 
                 <div>

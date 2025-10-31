@@ -1,4 +1,3 @@
-// api/src/index.js
 const express = require("express");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
@@ -15,23 +14,42 @@ const app = express();
 
 /* ------------------------ CORS ------------------------ */
 const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:3000";
-app.use(cors({
-    origin: WEB_ORIGIN,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "X-CSRF-Token", "Authorization"],
-    optionsSuccessStatus: 204,
-}));
+app.use(
+    cors({
+        origin: WEB_ORIGIN,
+        credentials: true,
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "X-CSRF-Token", "Authorization"],
+        optionsSuccessStatus: 204,
+    })
+);
 
 /* ---------------- Proxy + middleware ---------------- */
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "2mb" }));
-app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" }, crossOriginEmbedderPolicy: false }));
+app.use(
+    helmet({
+        crossOriginResourcePolicy: { policy: "cross-origin" },
+        crossOriginEmbedderPolicy: false,
+    })
+);
 
 /* ------------------------ Static uploads ------------------------ */
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
 fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
-app.use("/uploads", (req, res, next) => { res.setHeader("Cross-Origin-Resource-Policy", "cross-origin"); next(); }, express.static(UPLOAD_ROOT, { maxAge: "1h", etag: true }));
+
+app.use(
+    "/uploads",
+    (req, res, next) => {
+        // allow the web app to embed these files in an <iframe> (PDF viewer)
+        res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+        res.removeHeader("X-Frame-Options");
+        // Explicitly permit only our web origin (and same-origin) to frame these responses
+        res.setHeader("Content-Security-Policy", `frame-ancestors 'self' ${WEB_ORIGIN}`);
+        next();
+    },
+    express.static(UPLOAD_ROOT, { maxAge: "1h", etag: true })
+);
 
 /* ------------------------ Helpers ------------------------ */
 const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || null;
@@ -118,16 +136,44 @@ app.get("/api/members", async (req, res) => {
 });
 
 app.get("/api/members/:slug", async (req, res) => {
-    const m = await prisma.member.findUnique({
+    // shared "include" to keep changes minimal
+    const include = {
+        skills: { include: { skill: true } },
+        techs: { include: { tech: true } },
+        projects: { include: { project: true } },
+        events: { include: { event: true } },
+    };
+
+    // 1) try by slug as usual
+    let m = await prisma.member.findUnique({
         where: { slug: req.params.slug },
-        include: {
-            skills: { include: { skill: true } },
-            techs: { include: { tech: true } },
-            projects: { include: { project: true } },
-            events: { include: { event: true } },
-        },
+        include,
     });
+
+    // 2) minimal, safe fallback: if not found, try to resolve by user email local-part (e.g., "admin")
+    if (!m) {
+        const u = await prisma.user.findFirst({
+            where: {
+                email: { startsWith: `${req.params.slug}@`, mode: "insensitive" },
+                memberId: { not: null },
+            },
+            select: { memberId: true },
+        });
+        if (u?.memberId) {
+            m = await prisma.member.findUnique({ where: { id: u.memberId }, include });
+        }
+    }
+
     if (!m) return res.status(404).json({ error: "Not found" });
+
+    // resolve cv if present for the linked user
+    let cvUrl = null;
+    const uForCv = await prisma.user.findFirst({ where: { memberId: m.id }, select: { id: true } });
+    if (uForCv) {
+        const p = path.join(UPLOAD_ROOT, "cv", `${uForCv.id}-latest.pdf`);
+        if (fs.existsSync(p)) cvUrl = abs(`/uploads/cv/${uForCv.id}-latest.pdf`, req);
+    }
+
     res.json({
         id: m.id,
         slug: m.slug,
@@ -137,6 +183,7 @@ app.get("/api/members/:slug", async (req, res) => {
         headline: m.headline,
         shortBio: m.shortBio,
         bio: m.bio || m.longBio,
+        markdown: m.bio || m.longBio || "",
         location: m.location,
         links: m.links || {},
         photos: m.photos || [],
@@ -163,6 +210,7 @@ app.get("/api/members/:slug", async (req, res) => {
             dateStart: r.event.dateStart,
             dateEnd: r.event.dateEnd,
         })),
+        cvUrl,
     });
 });
 
@@ -276,9 +324,7 @@ app.get("/api/members/categories", async (_req, res) => {
     res.json({
         skills: skills.map((s) => ({ name: s.name, count: s._count.members })),
         tech: tech.map((t) => ({ name: t.name, count: t._count.members })),
-        areas: areas
-            .filter((a) => a.focusArea)
-            .map((a) => ({ name: a.focusArea, count: a._count.focusArea })),
+        areas: areas.filter((a) => a.focusArea).map((a) => ({ name: a.focusArea, count: a._count.focusArea })),
     });
 });
 
@@ -378,12 +424,12 @@ app.get("/api/blogs", async (req, res) => {
 
     const q = (req.query.q || "").toString().trim();
     const techCsv = (req.query.tech || "").toString();
-    const tagCsv  = (req.query.tag  || "").toString();
+    const tagCsv = (req.query.tag || "").toString();
     const authorCsv = (req.query.author || "").toString();
 
-    const techs = techCsv.split(",").map(s=>s.trim()).filter(Boolean);
-    const tags  = tagCsv .split(",").map(s=>s.trim()).filter(Boolean);
-    const authors = authorCsv.split(",").map(s=>s.trim()).filter(Boolean);
+    const techs = techCsv.split(",").map((s) => s.trim()).filter(Boolean);
+    const tags = tagCsv.split(",").map((s) => s.trim()).filter(Boolean);
+    const authors = authorCsv.split(",").map((s) => s.trim()).filter(Boolean);
 
     const AND = [];
     if (q) {
@@ -396,7 +442,7 @@ app.get("/api/blogs", async (req, res) => {
         });
     }
     for (const t of techs) AND.push({ techs: { some: { tech: { name: t } } } });
-    for (const t of tags)  AND.push({ tags:  { some: { tag:  { name: t } } } });
+    for (const t of tags) AND.push({ tags: { some: { tag: { name: t } } } });
     for (const a of authors) AND.push({ authors: { some: { member: { slug: a } } } });
 
     const where = AND.length ? { AND } : undefined;
@@ -407,8 +453,8 @@ app.get("/api/blogs", async (req, res) => {
             where,
             include: {
                 techs: { include: { tech: true } },
-                tags:  { include: { tag:  true } },
-                authors: { include: { member: { select: { slug:true, name:true, avatarUrl:true, headline:true } } } },
+                tags: { include: { tag: true } },
+                authors: { include: { member: { select: { slug: true, name: true, avatarUrl: true, headline: true } } } },
             },
             orderBy: [{ publishedAt: "desc" }, { title: "asc" }],
             skip: (page - 1) * size,
@@ -417,7 +463,7 @@ app.get("/api/blogs", async (req, res) => {
     ]);
 
     res.json({
-        items: rows.map(b => ({
+        items: rows.map((b) => ({
             id: b.id,
             slug: b.slug,
             title: b.title,
@@ -425,16 +471,18 @@ app.get("/api/blogs", async (req, res) => {
             cover: abs(b.cover || b.imageUrl || null, req),
             imageUrl: abs(b.imageUrl || null, req),
             publishedAt: b.publishedAt || null,
-            techStack: b.techs.map(x => x.tech.name),
-            tags: b.tags.map(x => x.tag.name),
-            authors: b.authors.map(r => ({
+            techStack: b.techs.map((x) => x.tech.name),
+            tags: b.tags.map((x) => x.tag.name),
+            authors: b.authors.map((r) => ({
                 slug: r.member.slug,
                 name: r.member.name,
                 avatarUrl: abs(r.member.avatarUrl || null, req),
                 headline: r.member.headline || null,
             })),
         })),
-        page, size, total,
+        page,
+        size,
+        total,
     });
 });
 

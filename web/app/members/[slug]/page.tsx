@@ -24,6 +24,7 @@ type ApiMember = {
     skills?: (string | null)[] | null;
     techStack?: (string | null)[] | null;
     expertise?: (string | null)[] | null;
+    cvUrl?: string | null;
 
     projects?: {
         slug: string;
@@ -62,6 +63,7 @@ type UiMember = {
     skills: string[];
     techStack: string[];
     expertise: string[];
+    cvUrl?: string | null;
 
     projects: {
         slug: string;
@@ -145,6 +147,7 @@ async function getMemberBySlug(slug: string): Promise<UiMember | null> {
         skills,
         techStack,
         expertise,
+        cvUrl: m.cvUrl ?? null,
         projects,
         events,
     };
@@ -270,6 +273,25 @@ export default async function MemberDetailPage({ params }: { params: { slug: str
                             </div>
                         </div>
                     )}
+
+                    {/* CV viewer (inline) */}
+                    {member.cvUrl && (
+                        <div className="card p-5">
+                            <h2 className="text-lg font-semibold mb-3">Curriculum Vitae</h2>
+                            <div className="mb-3">
+                                <a href={member.cvUrl} className="btn-secondary" target="_blank" rel="noreferrer">
+                                    Download CV (PDF)
+                                </a>
+                            </div>
+                            <div className="w-full rounded-md ring-1 ring-white/10 overflow-hidden bg-white/5">
+                                <iframe
+                                    src={`${member.cvUrl}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`}
+                                    className="w-full h-[70vh] bg-black"
+                                    title="CV PDF"
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Right column */}
@@ -372,7 +394,7 @@ function MarkdownView({ markdown }: { markdown: string }) {
           </pre>
                     ) : (
                         <BlockText key={`txt-${i}`} text={seg.content} />
-                    ),
+                    )
             )}
         </div>
     );
@@ -423,7 +445,7 @@ function BlockText({ text }: { text: string }) {
                     <h5 key={`h-${i}`} className="text-lg font-semibold text-white mt-2">
                         {inline(content)}
                     </h5>
-                ),
+                )
             );
             i++;
             continue;
@@ -437,14 +459,14 @@ function BlockText({ text }: { text: string }) {
                 items.push(
                     <li key={`ol-${i}`} className="ml-4">
                         {inline(item)}
-                    </li>,
+                    </li>
                 );
                 i++;
             }
             blocks.push(
                 <ol key={`ol-block-${i}`} className="list-decimal pl-5 space-y-1">
                     {items}
-                </ol>,
+                </ol>
             );
             continue;
         }
@@ -457,14 +479,14 @@ function BlockText({ text }: { text: string }) {
                 items.push(
                     <li key={`ul-${i}`} className="ml-4">
                         {inline(item)}
-                    </li>,
+                    </li>
                 );
                 i++;
             }
             blocks.push(
                 <ul key={`ul-block-${i}`} className="list-disc pl-5 space-y-1">
                     {items}
-                </ul>,
+                </ul>
             );
             continue;
         }
@@ -485,7 +507,7 @@ function BlockText({ text }: { text: string }) {
         blocks.push(
             <p key={`p-${i}`} className="text-white/85">
                 {inline(paraText)}
-            </p>,
+            </p>
         );
     }
 
@@ -531,7 +553,7 @@ function inline(text: string): React.ReactNode[] {
                     <strong key={`b-${idx}-${j}-${k}`} className="text-white">
                         {p.code}
                     </strong>
-                ),
+                )
             );
         });
 
@@ -546,7 +568,7 @@ function inline(text: string): React.ReactNode[] {
                     <em key={`i-${idx}-${j}-${k}`} className="italic">
                         {p.code}
                     </em>
-                ),
+                )
             );
         });
 

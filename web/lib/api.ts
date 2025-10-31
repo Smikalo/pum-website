@@ -9,7 +9,6 @@ async function fetchAuth(path: string, opts: RequestInit & { token: string }) {
     const headers: Record<string, string> = {
         Authorization: `Bearer ${opts.token}`,
     };
-    // merge user headers first so we don't stomp explicit overrides
     if (opts.headers) {
         for (const [k, v] of Object.entries(opts.headers as Record<string, string>)) {
             if (typeof v !== "undefined") headers[k] = v as any;
@@ -47,4 +46,11 @@ export async function uploadAvatar(token: string, file: File) {
     const fd = new FormData();
     fd.append("avatar", file);
     return fetchAuth("/api/account/avatar", { method: "POST", token, body: fd as any });
+}
+
+// --- NEW: CV upload (PDF) ---
+export async function uploadCv(token: string, file: File) {
+    const fd = new FormData();
+    fd.append("cv", file);
+    return fetchAuth("/api/account/cv", { method: "POST", token, body: fd as any });
 }
