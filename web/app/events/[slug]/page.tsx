@@ -247,11 +247,13 @@ type Event = {
 };
 
 type Member = {
-    slug: string;
-    name: string;
-    avatarUrl?: string;
-    avatar?: string;
-    headline?: string;
+    slug: string | null;
+    name: string | null;
+    email?: string | null;
+    avatarUrl?: string | null;
+    avatar?: string | null;
+    headline?: string | null;
+    pending?: boolean;
 };
 
 type Project = {
@@ -371,7 +373,7 @@ async function fetchApiEventDetail(slug: string): Promise<{
     description?: string;
     photos?: string[];
     tags?: string[];
-    attendees?: { slug: string; name?: string; avatarUrl?: string; role?: string; headline?: string }[];
+    attendees?: { slug: string | null; name?: string | null; email?: string | null; avatarUrl?: string | null; role?: string | null; headline?: string | null; pending?: boolean }[];
     projects?: {
         slug: string;
         title: string;
@@ -400,9 +402,11 @@ async function fetchApiMembers(): Promise<Member[]> {
         return items.map((m) => ({
             slug: m.slug ?? m.id,
             name: m.name,
+            email: null,
             avatarUrl: m.avatarUrl ?? m.avatar ?? m.photo ?? m.image,
             avatar: m.avatar ?? m.avatarUrl,
             headline: m.headline ?? m.shortBio,
+            pending: false,
         }));
     } catch {
         return [];
@@ -472,21 +476,26 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
     const membersFromSeeds: Member[] = SEED_MEMBERS.map((m: SeedMember) => ({
         slug: m.slug,
         name: m.name,
+        email: null,
         avatarUrl: m.avatarUrl ?? m.avatar,
         avatar: m.avatar,
         headline: (m as any).headline ?? m.shortBio,
+        pending: false,
     }));
-    const membersAll = dedupeBy([...membersFromApi, ...membersFromSeeds], (m) => m.slug);
-    const memMap = new Map(membersAll.map((m) => [m.slug, m]));
+    const membersAll = dedupeBy([...membersFromApi, ...membersFromSeeds], (m) => m.slug ?? "");
+    const memMap = new Map(membersAll.map((m) => [m.slug ?? "", m]));
 
     // Attendees:
     const attendees: Member[] =
         evDetail?.attendees && evDetail.attendees.length
             ? evDetail.attendees.map((a) => ({
-                slug: a.slug,
-                name: a.name || a.slug,
-                avatarUrl: a.avatarUrl || undefined,
-                headline: a.headline || undefined,
+                slug: a.slug ?? null,
+                name: a.name ?? null,
+                email: a.email ?? null,
+                avatarUrl: a.avatarUrl ?? null,
+                avatar: a.avatarUrl ?? null,
+                headline: a.headline ?? null,
+                pending: a.pending ?? false,
             }))
             : // Fallback to old behavior (seed-based) only if API has none:
             membersAll.filter((m) =>
@@ -671,28 +680,40 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                             <p className="text-white/60">No attendees listed yet.</p>
                         ) : (
                             <ul className="space-y-3">
-                                {attendees.map((m) => (
-                                    <li key={m.slug} className="flex items-center gap-3">
-                                        <img
-                                            src={m.avatarUrl || m.avatar || "/avatars/default.png"}
-                                            alt={m.name}
-                                            className="w-10 h-10 rounded-full object-cover ring-1 ring-white/10"
-                                        />
-                                        <div className="min-w-0">
-                                            <Link
-                                                href={`/members/${m.slug}`}
-                                                className="font-medium hover:underline"
-                                            >
-                                                {m.name}
-                                            </Link>
-                                            {m.headline && (
+                                {attendees.map((m, idx) => {
+                                    const key = m.slug || m.email || String(idx);
+                                    const displayName = m.slug
+                                        ? (m.name || m.email || "Unknown")
+                                        : (m.name || m.email || "Pending invite");
+                                    const avatar =
+                                        m.avatarUrl || m.avatar || "/avatars/default.png";
+                                    return (
+                                        <li key={key} className="flex items-center gap-3">
+                                            <img
+                                                src={avatar}
+                                                alt={displayName}
+                                                className="w-10 h-10 rounded-full object-cover ring-1 ring-white/10"
+                                            />
+                                            <div className="min-w-0">
+                                                {m.slug ? (
+                                                    <Link
+                                                        href={`/members/${m.slug}`}
+                                                        className="font-medium hover:underline"
+                                                    >
+                                                        {displayName}
+                                                    </Link>
+                                                ) : (
+                                                    <span className="font-medium">
+                                                        {displayName}
+                                                    </span>
+                                                )}
                                                 <div className="text-xs text-white/60 truncate">
-                                                    {m.headline}
+                                                    {m.pending ? "Pending invite" : (m.headline || "")}
                                                 </div>
-                                            )}
-                                        </div>
-                                    </li>
-                                ))}
+                                            </div>
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         )}
                     </div>

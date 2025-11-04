@@ -139,6 +139,13 @@ async function sendInviteEmail(to, subject, text) {
     }
 }
 
+// Generate a one-time, verifiable invite token (raw + sha256 hash)
+function genInviteToken() {
+    const raw = crypto.randomBytes(32).toString("hex");
+    const hash = crypto.createHash("sha256").update(raw).digest("hex");
+    return { raw, hash };
+}
+
 // Minimal access-token guard (same JWT used by /api/account)
 async function requireUser(req, res) {
     const auth = req.get("authorization") || "";
@@ -501,6 +508,7 @@ app.get("/api/events", async (req, res) => {
                         },
                     },
                 },
+                invites: true,
             },
             orderBy: [{ dateStart: "desc" }, { name: "asc" }],
             skip: (page - 1) * size,
@@ -511,26 +519,42 @@ app.get("/api/events", async (req, res) => {
     console.log("[GET /api/events] total events =", total);
 
     res.json({
-        items: rows.map((e) => ({
-            id: e.id,
-            slug: e.slug,
-            name: e.name,
-            dateStart: e.dateStart,
-            dateEnd: e.dateEnd,
-            locationName: e.locationName,
-            lat: e.lat,
-            lng: e.lng,
-            description: e.description,
-            photos: Array.isArray(e.photos) ? e.photos.map((u) => abs(u, req)) : [],
-            tags: Array.isArray(e.tags) ? e.tags : [],
-            attendeesCount: e.attendees.length,
-            attendees: e.attendees.map((a) => ({
-                slug: a.member.slug,
-                name: a.member.name,
-                avatarUrl: abs(a.member.avatarUrl || null, req),
-                headline: a.member.headline || null,
-            })),
-        })),
+        items: rows.map((e) => {
+            const pendingInvites = (e.invites || []).filter((i) => i.status === "PENDING");
+            return {
+                id: e.id,
+                slug: e.slug,
+                name: e.name,
+                dateStart: e.dateStart,
+                dateEnd: e.dateEnd,
+                locationName: e.locationName,
+                lat: e.lat,
+                lng: e.lng,
+                description: e.description,
+                photos: Array.isArray(e.photos) ? e.photos.map((u) => abs(u, req)) : [],
+                tags: Array.isArray(e.tags) ? e.tags : [],
+                attendeesCount: e.attendees.length + pendingInvites.length,
+                attendees: [
+                    // confirmed attendees
+                    ...e.attendees.map((a) => ({
+                        slug: a.member.slug,
+                        name: a.member.name,
+                        avatarUrl: abs(a.member.avatarUrl || null, req),
+                        headline: a.member.headline || null,
+                        pending: false,
+                    })),
+                    // pending invites (show email only here; no member relation on EventInvite)
+                    ...pendingInvites.map((i) => ({
+                        slug: null,
+                        name: null,
+                        email: i.email,
+                        avatarUrl: null,
+                        headline: null,
+                        pending: true,
+                    })),
+                ],
+            };
+        }),
         page,
         size,
         total,
@@ -551,6 +575,7 @@ app.get("/api/events/:slug", async (req, res) => {
                     },
                 },
             },
+            invites: true,
         },
     });
     if (!e) {
@@ -559,6 +584,8 @@ app.get("/api/events/:slug", async (req, res) => {
     }
 
     console.log("[GET /api/events/:slug] found event id =", e.id);
+
+    const pendingInvites = (e.invites || []).filter((i) => i.status === "PENDING");
 
     res.json({
         id: e.id,
@@ -572,13 +599,25 @@ app.get("/api/events/:slug", async (req, res) => {
         description: e.description,
         photos: Array.isArray(e.photos) ? e.photos.map((u) => abs(u, req)) : [],
         tags: Array.isArray(e.tags) ? e.tags : [],
-        attendees: e.attendees.map((a) => ({
-            slug: a.member.slug,
-            name: a.member.name,
-            avatarUrl: abs(a.member.avatarUrl || null, req),
-            headline: a.member.headline || null,
-            role: a.role || null,
-        })),
+        attendees: [
+            ...e.attendees.map((a) => ({
+                slug: a.member.slug,
+                name: a.member.name,
+                avatarUrl: abs(a.member.avatarUrl || null, req),
+                headline: a.member.headline || null,
+                role: a.role || null,
+                pending: false,
+            })),
+            ...pendingInvites.map((i) => ({
+                slug: null,
+                name: null,
+                email: i.email,
+                avatarUrl: null,
+                headline: null,
+                role: null,
+                pending: true,
+            })),
+        ],
         // projects are intentionally omitted here; event detail page will
         // still fall back to the existing projects lookup logic.
     });
@@ -605,8 +644,7 @@ const createEventSchema = z.object({
     description: z.string().max(10_000).optional().nullable(),
     tags: z.array(z.string().min(1).max(40)).max(50).optional(),
     photos: z.array(z.string().url()).max(20).optional(),
-    // NEW: attendees from the create-event UI
-    // (we keep this loose, and interpret in the handler)
+    // attendees from the create-event UI
     attendees: z.array(z.any()).optional(),
 });
 
@@ -623,19 +661,27 @@ async function uniqueEventSlug(base) {
 }
 
 app.post("/api/events", async (req, res) => {
+    console.log("========== [POST /api/events] BEGIN ==========");
     console.log("[POST /api/events] raw body =", JSON.stringify(req.body));
 
     const user = await requireUser(req, res);
     if (!user) {
         console.warn("[POST /api/events] blocked: unauthenticated");
+        console.log("========== [POST /api/events] END (unauthenticated) ==========");
         return;
     }
 
-    const hasMemberRole = (user.roles || []).some((r) => ["ADMIN", "MODERATOR", "MEMBER"].includes(r.role));
+    const userRoles = (user.roles || []).map((r) => r.role);
+    console.log("[POST /api/events] authenticated user id =", user.id, "roles =", userRoles);
+
+    const hasMemberRole = userRoles.some((r) => ["ADMIN", "MODERATOR", "MEMBER"].includes(r));
     if (!hasMemberRole) {
         console.warn("[POST /api/events] blocked: insufficient role for user", user.id);
+        console.log("========== [POST /api/events] END (forbidden) ==========");
         return res.status(403).json({ ok: false, error: "Insufficient permissions" });
     }
+
+    console.log("[POST /api/events] user has sufficient role, proceeding to validation");
 
     const parsed = createEventSchema.safeParse({
         ...req.body,
@@ -644,6 +690,7 @@ app.post("/api/events", async (req, res) => {
     });
     if (!parsed.success) {
         console.warn("[POST /api/events] validation error", parsed.error.flatten());
+        console.log("========== [POST /api/events] END (validation error) ==========");
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -662,12 +709,15 @@ app.post("/api/events", async (req, res) => {
         attendeesCount: Array.isArray(d.attendees) ? d.attendees.length : 0,
     });
 
+    const rawAttendees = Array.isArray(d.attendees) ? d.attendees : [];
+    rawAttendees.forEach((a, idx) => {
+        console.log(`[POST /api/events] attendee[${idx}] =`, a);
+    });
+
     const slug = await uniqueEventSlug(d.name);
     console.log("[POST /api/events] generated slug =", slug);
 
-    const rawAttendees = Array.isArray(d.attendees) ? d.attendees : [];
-
-    // existing members selected in the UI -> attach to event
+    // existing members selected in the UI -> invite them (no auto-attendance)
     const memberIds = [];
     for (const a of rawAttendees) {
         if (!a || typeof a !== "object") continue;
@@ -675,9 +725,9 @@ app.post("/api/events", async (req, res) => {
             memberIds.push(a.memberId);
         }
     }
-    console.log("[POST /api/events] memberIds to attach =", memberIds);
+    console.log("[POST /api/events] memberIds to invite =", memberIds);
 
-    // create event with nested attendees so we don't need the join model name
+    console.log("[POST /api/events] creating event record in DB…");
     const event = await prisma.event.create({
         data: {
             slug,
@@ -690,20 +740,13 @@ app.post("/api/events", async (req, res) => {
             description: d.description || null,
             photos: Array.isArray(d.photos) ? d.photos : [],
             // NOTE: still not writing `tags` because Event model has no `tags` field
-            attendees:
-                memberIds.length > 0
-                    ? {
-                        create: memberIds.map((memberId) => ({
-                            member: { connect: { id: memberId } },
-                        })),
-                    }
-                    : undefined,
         },
     });
 
     console.log("[POST /api/events] created event id =", event.id);
 
     // external invitees (email or "value" field)
+    console.log("[POST /api/events] deriving invite emails from attendees…");
     const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
     const inviteEmails = [];
     for (const a of rawAttendees) {
@@ -711,33 +754,89 @@ app.post("/api/events", async (req, res) => {
         let addr = null;
         if (typeof a.email === "string") addr = a.email.trim();
         else if (typeof a.value === "string") addr = a.value.trim();
-        if (addr && emailRegex.test(addr)) inviteEmails.push(addr);
+        if (addr && emailRegex.test(addr)) {
+            console.log("[POST /api/events] collected external email invite:", addr);
+            inviteEmails.push(addr);
+        }
     }
-    console.log("[POST /api/events] inviteEmails =", inviteEmails);
+
+    // also invite selected existing members via their associated user emails
+    if (memberIds.length) {
+        console.log("[POST /api/events] looking up users for memberIds =", memberIds);
+        const usersForMembers = await prisma.user.findMany({
+            where: { memberId: { in: memberIds } },
+            select: { id: true, email: true, memberId: true },
+        });
+        console.log("[POST /api/events] usersForMembers =", usersForMembers);
+        for (const u of usersForMembers) {
+            if (u.email && !inviteEmails.includes(u.email)) {
+                console.log("[POST /api/events] collected email from existing member user:", u.email);
+                inviteEmails.push(u.email);
+            }
+        }
+    }
+    console.log("[POST /api/events] final inviteEmails array =", inviteEmails);
 
     if (inviteEmails.length) {
         const when = event.dateStart ? new Date(event.dateStart).toLocaleString() : "an upcoming event";
         const where = event.locationName || "TBA";
-        const eventUrl = abs(`/events/${event.slug}`, req);
-        const subject = `You're invited: ${event.name}`;
-        const text = `Hi,
+
+        for (const email of inviteEmails) {
+            console.log("[POST /api/events] creating invite for email =", email);
+            const emailLower = email.toLowerCase();
+            const { raw, hash } = genInviteToken();
+            console.log(
+                "[POST /api/events] generated invite token (hash only logged) tokenHash =",
+                hash,
+            );
+
+            // We no longer try to link to user/member here; EventInvite model has only eventId/email/tokenHash/status/...
+            const existingUser = await prisma.user.findUnique({
+                where: { email: emailLower },
+                include: { member: true },
+            });
+            console.log(
+                "[POST /api/events] existingUser for invite =",
+                existingUser ? existingUser.id : "none",
+            );
+
+            await prisma.eventInvite.create({
+                data: {
+                    eventId: event.id,
+                    email: emailLower,
+                    tokenHash: hash,
+                    status: "PENDING",
+                    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7), // 7 days
+                },
+            });
+
+            // IMPORTANT: build links against the WEB_ORIGIN (Next.js app), not the API_BASE
+            const webBase = WEB_ORIGIN.replace(/\/$/, "");
+            const acceptUrl = `${webBase}/accept-invite?token=${raw}`;
+            const eventUrl = `${webBase}/events/${event.slug}`;
+
+            const subject = `You're invited: ${event.name}`;
+            const text = `Hi,
 
 You've been invited to the event "${event.name}" at PUM.
 
 Where: ${where}
 When: ${when}
 
+Approve your invite${existingUser ? "" : " and create your account"}:
+${acceptUrl}
+
 More details: ${eventUrl}
 
 This invite was sent from ${MAIL_FROM}.
 `;
 
-        for (const to of inviteEmails) {
             // fire-and-forget; errors are logged in sendInviteEmail
-            void sendInviteEmail(to, subject, text);
+            void sendInviteEmail(email, subject, text);
         }
     }
 
+    console.log("========== [POST /api/events] END (success) ==========");
     return res.status(201).json({ ok: true, slug: event.slug, id: event.id });
 });
 

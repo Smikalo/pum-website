@@ -86,6 +86,7 @@ model Event {
   photos       Json?
   projects     Project[]
   attendees    MemberEvent[]
+  invites      EventInvite[]  // <-- NEW
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 }
@@ -230,4 +231,19 @@ model Session {
   ip               String?
   expiresAt        DateTime
   createdAt        DateTime @default(now())
+}
+
+model EventInvite {
+  id         String   @id @default(cuid())
+  eventId    String
+  email      String
+  tokenHash  String   @unique
+  status     String   @default("PENDING") // PENDING, ACCEPTED, EXPIRED, REVOKED
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
+
+  event Event @relation(fields: [eventId], references: [id])
+
+  @@index([eventId, email])
 }

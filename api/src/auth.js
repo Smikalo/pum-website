@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const { prisma } = require("./db");
 const crypto = require("crypto");
 const cookie = require("cookie");
+const slugify = require("slugify"); // NEW: for member slug from name/email
 
 const router = express.Router();
 
@@ -97,7 +98,7 @@ const loginSchema = z.object({
     password: z.string().min(8).max(200),
 });
 
-// Routes
+// --- Login ---
 router.post("/login", ensureCsrf, async (req, res) => {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ ok: false, error: "Invalid input" });
@@ -120,7 +121,13 @@ router.post("/login", ensureCsrf, async (req, res) => {
     const { raw: refreshRaw, hash: refreshHash } = genRefreshToken();
     const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
     await prisma.session.create({
-        data: { userId: user.id, refreshTokenHash: refreshHash, userAgent: req.get("user-agent") || null, ip: req.ip || null, expiresAt },
+        data: {
+            userId: user.id,
+            refreshTokenHash: refreshHash,
+            userAgent: req.get("user-agent") || null,
+            ip: req.ip || null,
+            expiresAt,
+        },
     });
     setCookie(res, REFRESH_COOKIE_NAME, refreshRaw, { httpOnly: true, expires: expiresAt });
 
@@ -143,6 +150,7 @@ router.post("/login", ensureCsrf, async (req, res) => {
     });
 });
 
+// --- Refresh ---
 router.post("/refresh", ensureCsrf, async (req, res) => {
     const cookies = parseCookies(req);
     const token = cookies[REFRESH_COOKIE_NAME];
@@ -162,13 +170,19 @@ router.post("/refresh", ensureCsrf, async (req, res) => {
     const newExpiry = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
     await prisma.session.update({
         where: { id: session.id },
-        data: { refreshTokenHash: refreshHash, expiresAt: newExpiry, userAgent: req.get("user-agent") || session.userAgent, ip: req.ip || session.ip },
+        data: {
+            refreshTokenHash: refreshHash,
+            expiresAt: newExpiry,
+            userAgent: req.get("user-agent") || session.userAgent,
+            ip: req.ip || session.ip,
+        },
     });
 
     setCookie(res, REFRESH_COOKIE_NAME, refreshRaw, { httpOnly: true, expires: newExpiry });
     return res.json({ ok: true, accessToken });
 });
 
+// --- Logout ---
 router.post("/logout", ensureCsrf, async (req, res) => {
     const cookies = parseCookies(req);
     const token = cookies[REFRESH_COOKIE_NAME];
@@ -180,6 +194,205 @@ router.post("/logout", ensureCsrf, async (req, res) => {
     res.json({ ok: true });
 });
 
+// --- Accept / complete event invitation ---
+router.post("/invite/consume", ensureCsrf, async (req, res) => {
+    const schema = z.object({
+        token: z.string().min(20),
+        name: z.string().min(2).max(200).optional(),
+        password: z.string().min(8).max(200).optional(),
+        passwordRepeat: z.string().min(8).max(200).optional(),
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+        return res.status(400).json({ ok: false, error: "Invalid input" });
+    }
+
+    const { token, name, password, passwordRepeat } = parsed.data;
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const invite = await prisma.eventInvite.findFirst({
+        where: {
+            tokenHash,
+            status: "PENDING",
+            expiresAt: { gt: new Date() },
+        },
+        include: {
+            event: true,
+        },
+    });
+
+    if (!invite) {
+        return res.status(400).json({ ok: false, error: "Invalid or expired invite" });
+    }
+
+    const email = invite.email.toLowerCase();
+    let user = await prisma.user.findUnique({
+        where: { email },
+        include: { roles: true, member: true },
+    });
+
+    let newUser = false;
+
+    if (!user) {
+        // New user path: we need name + password
+        if (!password || !passwordRepeat || password !== passwordRepeat || !name) {
+            return res.status(400).json({
+                ok: false,
+                needsPassword: true,
+                email,
+                eventSlug: invite.event.slug,
+                error: !password || !name
+                    ? "Missing fields"
+                    : password !== passwordRepeat
+                        ? "Passwords do not match"
+                        : "Invalid input",
+            });
+        }
+
+        const passwordHash = await argon2.hash(password);
+        const memberName = name.trim();
+        const localPart = email.split("@")[0];
+
+        let base =
+            (slugify(memberName, { lower: true, strict: true }) || "").trim() ||
+            (slugify(localPart, { lower: true, strict: true }) || "").trim() ||
+            localPart ||
+            "member";
+
+        let slug = base;
+        let i = 1;
+        while (await prisma.member.findUnique({ where: { slug } })) {
+            i += 1;
+            slug = `${base}-${i}`;
+            if (i > 9999) break;
+        }
+
+        const member = await prisma.member.create({
+            data: {
+                slug,
+                name: memberName,
+            },
+        });
+
+        user = await prisma.user.create({
+            data: {
+                email,
+                passwordHash,
+                member: { connect: { id: member.id } },
+                roles: { create: [{ role: "MEMBER" }] },
+            },
+            include: { roles: true, member: true },
+        });
+
+        newUser = true;
+    } else {
+        // Existing user path: ensure they have MEMBER role and a member profile
+        const hasMemberRole = (user.roles || []).some((r) => r.role === "MEMBER");
+        if (!hasMemberRole) {
+            await prisma.userRole.create({
+                data: { userId: user.id, role: "MEMBER" },
+            });
+        }
+
+        if (!user.member) {
+            const localPart = email.split("@")[0];
+            let base =
+                (slugify(localPart, { lower: true, strict: true }) || "").trim() ||
+                localPart ||
+                "member";
+            let slug = base;
+            let i = 1;
+            while (await prisma.member.findUnique({ where: { slug } })) {
+                i += 1;
+                slug = `${base}-${i}`;
+                if (i > 9999) break;
+            }
+
+            const member = await prisma.member.create({
+                data: {
+                    slug,
+                    name: localPart,
+                },
+            });
+
+            await prisma.user.update({
+                where: { id: user.id },
+                data: { memberId: member.id },
+            });
+        }
+
+        // Reload with updated roles/member
+        user = await prisma.user.findUnique({
+            where: { id: user.id },
+            include: { roles: true, member: true },
+        });
+    }
+
+    // Ensure user is attached as attendee of the event
+    if (user && user.member && user.member.id) {
+        const existing = await prisma.memberEvent.findFirst({
+            where: { memberId: user.member.id, eventId: invite.eventId },
+        });
+        if (!existing) {
+            await prisma.memberEvent.create({
+                data: {
+                    memberId: user.member.id,
+                    eventId: invite.eventId,
+                    role: null,
+                },
+            });
+        }
+    }
+
+    // Mark invite as accepted
+    await prisma.eventInvite.update({
+        where: { id: invite.id },
+        data: {
+            status: "ACCEPTED",
+            consumedAt: new Date(),
+        },
+    });
+
+    // Create session and access token (same as login)
+    const roles = (user.roles || []).map((r) => r.role);
+    const accessToken = signAccessToken(user, roles);
+
+    const { raw: refreshRaw, hash: refreshHash } = genRefreshToken();
+    const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
+    await prisma.session.create({
+        data: {
+            userId: user.id,
+            refreshTokenHash: refreshHash,
+            userAgent: req.get("user-agent") || null,
+            ip: req.ip || null,
+            expiresAt,
+        },
+    });
+    setCookie(res, REFRESH_COOKIE_NAME, refreshRaw, { httpOnly: true, expires: expiresAt });
+
+    return res.json({
+        ok: true,
+        accessToken,
+        newUser,
+        eventSlug: invite.event.slug,
+        user: {
+            id: user.id,
+            email: user.email,
+            roles,
+            member: user.member
+                ? {
+                    slug: user.member.slug,
+                    name: user.member.name,
+                    avatarUrl: abs(user.member.avatarUrl || null, req),
+                    focusArea: user.member.focusArea || null,
+                }
+                : null,
+        },
+    });
+});
+
+// --- Me ---
 router.get("/me", async (req, res) => {
     const auth = req.get("authorization") || "";
     const m = auth.match(/^Bearer (.+)$/i);
