@@ -5,6 +5,11 @@ const cors = require("cors");
 const z = require("zod");
 const path = require("path");
 const fs = require("fs");
+const jwt = require("jsonwebtoken");
+const slugify = require("slugify");
+const multer = require("multer");
+const crypto = require("crypto");
+const nodemailer = require("nodemailer"); // <-- NEW
 
 const { prisma } = require("./db");
 const { authRouter } = require("./auth");
@@ -12,27 +17,43 @@ const { accountRouter } = require("./account");
 
 const app = express();
 
-/* ------------------------ CORS ------------------------ */
+/* -------------------------------- CORS -------------------------------- */
+// Keep this simple & reliable in dev: one explicit web origin.
 const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:3000";
-app.use(
-    cors({
-        origin: WEB_ORIGIN,
-        credentials: true,
-        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "X-CSRF-Token", "Authorization"],
-        optionsSuccessStatus: 204,
-    })
-);
+
+const corsOptions = {
+    origin: WEB_ORIGIN,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "X-CSRF-Token", "Authorization"],
+    optionsSuccessStatus: 204,
+};
+
+console.log("[config] WEB_ORIGIN =", WEB_ORIGIN);
+
+app.use((req, _res, next) => {
+    // log origins hitting us for CORS debugging
+    console.log(`[req] ${req.method} ${req.originalUrl} origin=${req.headers.origin || "n/a"}`);
+    next();
+});
+
+app.use(cors(corsOptions));
+// Preflight for all routes
+app.options("*", cors(corsOptions));
 
 /* ---------------- Proxy + middleware ---------------- */
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "5mb" }));
 app.use(
     helmet({
         crossOriginResourcePolicy: { policy: "cross-origin" },
         crossOriginEmbedderPolicy: false,
-    })
+    }),
 );
+
+// Gentle rate limits for auth & mutating endpoints
+const limiter = rateLimit({ windowMs: 60_000, max: 300 });
+app.use(limiter);
 
 /* ------------------------ Static uploads ------------------------ */
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
@@ -44,15 +65,19 @@ app.use(
         // allow the web app to embed these files in an <iframe> (PDF viewer)
         res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
         res.removeHeader("X-Frame-Options");
-        // Explicitly permit only our web origin (and same-origin) to frame these responses
+        // Only permit our web origin (and same-origin) to frame these responses
         res.setHeader("Content-Security-Policy", `frame-ancestors 'self' ${WEB_ORIGIN}`);
         next();
     },
-    express.static(UPLOAD_ROOT, { maxAge: "1h", etag: true })
+    express.static(UPLOAD_ROOT, { maxAge: "1h", etag: true }),
 );
 
 /* ------------------------ Helpers ------------------------ */
 const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || null;
+const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
+
+console.log("[config] PUBLIC_API_BASE =", PUBLIC_API_BASE || "(not set)");
+
 function abs(u, req) {
     if (!u) return null;
     if (/^https?:\/\//i.test(u)) return u;
@@ -61,6 +86,87 @@ function abs(u, req) {
     return `${base}${rel}`;
 }
 const toInt = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+
+/* ------------------------ Mail (invites) ------------------------ */
+// very lightweight mail helper; if SMTP_* envs aren't set, we just log
+const MAIL_FROM = process.env.MAIL_FROM || "contact@the-pum.com";
+const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_USER = process.env.SMTP_USER || null;
+const SMTP_PASS = process.env.SMTP_PASS || null;
+
+let mailTransporter = null;
+if (SMTP_HOST) {
+    console.log("[mail] configuring SMTP transport", {
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        user: SMTP_USER ? "(set)" : "(none)",
+    });
+    mailTransporter = nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_PORT === 465,
+        auth: SMTP_USER
+            ? {
+                user: SMTP_USER,
+                pass: SMTP_PASS,
+            }
+            : undefined,
+    });
+} else {
+    console.log("[mail] SMTP_HOST not set; invite emails will be logged only");
+}
+
+async function sendInviteEmail(to, subject, text) {
+    if (!to) return;
+    if (!mailTransporter) {
+        console.log(
+            `[invite-email] (no SMTP configured) Would send mail from ${MAIL_FROM} to ${to}:\nSubject: ${subject}\n\n${text}`,
+        );
+        return;
+    }
+    try {
+        console.log("[invite-email] sending mail to", to);
+        await mailTransporter.sendMail({
+            from: MAIL_FROM,
+            to,
+            subject,
+            text,
+        });
+        console.log("[invite-email] sent OK to", to);
+    } catch (err) {
+        console.error("[invite-email] send error", err);
+    }
+}
+
+// Minimal access-token guard (same JWT used by /api/account)
+async function requireUser(req, res) {
+    const auth = req.get("authorization") || "";
+    const m = auth.match(/^Bearer (.+)$/i);
+    if (!m) {
+        console.warn("[auth] missing access token for", req.method, req.originalUrl);
+        res.status(401).json({ ok: false, error: "Missing access token" });
+        return null;
+    }
+    try {
+        const decoded = jwt.verify(m[1], JWT_ACCESS_SECRET, { algorithms: ["HS256"] });
+        console.log("[auth] token OK for user id", decoded.sub);
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.sub },
+            include: { roles: true },
+        });
+        if (!user) {
+            console.warn("[auth] token user not found in DB", decoded.sub);
+            res.status(401).json({ ok: false, error: "Unknown user" });
+            return null;
+        }
+        return user;
+    } catch (err) {
+        console.warn("[auth] invalid access token for", req.method, req.originalUrl, err?.message);
+        res.status(401).json({ ok: false, error: "Invalid access token" });
+        return null;
+    }
+}
 
 /* ------------------------------ Health ------------------------------ */
 app.get("/healthz", async (_req, res) => {
@@ -136,7 +242,6 @@ app.get("/api/members", async (req, res) => {
 });
 
 app.get("/api/members/:slug", async (req, res) => {
-    // shared "include" to keep changes minimal
     const include = {
         skills: { include: { skill: true } },
         techs: { include: { tech: true } },
@@ -144,19 +249,19 @@ app.get("/api/members/:slug", async (req, res) => {
         events: { include: { event: true } },
     };
 
-    // 1) try by slug as usual
+    console.log("[members/:slug] slug =", req.params.slug);
+
+    // try by slug
     let m = await prisma.member.findUnique({
         where: { slug: req.params.slug },
         include,
     });
 
-    // 2) minimal, safe fallback: if not found, try to resolve by user email local-part (e.g., "admin")
+    // fallback resolve by user email local-part
     if (!m) {
+        console.log("[members/:slug] not found by slug; trying user email link");
         const u = await prisma.user.findFirst({
-            where: {
-                email: { startsWith: `${req.params.slug}@`, mode: "insensitive" },
-                memberId: { not: null },
-            },
+            where: { email: { startsWith: `${req.params.slug}@`, mode: "insensitive" }, memberId: { not: null } },
             select: { memberId: true },
         });
         if (u?.memberId) {
@@ -164,9 +269,12 @@ app.get("/api/members/:slug", async (req, res) => {
         }
     }
 
-    if (!m) return res.status(404).json({ error: "Not found" });
+    if (!m) {
+        console.warn("[members/:slug] 404 for slug", req.params.slug);
+        return res.status(404).json({ error: "Not found" });
+    }
 
-    // resolve cv if present for the linked user
+    // resolve CV if present
     let cvUrl = null;
     const uForCv = await prisma.user.findFirst({ where: { memberId: m.id }, select: { id: true } });
     if (uForCv) {
@@ -354,6 +462,8 @@ app.get("/api/members/graph", async (_req, res) => {
 
 /* -------------------------------- Events -------------------------------- */
 app.get("/api/events", async (req, res) => {
+    console.log("[GET /api/events] query =", req.query);
+
     const page = Number.isFinite(Number(req.query.page)) ? Number(req.query.page) : 1;
     const size = Math.min(Number.isFinite(Number(req.query.size)) ? Number(req.query.size) : 24, 1000);
     const q = (req.query.q || "").toString().trim();
@@ -383,12 +493,22 @@ app.get("/api/events", async (req, res) => {
         prisma.event.count({ where }),
         prisma.event.findMany({
             where,
-            include: { attendees: { include: { member: { select: { slug: true, name: true, avatarUrl: true, headline: true, id: true } } } } },
+            include: {
+                attendees: {
+                    include: {
+                        member: {
+                            select: { slug: true, name: true, avatarUrl: true, headline: true, id: true },
+                        },
+                    },
+                },
+            },
             orderBy: [{ dateStart: "desc" }, { name: "asc" }],
             skip: (page - 1) * size,
             take: size,
         }),
     ]);
+
+    console.log("[GET /api/events] total events =", total);
 
     res.json({
         items: rows.map((e) => ({
@@ -414,6 +534,248 @@ app.get("/api/events", async (req, res) => {
         page,
         size,
         total,
+    });
+});
+
+/* ---------- NEW: single event detail endpoint with attendees ---------- */
+app.get("/api/events/:slug", async (req, res) => {
+    console.log("[GET /api/events/:slug] slug =", req.params.slug);
+
+    const e = await prisma.event.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+            attendees: {
+                include: {
+                    member: {
+                        select: { slug: true, name: true, avatarUrl: true, headline: true },
+                    },
+                },
+            },
+        },
+    });
+    if (!e) {
+        console.warn("[GET /api/events/:slug] not found", req.params.slug);
+        return res.status(404).json({ error: "Not found" });
+    }
+
+    console.log("[GET /api/events/:slug] found event id =", e.id);
+
+    res.json({
+        id: e.id,
+        slug: e.slug,
+        name: e.name,
+        dateStart: e.dateStart,
+        dateEnd: e.dateEnd,
+        locationName: e.locationName,
+        lat: e.lat,
+        lng: e.lng,
+        description: e.description,
+        photos: Array.isArray(e.photos) ? e.photos.map((u) => abs(u, req)) : [],
+        tags: Array.isArray(e.tags) ? e.tags : [],
+        attendees: e.attendees.map((a) => ({
+            slug: a.member.slug,
+            name: a.member.name,
+            avatarUrl: abs(a.member.avatarUrl || null, req),
+            headline: a.member.headline || null,
+            role: a.role || null,
+        })),
+        // projects are intentionally omitted here; event detail page will
+        // still fall back to the existing projects lookup logic.
+    });
+});
+
+// Safe ISO datetime (no z.string().datetime() to avoid version issues)
+const isoDate = z
+    .string()
+    .optional()
+    .nullable()
+    .refine(
+        (v) => !v || !Number.isNaN(Date.parse(v)),
+        { message: "Invalid ISO datetime" },
+    );
+
+// Input validation for event creation
+const createEventSchema = z.object({
+    name: z.string().min(1).max(200),
+    dateStart: isoDate,
+    dateEnd: isoDate,
+    locationName: z.string().max(200).optional().nullable(),
+    lat: z.number().optional().nullable(),
+    lng: z.number().optional().nullable(),
+    description: z.string().max(10_000).optional().nullable(),
+    tags: z.array(z.string().min(1).max(40)).max(50).optional(),
+    photos: z.array(z.string().url()).max(20).optional(),
+    // NEW: attendees from the create-event UI
+    // (we keep this loose, and interpret in the handler)
+    attendees: z.array(z.any()).optional(),
+});
+
+async function uniqueEventSlug(base) {
+    const b = slugify(base || "event", { lower: true, strict: true }) || "event";
+    let slug = b;
+    let i = 1;
+    while (await prisma.event.findUnique({ where: { slug } })) {
+        i += 1;
+        slug = `${b}-${i}`;
+        if (i > 9999) break;
+    }
+    return slug;
+}
+
+app.post("/api/events", async (req, res) => {
+    console.log("[POST /api/events] raw body =", JSON.stringify(req.body));
+
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn("[POST /api/events] blocked: unauthenticated");
+        return;
+    }
+
+    const hasMemberRole = (user.roles || []).some((r) => ["ADMIN", "MODERATOR", "MEMBER"].includes(r.role));
+    if (!hasMemberRole) {
+        console.warn("[POST /api/events] blocked: insufficient role for user", user.id);
+        return res.status(403).json({ ok: false, error: "Insufficient permissions" });
+    }
+
+    const parsed = createEventSchema.safeParse({
+        ...req.body,
+        lat: typeof req.body?.lat === "string" ? Number(req.body.lat) : req.body?.lat,
+        lng: typeof req.body?.lng === "string" ? Number(req.body.lng) : req.body?.lng,
+    });
+    if (!parsed.success) {
+        console.warn("[POST /api/events] validation error", parsed.error.flatten());
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+    const d = parsed.data;
+    console.log("[POST /api/events] parsed data (without photos) =", {
+        name: d.name,
+        dateStart: d.dateStart,
+        dateEnd: d.dateEnd,
+        locationName: d.locationName,
+        lat: d.lat,
+        lng: d.lng,
+        description: d.description ? d.description.slice(0, 100) + "…" : null,
+        attendeesCount: Array.isArray(d.attendees) ? d.attendees.length : 0,
+    });
+
+    const slug = await uniqueEventSlug(d.name);
+    console.log("[POST /api/events] generated slug =", slug);
+
+    const rawAttendees = Array.isArray(d.attendees) ? d.attendees : [];
+
+    // existing members selected in the UI -> attach to event
+    const memberIds = [];
+    for (const a of rawAttendees) {
+        if (!a || typeof a !== "object") continue;
+        if (typeof a.memberId === "string") {
+            memberIds.push(a.memberId);
+        }
+    }
+    console.log("[POST /api/events] memberIds to attach =", memberIds);
+
+    // create event with nested attendees so we don't need the join model name
+    const event = await prisma.event.create({
+        data: {
+            slug,
+            name: d.name,
+            dateStart: d.dateStart ? new Date(d.dateStart) : null,
+            dateEnd: d.dateEnd ? new Date(d.dateEnd) : null,
+            locationName: d.locationName || null,
+            lat: typeof d.lat === "number" && Number.isFinite(d.lat) ? d.lat : null,
+            lng: typeof d.lng === "number" && Number.isFinite(d.lng) ? d.lng : null,
+            description: d.description || null,
+            photos: Array.isArray(d.photos) ? d.photos : [],
+            // NOTE: still not writing `tags` because Event model has no `tags` field
+            attendees:
+                memberIds.length > 0
+                    ? {
+                        create: memberIds.map((memberId) => ({
+                            member: { connect: { id: memberId } },
+                        })),
+                    }
+                    : undefined,
+        },
+    });
+
+    console.log("[POST /api/events] created event id =", event.id);
+
+    // external invitees (email or "value" field)
+    const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
+    const inviteEmails = [];
+    for (const a of rawAttendees) {
+        if (!a || typeof a !== "object") continue;
+        let addr = null;
+        if (typeof a.email === "string") addr = a.email.trim();
+        else if (typeof a.value === "string") addr = a.value.trim();
+        if (addr && emailRegex.test(addr)) inviteEmails.push(addr);
+    }
+    console.log("[POST /api/events] inviteEmails =", inviteEmails);
+
+    if (inviteEmails.length) {
+        const when = event.dateStart ? new Date(event.dateStart).toLocaleString() : "an upcoming event";
+        const where = event.locationName || "TBA";
+        const eventUrl = abs(`/events/${event.slug}`, req);
+        const subject = `You're invited: ${event.name}`;
+        const text = `Hi,
+
+You've been invited to the event "${event.name}" at PUM.
+
+Where: ${where}
+When: ${when}
+
+More details: ${eventUrl}
+
+This invite was sent from ${MAIL_FROM}.
+`;
+
+        for (const to of inviteEmails) {
+            // fire-and-forget; errors are logged in sendInviteEmail
+            void sendInviteEmail(to, subject, text);
+        }
+    }
+
+    return res.status(201).json({ ok: true, slug: event.slug, id: event.id });
+});
+
+/* --------------------------- Upload: event photo --------------------------- */
+const eventsDir = path.join(UPLOAD_ROOT, "events");
+fs.mkdirSync(eventsDir, { recursive: true });
+
+const storage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, eventsDir),
+    filename: (_req, file, cb) => {
+        const ext = (file.originalname.split(".").pop() || "bin").toLowerCase();
+        const safeExt = /^(png|jpg|jpeg|webp|gif)$/.test(ext) ? ext : "bin";
+        const name = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
+        cb(null, name);
+    },
+});
+const upload = multer({
+    storage,
+    limits: { fileSize: 8 * 1024 * 1024, files: 12 }, // 8 MB
+    fileFilter: (_req, file, cb) => {
+        if (/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype)) cb(null, true);
+        else cb(new Error("Unsupported file type"));
+    },
+});
+
+app.post("/api/uploads/event-photo", async (req, res, next) => {
+    console.log("[POST /api/uploads/event-photo] incoming upload");
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn("[POST /api/uploads/event-photo] blocked: unauthenticated");
+        return;
+    }
+    return upload.single("photo")(req, res, async (err) => {
+        if (err) return next(err);
+        if (!req.file) return res.status(400).json({ ok: false, error: "No file" });
+        const url = abs(`/uploads/events/${req.file.filename}`, req);
+        console.log("[POST /api/uploads/event-photo] stored file =", req.file.filename);
+        return res.status(201).json({ ok: true, url });
     });
 });
 
@@ -490,6 +852,25 @@ app.get("/api/blogs", async (req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/account", accountRouter);
 
+/* ------------------------------ Error handler ------------------------------ */
+app.use((err, req, res, _next) => {
+    // Unified, friendly JSON errors for CORS, uploads, validation, etc.
+    console.error("[error] during", req.method, req.originalUrl, "\n", err && err.stack ? err.stack : err);
+
+    const msg =
+        err?.message?.includes("CORS") ? "CORS: Origin not allowed" :
+            err?.message?.includes("Unsupported file type") ? "Unsupported file type" :
+                err?.message || "Server error";
+    if (res.headersSent) return;
+    res.status(400).json({ ok: false, error: msg });
+});
+
 /* ------------------------------ Start ------------------------------ */
 const PORT = Number(process.env.PORT || 3001);
-app.listen(PORT, () => console.log(`API on :${PORT}`));
+console.log("[config] PORT =", PORT);
+
+app.listen(PORT, () =>
+    console.log(
+        `API on :${PORT} (WEB_ORIGIN=${WEB_ORIGIN}, PUBLIC_API_BASE=${PUBLIC_API_BASE || "n/a"})`,
+    ),
+);
