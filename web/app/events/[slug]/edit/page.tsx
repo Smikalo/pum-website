@@ -1,0 +1,1250 @@
+"use client";
+
+/* eslint-disable @next/next/no-img-element */
+
+import React from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthProvider";
+import * as api from "@/lib/api";
+import EventsMap from "@/components/EventsMap";
+import { API_BASE } from "@/lib/config";
+
+/* ----------------------- Tiny Markdown renderer ----------------------- */
+
+function MarkdownPreview({ markdown }: { markdown: string }) {
+    const src = (markdown || "").replace(/\r\n/g, "\n");
+
+    function splitFenced(input: string): Array<{ type: "text" | "code"; content: string; lang?: string }> {
+        const out: Array<{ type: "text" | "code"; content: string; lang?: string }> = [];
+        const fence = /```(\w+)?\n([\s\S]*?)```/g;
+        let lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = fence.exec(input))) {
+            if (m.index > lastIndex) out.push({ type: "text", content: input.slice(lastIndex, m.index) });
+            out.push({ type: "code", content: m[2].replace(/\n$/, ""), lang: m[1] });
+            lastIndex = fence.lastIndex;
+        }
+        if (lastIndex < input.length) out.push({ type: "text", content: input.slice(lastIndex) });
+        return out;
+    }
+
+    function splitInline(text: string, re: RegExp): Array<string | { code: string }> {
+        const out: Array<string | { code: string }> = [];
+        let last = 0;
+        let m: RegExpExecArray | null;
+        const rx = new RegExp(re.source, "g");
+        while ((m = rx.exec(text))) {
+            if (m.index > last) out.push(text.slice(last, m.index));
+            out.push({ code: m[1] });
+            last = rx.lastIndex;
+        }
+        if (last < text.length) out.push(text.slice(last));
+        return out;
+    }
+
+    function splitLinks(text: string): Array<string | { label: string; href: string }> {
+        const out: Array<string | { label: string; href: string }> = [];
+        const re = /\[([^\]]+)\]\(([^)]+)\)/g;
+        let last = 0;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(text))) {
+            if (m.index > last) out.push(text.slice(last, m.index));
+            out.push({ label: m[1], href: m[2] });
+            last = re.lastIndex;
+        }
+        if (last < text.length) out.push(text.slice(last));
+        return out;
+    }
+
+    function normalizeHref(href: string): string {
+        if (/^https?:\/\//i.test(href) || href.startsWith("mailto:")) return href;
+        return `https://${href}`;
+    }
+
+    function inline(text: string): React.ReactNode[] {
+        if (!text) return [];
+        const segments = splitInline(text, /`([^`]+)`/);
+        return segments.flatMap((seg, idx) => {
+            if (typeof seg !== "string") {
+                return (
+                    <code key={`code-${idx}`} className="px-1 rounded bg-white/10 text-white/90">
+                        {seg.code}
+                    </code>
+                );
+            }
+            // links
+            const withLinks = splitLinks(seg).flatMap((s, j) => {
+                if (typeof s !== "string") {
+                    const href = normalizeHref(s.href);
+                    return (
+                        <a
+                            key={`a-${idx}-${j}`}
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline underline-offset-4"
+                        >
+                            {s.label}
+                        </a>
+                    );
+                }
+                return s;
+            });
+            // bold
+            const bolded = withLinks.flatMap((s, j) => {
+                if (typeof s !== "string") return s;
+                const parts = splitInline(s, /\*\*([^*]+)\*\*/);
+                return parts.map((p, k) =>
+                    typeof p === "string" ? (
+                        p
+                    ) : (
+                        <strong key={`b-${idx}-${j}-${k}`} className="text-white">
+                            {p.code}
+                        </strong>
+                    ),
+                );
+            });
+            // italic
+            const italicized = bolded.flatMap((s, j) => {
+                if (typeof s !== "string") return s;
+                const parts = splitInline(s, /\*([^*]+)\*/);
+                return parts.map((p, k) =>
+                    typeof p === "string" ? (
+                        p
+                    ) : (
+                        <em key={`i-${idx}-${j}-${k}`} className="italic">
+                            {p.code}
+                        </em>
+                    ),
+                );
+            });
+            return italicized;
+        });
+    }
+
+    function BlockText({ text }: { text: string }) {
+        const lines = text.split("\n");
+        const blocks: React.ReactNode[] = [];
+        let i = 0;
+        while (i < lines.length) {
+            const line = lines[i];
+            if (!line.trim()) {
+                i++;
+                continue;
+            }
+            const h = /^(#{1,3})\s+(.*)$/.exec(line);
+            if (h) {
+                const level = h[1].length;
+                const content = h[2];
+                blocks.push(
+                    level === 1 ? (
+                        <h3 key={`h-${i}`} className="text-2xl font-bold text-white mt-3">
+                            {inline(content)}
+                        </h3>
+                    ) : level === 2 ? (
+                        <h4 key={`h-${i}`} className="text-xl font-semibold text-white mt-2">
+                            {inline(content)}
+                        </h4>
+                    ) : (
+                        <h5 key={`h-${i}`} className="text-lg font-semibold text-white mt-2">
+                            {inline(content)}
+                        </h5>
+                    ),
+                );
+                i++;
+                continue;
+            }
+            if (/^\s*\d+\.\s+/.test(line)) {
+                const items: React.ReactNode[] = [];
+                while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+                    const item = lines[i].replace(/^\s*\d+\.\s+/, "");
+                    items.push(
+                        <li key={`ol-${i}`} className="ml-4">
+                            {inline(item)}
+                        </li>,
+                    );
+                    i++;
+                }
+                blocks.push(
+                    <ol key={`ol-block-${i}`} className="list-decimal pl-5 space-y-1">
+                        {items}
+                    </ol>,
+                );
+                continue;
+            }
+            if (/^\s*([-*+])\s+/.test(line)) {
+                const items: React.ReactNode[] = [];
+                while (i < lines.length && /^\s*([-*+])\s+/.test(lines[i])) {
+                    const item = lines[i].replace(/^\s*([-*+])\s+/, "");
+                    items.push(
+                        <li key={`ul-${i}`} className="ml-4">
+                            {inline(item)}
+                        </li>,
+                    );
+                    i++;
+                }
+                blocks.push(
+                    <ul key={`ul-block-${i}`} className="list-disc pl-5 space-y-1">
+                        {items}
+                    </ul>,
+                );
+                continue;
+            }
+            const paras: string[] = [];
+            while (
+                i < lines.length &&
+                lines[i].trim() &&
+                !/^(#{1,3})\s+/.test(lines[i]) &&
+                !/^\s*\d+\.\s+/.test(lines[i]) &&
+                !/^\s*([-*+])\s+/.test(lines[i])
+                ) {
+                paras.push(lines[i]);
+                i++;
+            }
+            const paraText = paras.join(" ");
+            blocks.push(
+                <p key={`p-${i}`} className="text-white/85">
+                    {inline(paraText)}
+                </p>,
+            );
+        }
+        return <>{blocks}</>;
+    }
+
+    const segments = splitFenced(src);
+    if (!src.trim()) {
+        return (
+            <p className="text-white/50 text-sm">
+                Nothing to preview yet.
+            </p>
+        );
+    }
+    return (
+        <div className="space-y-3 leading-relaxed text-white/90">
+            {segments.map((seg, i) =>
+                seg.type === "code" ? (
+                    <pre
+                        key={`code-${i}`}
+                        className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
+                        aria-label={seg.lang ? `Code block (${seg.lang})` : "Code block"}
+                    >
+                        <code>{seg.content}</code>
+                    </pre>
+                ) : (
+                    <BlockText key={`txt-${i}`} text={seg.content} />
+                ),
+            )}
+        </div>
+    );
+}
+
+/* ----------------------------- Geocoding ----------------------------- */
+
+type SearchHit = {
+    display_name: string;
+    lat: string;
+    lon: string;
+};
+
+async function geocode(q: string, signal?: AbortSignal): Promise<SearchHit[]> {
+    if (!q.trim()) return [];
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("q", q);
+    url.searchParams.set("format", "jsonv2");
+    url.searchParams.set("limit", "5");
+    url.searchParams.set("email", "noreply@pum.local");
+
+    const res = await fetch(url.toString(), {
+        headers: { Accept: "application/json" },
+        signal,
+    });
+    if (!res.ok) return [];
+    return (await res.json()) as SearchHit[];
+}
+
+/* ----------------------------- Form types ---------------------------- */
+
+type FormState = {
+    name: string;
+    locationName: string;
+    dateStart: string;
+    dateEnd: string;
+    lat: string;
+    lng: string;
+    description: string;
+};
+
+type Errors = Partial<Record<keyof FormState | "photos", string>>;
+
+type Member = {
+    id: string;
+    slug: string;
+    name: string;
+    avatarUrl?: string;
+    headline?: string;
+    email?: string;
+};
+
+type Attendee =
+    | { kind: "member"; member: Member }
+    | { kind: "invite"; value: string };
+
+/* ---------------------------- Map preview ---------------------------- */
+
+function MapPreview({
+                        name,
+                        locationName,
+                        dateStart,
+                        lat,
+                        lng,
+                    }: {
+    name: string;
+    locationName: string;
+    dateStart: string;
+    lat: string;
+    lng: string;
+}) {
+    const hasCoords =
+        !!lat && !!lng && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng));
+
+    if (!hasCoords) {
+        return (
+            <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-xs text-white/60">
+                Set latitude and longitude to preview the location.
+            </div>
+        );
+    }
+
+    const latNum = Number(lat);
+    const lngNum = Number(lng);
+
+    const previewEvent = {
+        id: "event-preview",
+        slug: "event-preview",
+        name: name || "Event",
+        locationName: locationName || undefined,
+        dateStart: dateStart || undefined,
+        lat: latNum,
+        lng: lngNum,
+        description: undefined,
+        photos: [] as string[],
+        tags: [] as string[],
+    };
+
+    return (
+        <div className="rounded-md bg-black overflow-hidden ring-1 ring-white/10">
+            <EventsMap events={[previewEvent]} />
+        </div>
+    );
+}
+
+/* ------------------------------ Page ------------------------------ */
+
+type Props = { params: { slug: string } };
+
+export default function EditEventPage({ params }: Props) {
+    const { user, accessToken } = useAuth();
+    const router = useRouter();
+
+    const [state, setState] = React.useState<FormState>({
+        name: "",
+        locationName: "",
+        dateStart: "",
+        dateEnd: "",
+        lat: "",
+        lng: "",
+        description: "",
+    });
+
+    const [existingPhotos, setExistingPhotos] = React.useState<string[]>([]);
+    const [photos, setPhotos] = React.useState<File[]>([]);
+
+    const [searchQ, setSearchQ] = React.useState("");
+    const [hits, setHits] = React.useState<SearchHit[]>([]);
+    const [searching, setSearching] = React.useState(false);
+
+    const [members, setMembers] = React.useState<Member[]>([]);
+    const [membersLoading, setMembersLoading] = React.useState(true);
+    const [membersError, setMembersError] = React.useState<string | null>(null);
+
+    const [attendees, setAttendees] = React.useState<Attendee[]>([]);
+    const [attendeeQ, setAttendeeQ] = React.useState("");
+
+    const [errors, setErrors] = React.useState<Errors>({});
+    const [submitting, setSubmitting] = React.useState(false);
+    const [error, setError] = React.useState<string | null>(null);
+    const [hint, setHint] = React.useState<string | null>(null);
+
+    const [loadingEvent, setLoadingEvent] = React.useState(true);
+    const [loadError, setLoadError] = React.useState<string | null>(null);
+    const [creatorSlug, setCreatorSlug] = React.useState<string | null>(null);
+
+    /* -------------------- live map search (debounced) -------------------- */
+
+    React.useEffect(() => {
+        if (!searchQ.trim()) {
+            setHits([]);
+            setSearching(false);
+            return;
+        }
+        setSearching(true);
+        const controller = new AbortController();
+        const handle = window.setTimeout(async () => {
+            try {
+                const results = await geocode(searchQ, controller.signal);
+                setHits(results);
+            } catch (err) {
+                if ((err as any)?.name !== "AbortError") {
+                    // eslint-disable-next-line no-console
+                    console.error("[EditEvent] geocode error", err);
+                }
+            } finally {
+                setSearching(false);
+            }
+        }, 250); // debounce
+
+        return () => {
+            window.clearTimeout(handle);
+            controller.abort();
+        };
+    }, [searchQ]);
+
+    /* -------------------- load members for attendee picker -------------------- */
+
+    React.useEffect(() => {
+        let cancelled = false;
+
+        async function loadMembers() {
+            try {
+                const res = await fetch("/api/members?size=999");
+                if (!res.ok) throw new Error("Failed to load members");
+                const json = await res.json();
+                const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+                const mapped: Member[] = items.map((m) => ({
+                    id: m.id ?? m.slug,
+                    slug: m.slug ?? m.id,
+                    name: m.name,
+                    avatarUrl: m.avatarUrl ?? m.avatar ?? m.photo ?? m.image ?? undefined,
+                    headline: m.headline ?? m.shortBio ?? undefined,
+                    email: m.email ?? undefined,
+                }));
+                if (!cancelled) {
+                    setMembers(mapped);
+                    setMembersError(null);
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    // eslint-disable-next-line no-console
+                    console.error("[EditEvent] members load error", err);
+                    setMembersError("Could not load members.");
+                }
+            } finally {
+                if (!cancelled) setMembersLoading(false);
+            }
+        }
+
+        loadMembers();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    /* ------------------------- load existing event ------------------------- */
+
+    React.useEffect(() => {
+        let cancelled = false;
+
+        async function loadEvent() {
+            setLoadingEvent(true);
+            setLoadError(null);
+            try {
+                const url = new URL(`/api/events/${encodeURIComponent(params.slug)}`, API_BASE);
+                const res = await fetch(url.toString(), {
+                    credentials: "include",
+                });
+                if (!res.ok) {
+                    if (!cancelled) {
+                        if (res.status === 404) setLoadError("not-found");
+                        else setLoadError("Failed to load event.");
+                    }
+                    return;
+                }
+                const ev: any = await res.json();
+                if (cancelled) return;
+
+                const toInputValue = (iso: string | null | undefined): string => {
+                    if (!iso) return "";
+                    const d = new Date(iso);
+                    if (Number.isNaN(d.getTime())) return "";
+                    const pad = (n: number) => n.toString().padStart(2, "0");
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+                        d.getDate(),
+                    )}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                };
+
+                setState((prev) => ({
+                    ...prev,
+                    name: ev.name || "",
+                    locationName: ev.locationName || "",
+                    dateStart: toInputValue(ev.dateStart),
+                    dateEnd: toInputValue(ev.dateEnd),
+                    lat:
+                        typeof ev.lat === "number"
+                            ? String(ev.lat)
+                            : ev.lat
+                                ? String(ev.lat)
+                                : "",
+                    lng:
+                        typeof ev.lng === "number"
+                            ? String(ev.lng)
+                            : ev.lng
+                                ? String(ev.lng)
+                                : "",
+                    description: ev.description || "",
+                }));
+
+                if (Array.isArray(ev.photos)) {
+                    setExistingPhotos(ev.photos as string[]);
+                } else {
+                    setExistingPhotos([]);
+                }
+
+                const attendeesFromApi: any[] = Array.isArray(ev.attendees)
+                    ? ev.attendees
+                    : [];
+
+                const pendingInvites = attendeesFromApi.filter(
+                    (a) => a && a.pending && a.email,
+                );
+                if (pendingInvites.length) {
+                    setAttendees(
+                        pendingInvites.map((a) => ({
+                            kind: "invite" as const,
+                            value: String(a.email),
+                        })),
+                    );
+                }
+
+                const creator = attendeesFromApi.find(
+                    (a) => a && a.role === "CREATOR" && a.slug,
+                );
+                setCreatorSlug(creator?.slug ?? null);
+            } catch (err) {
+                // eslint-disable-next-line no-console
+                console.error("[EditEvent] loadEvent error", err);
+                if (!cancelled) setLoadError("Failed to load event.");
+            } finally {
+                if (!cancelled) setLoadingEvent(false);
+            }
+        }
+
+        loadEvent();
+        return () => {
+            cancelled = true;
+        };
+    }, [params.slug]);
+
+    /* -------------------------- attendee helpers -------------------------- */
+
+    const normalizedAttendeeQ = attendeeQ.trim().toLowerCase();
+    const attendeeSuggestions = React.useMemo(() => {
+        const alreadyIds = new Set(
+            attendees
+                .filter((a) => a.kind === "member")
+                .map((a) => (a as any).member.id),
+        );
+        return members
+            .filter((m) => {
+                if (alreadyIds.has(m.id)) return false;
+                if (!normalizedAttendeeQ) return true;
+                const h = m.headline || "";
+                const email = m.email || "";
+                return (
+                    m.name.toLowerCase().includes(normalizedAttendeeQ) ||
+                    m.slug.toLowerCase().includes(normalizedAttendeeQ) ||
+                    h.toLowerCase().includes(normalizedAttendeeQ) ||
+                    email.toLowerCase().includes(normalizedAttendeeQ)
+                );
+            })
+            .slice(0, 8);
+    }, [attendees, members, normalizedAttendeeQ]);
+
+    /* ------------------------------ gating ------------------------------ */
+
+    if (loadingEvent) {
+        return (
+            <section className="section">
+                <h1 className="display">Edit event</h1>
+                <p className="mt-3 text-white/70">Loading event details…</p>
+                <p className="mt-4">
+                    <Link href="/events" className="underline underline-offset-4">
+                        ← Back to events
+                    </Link>
+                </p>
+            </section>
+        );
+    }
+
+    if (loadError === "not-found") {
+        return (
+            <section className="section">
+                <h1 className="display">Event not found</h1>
+                <p className="mt-3 text-white/70">
+                    We couldn&apos;t find this event. It may have been removed or the link is
+                    incorrect.
+                </p>
+                <p className="mt-4">
+                    <Link href="/events" className="underline underline-offset-4">
+                        ← Back to events
+                    </Link>
+                </p>
+            </section>
+        );
+    }
+
+    if (loadError && loadError !== "not-found") {
+        return (
+            <section className="section">
+                <h1 className="display">Edit event</h1>
+                <p className="mt-3 text-white/70">{loadError}</p>
+                <p className="mt-4">
+                    <Link href="/events" className="underline underline-offset-4">
+                        ← Back to events
+                    </Link>
+                </p>
+            </section>
+        );
+    }
+
+    // If not logged in, show friendly gate (API still enforces auth)
+    if (!user) {
+        return (
+            <section className="section">
+                <h1 className="display">Edit event</h1>
+                <p className="mt-3 text-white/70 max-w-2xl">
+                    You need to be logged in to edit events.
+                </p>
+                <div className="mt-5 flex gap-3">
+                    <Link href={`/events/${params.slug}`} className="btn-secondary">
+                        ← Back to event
+                    </Link>
+                    <Link href="/" className="btn-primary">
+                        Log in
+                    </Link>
+                </div>
+            </section>
+        );
+    }
+
+    const roles = (user.roles || []) as string[];
+    const isAdmin = roles.includes("ADMIN");
+    const isModerator = roles.includes("MODERATOR");
+    const isCreator =
+        !!creatorSlug && user.member && user.member.slug === creatorSlug;
+    const canEditEvent = isAdmin || isModerator || isCreator;
+
+    if (!canEditEvent) {
+        return (
+            <section className="section">
+                <h1 className="display">Edit event</h1>
+                <p className="mt-3 text-white/70 max-w-2xl">
+                    You don&apos;t have permission to edit this event.
+                </p>
+                <div className="mt-5 flex gap-3">
+                    <Link href={`/events/${params.slug}`} className="btn-secondary">
+                        ← Back to event
+                    </Link>
+                    <Link href="/events" className="btn-primary">
+                        Browse all events
+                    </Link>
+                </div>
+            </section>
+        );
+    }
+
+    /* --------------------------- form helpers --------------------------- */
+
+    function set<K extends keyof FormState>(k: K, v: FormState[K]) {
+        setState((s) => ({ ...s, [k]: v }));
+        setErrors((e) => ({ ...e, [k]: undefined })); // clear on change
+    }
+
+    function validate(): Errors {
+        const e: Errors = {};
+        if (!state.name.trim()) e.name = "Event name is required.";
+        if (state.dateStart && Number.isNaN(new Date(state.dateStart).getTime()))
+            e.dateStart = "Invalid start date.";
+        if (state.dateEnd && Number.isNaN(new Date(state.dateEnd).getTime()))
+            e.dateEnd = "Invalid end date.";
+        if (state.dateStart && state.dateEnd) {
+            const a = new Date(state.dateStart).getTime();
+            const b = new Date(state.dateEnd).getTime();
+            if (a > b) e.dateEnd = "End must be after start.";
+        }
+
+        const totalPhotos = existingPhotos.length + photos.length;
+        if (totalPhotos > 12) {
+            e.photos = "Please upload at most 12 photos in total.";
+        }
+
+        for (const f of photos) {
+            const okType = /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
+            if (!okType) {
+                e.photos = "Only PNG, JPG/JPEG, WEBP, or GIF are allowed.";
+                break;
+            }
+            if (f.size > 8 * 1024 * 1024) {
+                e.photos = "Each photo must be ≤ 8 MB.";
+                break;
+            }
+        }
+        return e;
+    }
+
+    function addMemberAttendee(m: Member) {
+        setAttendees((prev) => {
+            if (prev.some((a) => a.kind === "member" && a.member.id === m.id)) {
+                return prev;
+            }
+            return [...prev, { kind: "member", member: m }];
+        });
+        setAttendeeQ("");
+    }
+
+    function addInviteAttendee(value: string) {
+        const v = value.trim();
+        if (!v) return;
+        setAttendees((prev) => {
+            if (prev.some((a) => a.kind === "invite" && a.value === v)) {
+                return prev;
+            }
+            return [...prev, { kind: "invite", value: v }];
+        });
+        setAttendeeQ("");
+    }
+
+    function removeAttendee(index: number) {
+        setAttendees((prev) => prev.filter((_, i) => i !== index));
+    }
+
+    async function onSubmit(e: React.FormEvent) {
+        e.preventDefault();
+        if (!accessToken) return;
+
+        setSubmitting(true);
+        setError(null);
+        setHint(null);
+
+        const ve = validate();
+        setErrors(ve);
+        if (Object.values(ve).some(Boolean)) {
+            setSubmitting(false);
+            setError("Please fix the highlighted fields.");
+            return;
+        }
+
+        try {
+            // 1) upload new photos (if any)
+            const photoUrls: string[] = [...existingPhotos];
+            if (photos.length) {
+                const uploads = await Promise.all(
+                    photos.map((file) => api.uploadEventPhoto(accessToken, file)),
+                );
+                for (const u of uploads) {
+                    if (u?.url) photoUrls.push(u.url);
+                }
+            }
+
+            // 2) update event
+            const body = {
+                name: state.name.trim(),
+                locationName: state.locationName.trim() || null,
+                dateStart: state.dateStart
+                    ? new Date(state.dateStart).toISOString()
+                    : null,
+                dateEnd: state.dateEnd
+                    ? new Date(state.dateEnd).toISOString()
+                    : null,
+                lat: state.lat ? Number(state.lat) : null,
+                lng: state.lng ? Number(state.lng) : null,
+                description: state.description.trim() || null,
+                photos: photoUrls,
+                attendees: attendees.map((a) =>
+                    a.kind === "member"
+                        ? {
+                            type: "member",
+                            memberId: a.member.id,
+                            memberSlug: a.member.slug,
+                            name: a.member.name,
+                            email: a.member.email || null,
+                        }
+                        : {
+                            type: "invite",
+                            value: a.value,
+                        },
+                ),
+            };
+
+            await api.updateEvent(accessToken, params.slug, body);
+            setHint("Event updated ✓ Redirecting…");
+            setTimeout(() => {
+                router.push(`/events/${params.slug}`);
+            }, 600);
+        } catch (err: any) {
+            // eslint-disable-next-line no-console
+            console.error("[EditEvent] onSubmit error", err);
+            const msg = err?.message || "Failed to update event";
+            setError(msg);
+        } finally {
+            setSubmitting(false);
+        }
+    }
+
+    const inputCls = (field: keyof FormState | "photos" = "name") =>
+        `w-full rounded-md bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 ring-1 outline-none ${
+            errors[field]
+                ? "ring-red-400 focus:ring-red-400/80"
+                : "ring-white/10 focus:ring-white/30"
+        }`;
+
+    const searchInputCls =
+        "w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:ring-white/30 outline-none";
+
+    /* ------------------------------- render ------------------------------- */
+
+    return (
+        <section className="section">
+            <header className="mb-6">
+                <p className="kicker">EVENTS</p>
+                <h1 className="display">Edit event</h1>
+                <p className="mt-2 text-white/70 max-w-2xl">
+                    Update dates, location, details, attendees, and photos. Existing invites
+                    won&apos;t be resent when you save changes.
+                </p>
+            </header>
+
+            {/* Alerts */}
+            {error ? (
+                <div
+                    role="alert"
+                    className="mb-4 rounded-md border border-red-400/30 bg-red-500/10 px-4 py-3 text-red-200"
+                >
+                    {error}
+                </div>
+            ) : null}
+            {hint ? (
+                <div
+                    role="status"
+                    className="mb-4 rounded-md border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-emerald-200"
+                >
+                    {hint}
+                </div>
+            ) : null}
+
+            <form onSubmit={onSubmit} className="grid lg:grid-cols-5 gap-6">
+                {/* Left */}
+                <div className="lg:col-span-3 space-y-5">
+                    <div className="card p-5 space-y-3">
+                        <div>
+                            <label className="block text-sm text-white/70 mb-1">
+                                Event name *
+                            </label>
+                            <input
+                                required
+                                value={state.name}
+                                onChange={(e) => set("name", e.target.value)}
+                                className={inputCls("name")}
+                                placeholder="HackNight @ PUM"
+                                aria-invalid={!!errors.name}
+                            />
+                            {errors.name && (
+                                <p className="mt-1 text-xs text-red-300">{errors.name}</p>
+                            )}
+                        </div>
+
+                        {/* Split view: markdown input + preview */}
+                        <div className="grid md:grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                                <label className="block text-sm text-white/70">
+                                    Long description
+                                </label>
+                                <textarea
+                                    value={state.description}
+                                    onChange={(e) => set("description", e.target.value)}
+                                    className={`${inputCls()} min-h-[160px] resize-vertical`}
+                                    placeholder="What is this event about? Who is it for? Agenda, expectations…"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <div className="flex items-center justify-between text-xs text-white/60">
+                                    <span>Preview</span>
+                                    <span>Supports basic markdown</span>
+                                </div>
+                                <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 min-h-[160px] text-sm">
+                                    <MarkdownPreview markdown={state.description} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Dates */}
+                        <div className="grid md:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-sm text-white/70 mb-1">
+                                    Start (local)
+                                </label>
+                                <input
+                                    type="datetime-local"
+                                    value={state.dateStart}
+                                    onChange={(e) => set("dateStart", e.target.value)}
+                                    className={inputCls("dateStart")}
+                                    aria-invalid={!!errors.dateStart}
+                                />
+                                {errors.dateStart && (
+                                    <p className="mt-1 text-xs text-red-300">
+                                        {errors.dateStart}
+                                    </p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-sm text-white/70 mb-1">
+                                    End (local)
+                                </label>
+                                <input
+                                    type="datetime-local"
+                                    value={state.dateEnd}
+                                    onChange={(e) => set("dateEnd", e.target.value)}
+                                    className={inputCls("dateEnd")}
+                                    aria-invalid={!!errors.dateEnd}
+                                />
+                                {errors.dateEnd && (
+                                    <p className="mt-1 text-xs text-red-300">
+                                        {errors.dateEnd}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="card p-5 space-y-3">
+                        {/* Photos (existing + new) */}
+                        <div>
+                            <label className="block text-sm text-white/70 mb-1">Photos</label>
+                            <input
+                                type="file"
+                                multiple
+                                accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                                onChange={(e) =>
+                                    setPhotos(Array.from(e.target.files || []))
+                                }
+                                className={inputCls("photos")}
+                                aria-invalid={!!errors.photos}
+                            />
+                            <p className="text-xs text-white/50 mt-1">
+                                Up to 12 images total; PNG/JPG/WEBP/GIF; max 8 MB each.
+                            </p>
+                            {errors.photos && (
+                                <p className="mt-1 text-xs text-red-300">{errors.photos}</p>
+                            )}
+
+                            {(existingPhotos.length > 0 || photos.length > 0) && (
+                                <div className="mt-3 space-y-2">
+                                    {existingPhotos.length > 0 && (
+                                        <div>
+                                            <p className="text-[11px] text-white/50 mb-1">
+                                                Existing photos
+                                            </p>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {existingPhotos.slice(0, 6).map((url, i) => (
+                                                    <div
+                                                        key={`existing-${i}`}
+                                                        className="rounded-md bg-white/5 ring-1 ring-white/10 p-1"
+                                                    >
+                                                        <img
+                                                            src={url}
+                                                            alt={`Event photo ${i + 1}`}
+                                                            className="w-full h-24 object-cover rounded"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {photos.length > 0 && (
+                                        <div>
+                                            <p className="text-[11px] text-white/50 mb-1">
+                                                New uploads (will be added on save)
+                                            </p>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {photos.slice(0, 6).map((f, i) => (
+                                                    <div
+                                                        key={`new-${i}`}
+                                                        className="rounded-md bg-white/5 ring-1 ring-white/10 p-1"
+                                                    >
+                                                        <img
+                                                            src={URL.createObjectURL(f)}
+                                                            alt={f.name}
+                                                            className="w-full h-24 object-cover rounded"
+                                                        />
+                                                        <div className="mt-1 text-[11px] truncate text-white/70">
+                                                            {f.name}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right */}
+                <aside className="lg:col-span-2 space-y-5">
+                    {/* Location + map */}
+                    <div className="card p-5 space-y-3">
+                        <div>
+                            <label className="block text-sm text-white/70 mb-1">
+                                Location name
+                            </label>
+                            <input
+                                value={state.locationName}
+                                onChange={(e) => set("locationName", e.target.value)}
+                                className={inputCls("locationName")}
+                                placeholder="Betahaus Berlin, Hall A"
+                            />
+                        </div>
+
+                        {/* Map search */}
+                        <div className="space-y-2">
+                            <div className="relative">
+                                <input
+                                    value={searchQ}
+                                    onChange={(e) => setSearchQ(e.target.value)}
+                                    placeholder="Search address / place"
+                                    className={searchInputCls}
+                                />
+                                {searching && (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-white/50">
+                                        Searching…
+                                    </div>
+                                )}
+                            </div>
+                            {!!hits.length && (
+                                <ul className="max-h-48 overflow-auto rounded-md ring-1 ring-white/10 divide-y divide-white/10 bg-black/60">
+                                    {hits.map((h, i) => (
+                                        <li
+                                            key={i}
+                                            className="p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                            onClick={() => {
+                                                set("lat", h.lat);
+                                                set("lng", h.lon);
+                                                setHits([]);
+                                                setSearchQ(h.display_name);
+                                                set("locationName", h.display_name);
+                                            }}
+                                        >
+                                            <div className="font-medium text-white">
+                                                {h.display_name}
+                                            </div>
+                                            <div className="text-xs text-white/60 mt-0.5">
+                                                lat {h.lat}, lon {h.lon}
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+
+                        {/* Lat/lng raw inputs */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs text-white/60 mb-1">
+                                    Latitude
+                                </label>
+                                <input
+                                    value={state.lat}
+                                    onChange={(e) => set("lat", e.target.value)}
+                                    className={inputCls("lat")}
+                                    placeholder="52.5"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-white/60 mb-1">
+                                    Longitude
+                                </label>
+                                <input
+                                    value={state.lng}
+                                    onChange={(e) => set("lng", e.target.value)}
+                                    className={inputCls("lng")}
+                                    placeholder="13.4"
+                                />
+                            </div>
+                        </div>
+
+                        <MapPreview
+                            name={state.name}
+                            locationName={state.locationName}
+                            dateStart={state.dateStart}
+                            lat={state.lat}
+                            lng={state.lng}
+                        />
+                    </div>
+
+                    {/* Attendees + invites */}
+                    <div className="card p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-sm font-semibold text-white">
+                                Attendees &amp; invites
+                            </h2>
+                            {membersLoading && (
+                                <span className="text-[11px] text-white/50">
+                                    Loading members…
+                                </span>
+                            )}
+                        </div>
+                        {membersError && (
+                            <p className="text-xs text-red-300">{membersError}</p>
+                        )}
+
+                        <div className="space-y-2">
+                            <div className="flex gap-2">
+                                <input
+                                    value={attendeeQ}
+                                    onChange={(e) => setAttendeeQ(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            if (attendeeSuggestions[0]) {
+                                                addMemberAttendee(attendeeSuggestions[0]);
+                                            } else if (attendeeQ.trim()) {
+                                                addInviteAttendee(attendeeQ);
+                                            }
+                                        }
+                                    }}
+                                    placeholder="Search member or type email"
+                                    className={searchInputCls}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => addInviteAttendee(attendeeQ)}
+                                    className="px-3 py-2 rounded-md bg-white text-black text-xs font-medium disabled:opacity-60"
+                                    disabled={!attendeeQ.trim()}
+                                >
+                                    Add invite
+                                </button>
+                            </div>
+
+                            {!!attendeeSuggestions.length && (
+                                <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
+                                    {attendeeSuggestions.map((m) => (
+                                        <li
+                                            key={m.id}
+                                            className="p-2 text-sm hover:bg-white/10 cursor-pointer flex items-center gap-2"
+                                            onClick={() => addMemberAttendee(m)}
+                                        >
+                                            {m.avatarUrl ? (
+                                                <img
+                                                    src={m.avatarUrl}
+                                                    alt={m.name}
+                                                    className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20"
+                                                />
+                                            ) : (
+                                                <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                    {m.name.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-medium text-white">
+                                                    {m.name}
+                                                </div>
+                                                {m.headline && (
+                                                    <div className="text-[11px] text-white/60 truncate">
+                                                        {m.headline}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+
+                        {attendees.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {attendees.map((a, idx) =>
+                                    a.kind === "member" ? (
+                                        <div
+                                            key={`m-${a.member.id}`}
+                                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                        >
+                                            {a.member.avatarUrl ? (
+                                                <img
+                                                    src={a.member.avatarUrl}
+                                                    alt={a.member.name}
+                                                    className="w-6 h-6 rounded-full object-cover ring-1 ring-white/20"
+                                                />
+                                            ) : (
+                                                <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                    {a.member.name.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <span className="text-xs text-white">
+                                                {a.member.name}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeAttendee(idx)}
+                                                className="text-[11px] text-white/60 hover:text-white"
+                                                aria-label={`Remove ${a.member.name}`}
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div
+                                            key={`i-${a.value}-${idx}`}
+                                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                        >
+                                            <span className="text-xs text-white/90">
+                                                {a.value}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeAttendee(idx)}
+                                                className="text-[11px] text-white/60 hover:text-white"
+                                                aria-label={`Remove invite ${a.value}`}
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ),
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Actions (styled like create page) */}
+                    <div className="card p-5">
+                        <button
+                            type="submit"
+                            disabled={submitting}
+                            className="w-full px-4 py-2 rounded-md bg-white text-black font-semibold disabled:opacity-60"
+                        >
+                            {submitting ? "Saving…" : "Save changes"}
+                        </button>
+                        <div className="mt-3 text-center">
+                            <Link
+                                href={`/events/${params.slug}`}
+                                className="text-sm underline underline-offset-4"
+                            >
+                                Cancel
+                            </Link>
+                        </div>
+                    </div>
+                </aside>
+            </form>
+        </section>
+    );
+}

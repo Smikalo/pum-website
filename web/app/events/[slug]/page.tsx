@@ -7,6 +7,7 @@ import { SEED_MEMBERS, type Member as SeedMember } from "@/data/members.seed";
 import { SEED_PROJECTS, type Project as SeedProject } from "@/data/projects.seed";
 import { API_BASE } from "@/lib/config";
 import EventsMap from "@/components/EventsMap";
+import EditEventButton from "@/components/EditEventButton";
 
 /* ----------------------- Tiny Markdown renderer ----------------------- */
 
@@ -373,7 +374,15 @@ async function fetchApiEventDetail(slug: string): Promise<{
     description?: string;
     photos?: string[];
     tags?: string[];
-    attendees?: { slug: string | null; name?: string | null; email?: string | null; avatarUrl?: string | null; role?: string | null; headline?: string | null; pending?: boolean }[];
+    attendees?: {
+        slug: string | null;
+        name?: string | null;
+        email?: string | null;
+        avatarUrl?: string | null;
+        role?: string | null;
+        headline?: string | null;
+        pending?: boolean;
+    }[];
     projects?: {
         slug: string;
         title: string;
@@ -471,6 +480,9 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
     // Prefer attendees/projects directly from the API detail:
     const evDetail = await fetchApiEventDetail(params.slug);
 
+    const creatorSlug =
+        evDetail?.attendees?.find((a) => a.role === "CREATOR" && a.slug)?.slug ?? null;
+
     // Members for avatars in the "tiny team row" under projects:
     const membersFromApi = await fetchApiMembers();
     const membersFromSeeds: Member[] = SEED_MEMBERS.map((m: SeedMember) => ({
@@ -533,7 +545,10 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
         <section className="section">
             <header className="mb-6">
                 <p className="kicker">EVENT</p>
-                <h1 className="display">{baseEvent.name}</h1>
+                <div className="flex items-center justify-between gap-4">
+                    <h1 className="display">{baseEvent.name}</h1>
+                    <EditEventButton slug={baseEvent.slug} creatorSlug={creatorSlug} />
+                </div>
                 <div className="mt-2 text-white/70 text-sm">
                     {baseEvent.locationName ? `${baseEvent.locationName} • ` : ""}
                     {baseEvent.dateStart ? new Date(baseEvent.dateStart).toLocaleDateString() : ""}
@@ -543,7 +558,11 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
 
             {cover && (
                 <div className="mb-6">
-                    <img src={cover} alt={baseEvent.name} className="w-full h-80 object-cover rounded-xl ring-1 ring-white/10" />
+                    <img
+                        src={cover}
+                        alt={baseEvent.name}
+                        className="w-full h-80 object-cover rounded-xl ring-1 ring-white/10"
+                    />
                 </div>
             )}
 
@@ -562,7 +581,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                                 {baseEvent.tags.slice(0, 12).map((t) => (
                                     <span
                                         key={t}
-                                        className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                        className="text-[11px] px-2 py-1 rounded-full bg.white/5 ring-1 ring-white/10"
                                     >
                                         {t}
                                     </span>
@@ -616,10 +635,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                                                         const slug = ref.memberSlug || ref.memberId || "";
                                                         const m = slug ? memMap.get(slug) : undefined;
                                                         return (
-                                                            <span
-                                                                key={`${slug}-${i}`}
-                                                                className="inline-block"
-                                                            >
+                                                            <span key={`${slug}-${i}`} className="inline-block">
                                                                 <img
                                                                     src={
                                                                         m?.avatarUrl ||
@@ -683,10 +699,9 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                                 {attendees.map((m, idx) => {
                                     const key = m.slug || m.email || String(idx);
                                     const displayName = m.slug
-                                        ? (m.name || m.email || "Unknown")
-                                        : (m.name || m.email || "Pending invite");
-                                    const avatar =
-                                        m.avatarUrl || m.avatar || "/avatars/default.png";
+                                        ? m.name || m.email || "Unknown"
+                                        : m.name || m.email || "Pending invite";
+                                    const avatar = m.avatarUrl || m.avatar || "/avatars/default.png";
                                     return (
                                         <li key={key} className="flex items-center gap-3">
                                             <img
@@ -703,12 +718,10 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                                                         {displayName}
                                                     </Link>
                                                 ) : (
-                                                    <span className="font-medium">
-                                                        {displayName}
-                                                    </span>
+                                                    <span className="font-medium">{displayName}</span>
                                                 )}
                                                 <div className="text-xs text-white/60 truncate">
-                                                    {m.pending ? "Pending invite" : (m.headline || "")}
+                                                    {m.pending ? "Pending invite" : m.headline || ""}
                                                 </div>
                                             </div>
                                         </li>

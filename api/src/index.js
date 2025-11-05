@@ -160,7 +160,7 @@ async function requireUser(req, res) {
         console.log("[auth] token OK for user id", decoded.sub);
         const user = await prisma.user.findUnique({
             where: { id: decoded.sub },
-            include: { roles: true },
+            include: { roles: true, member: true },
         });
         if (!user) {
             console.warn("[auth] token user not found in DB", decoded.sub);
@@ -745,6 +745,23 @@ app.post("/api/events", async (req, res) => {
 
     console.log("[POST /api/events] created event id =", event.id);
 
+    // Attach creator as member of the event with role "CREATOR"
+    if (user && user.member && user.member.id) {
+        try {
+            await prisma.memberEvent.create({
+                data: {
+                    memberId: user.member.id,
+                    eventId: event.id,
+                    role: "CREATOR",
+                },
+            });
+        } catch (err) {
+            console.error("[POST /api/events] failed to create memberEvent CREATOR record", err);
+        }
+    } else {
+        console.log("[POST /api/events] user has no member profile; skipping creator memberEvent");
+    }
+
     // external invitees (email or "value" field)
     console.log("[POST /api/events] deriving invite emails from attendees…");
     const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
@@ -838,6 +855,227 @@ This invite was sent from ${MAIL_FROM}.
 
     console.log("========== [POST /api/events] END (success) ==========");
     return res.status(201).json({ ok: true, slug: event.slug, id: event.id });
+});
+
+app.put("/api/events/:slug", async (req, res) => {
+    console.log("========== [PUT /api/events/:slug] BEGIN ==========");
+    console.log("[PUT /api/events/:slug] slug =", req.params.slug);
+    console.log("[PUT /api/events/:slug] raw body =", JSON.stringify(req.body));
+
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn("[PUT /api/events/:slug] blocked: unauthenticated");
+        console.log("========== [PUT /api/events/:slug] END (unauthenticated) ==========");
+        return;
+    }
+
+    const userRoles = (user.roles || []).map((r) => r.role);
+    console.log("[PUT /api/events/:slug] authenticated user id =", user.id, "roles =", userRoles);
+
+    const event = await prisma.event.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+            attendees: true,
+            invites: true,
+        },
+    });
+
+    if (!event) {
+        console.warn("[PUT /api/events/:slug] 404 for slug", req.params.slug);
+        console.log("========== [PUT /api/events/:slug] END (not found) ==========");
+        return res.status(404).json({ ok: false, error: "Not found" });
+    }
+
+    const isAdminOrModerator = userRoles.some((r) => r === "ADMIN" || r === "MODERATOR");
+    let isCreator = false;
+
+    if (!isAdminOrModerator && user.member && user.member.id) {
+        for (const a of event.attendees || []) {
+            if (a.memberId === user.member.id && a.role === "CREATOR") {
+                isCreator = true;
+                break;
+            }
+        }
+    }
+
+    if (!isAdminOrModerator && !isCreator) {
+        console.warn(
+            "[PUT /api/events/:slug] blocked: insufficient role for user",
+            user.id,
+        );
+        console.log("========== [PUT /api/events/:slug] END (forbidden) ==========");
+        return res.status(403).json({ ok: false, error: "Insufficient permissions" });
+    }
+
+    const parsed = createEventSchema.safeParse({
+        ...req.body,
+        lat: typeof req.body?.lat === "string" ? Number(req.body.lat) : req.body?.lat,
+        lng: typeof req.body?.lng === "string" ? Number(req.body.lng) : req.body?.lng,
+    });
+    if (!parsed.success) {
+        console.warn("[PUT /api/events/:slug] validation error", parsed.error.flatten());
+        console.log("========== [PUT /api/events/:slug] END (validation error) ==========");
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+    const d = parsed.data;
+    console.log("[PUT /api/events/:slug] parsed data (without photos) =", {
+        name: d.name,
+        dateStart: d.dateStart,
+        dateEnd: d.dateEnd,
+        locationName: d.locationName,
+        lat: d.lat,
+        lng: d.lng,
+        description: d.description ? d.description.slice(0, 100) + "…" : null,
+        attendeesCount: Array.isArray(d.attendees) ? d.attendees.length : 0,
+    });
+
+    console.log("[PUT /api/events/:slug] updating event record in DB…");
+    const updated = await prisma.event.update({
+        where: { id: event.id },
+        data: {
+            name: d.name,
+            dateStart: d.dateStart ? new Date(d.dateStart) : null,
+            dateEnd: d.dateEnd ? new Date(d.dateEnd) : null,
+            locationName: d.locationName || null,
+            lat: typeof d.lat === "number" && Number.isFinite(d.lat) ? d.lat : null,
+            lng: typeof d.lng === "number" && Number.isFinite(d.lng) ? d.lng : null,
+            description: d.description || null,
+            photos: Array.isArray(d.photos) ? d.photos : event.photos || [],
+        },
+    });
+
+    console.log("[PUT /api/events/:slug] updated event id =", updated.id);
+
+    const rawAttendees = Array.isArray(d.attendees) ? d.attendees : [];
+    rawAttendees.forEach((a, idx) => {
+        console.log(`[PUT /api/events/:slug] attendee[${idx}] =`, a);
+    });
+
+    // Build set of already invited emails for this event (any status)
+    const existingInviteEmails = new Set(
+        (event.invites || [])
+            .map((i) => (i.email || "").toLowerCase())
+            .filter((e) => !!e),
+    );
+
+    console.log("[PUT /api/events/:slug] existingInviteEmails =", Array.from(existingInviteEmails));
+
+    const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
+    const inviteEmails = [];
+
+    // external invitees (email or "value" field)
+    console.log("[PUT /api/events/:slug] deriving invite emails from attendees…");
+    for (const a of rawAttendees) {
+        if (!a || typeof a !== "object") continue;
+        let addr = null;
+        if (typeof a.email === "string") addr = a.email.trim();
+        else if (typeof a.value === "string") addr = a.value.trim();
+        if (!addr || !emailRegex.test(addr)) continue;
+        const lower = addr.toLowerCase();
+        if (existingInviteEmails.has(lower)) {
+            console.log(
+                "[PUT /api/events/:slug] skipping already invited email (no re-invite):",
+                lower,
+            );
+            continue;
+        }
+        if (!inviteEmails.includes(lower)) {
+            console.log("[PUT /api/events/:slug] collected external email invite:", lower);
+            inviteEmails.push(lower);
+        }
+    }
+
+    // also invite selected existing members via their associated user emails
+    const memberIds = [];
+    for (const a of rawAttendees) {
+        if (!a || typeof a !== "object") continue;
+        if (typeof a.memberId === "string") {
+            memberIds.push(a.memberId);
+        }
+    }
+    console.log("[PUT /api/events/:slug] memberIds to invite =", memberIds);
+
+    if (memberIds.length) {
+        console.log("[PUT /api/events/:slug] looking up users for memberIds =", memberIds);
+        const usersForMembers = await prisma.user.findMany({
+            where: { memberId: { in: memberIds } },
+            select: { id: true, email: true, memberId: true },
+        });
+        console.log("[PUT /api/events/:slug] usersForMembers =", usersForMembers);
+        for (const u of usersForMembers) {
+            if (!u.email) continue;
+            const lower = u.email.toLowerCase();
+            if (existingInviteEmails.has(lower)) {
+                console.log(
+                    "[PUT /api/events/:slug] skipping already invited member email (no re-invite):",
+                    lower,
+                );
+                continue;
+            }
+            if (!inviteEmails.includes(lower)) {
+                console.log(
+                    "[PUT /api/events/:slug] collected email from existing member user:",
+                    lower,
+                );
+                inviteEmails.push(lower);
+            }
+        }
+    }
+
+    console.log("[PUT /api/events/:slug] final inviteEmails array (new only) =", inviteEmails);
+
+    if (inviteEmails.length) {
+        const when = updated.dateStart ? new Date(updated.dateStart).toLocaleString() : "an upcoming event";
+        const where = updated.locationName || "TBA";
+
+        for (const email of inviteEmails) {
+            console.log("[PUT /api/events/:slug] creating invite for email =", email);
+            const { raw, hash } = genInviteToken();
+            console.log(
+                "[PUT /api/events/:slug] generated invite token (hash only logged) tokenHash =",
+                hash,
+            );
+
+            await prisma.eventInvite.create({
+                data: {
+                    eventId: updated.id,
+                    email,
+                    tokenHash: hash,
+                    status: "PENDING",
+                    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7), // 7 days
+                },
+            });
+
+            const webBase = WEB_ORIGIN.replace(/\/$/, "");
+            const acceptUrl = `${webBase}/accept-invite?token=${raw}`;
+            const eventUrl = `${webBase}/events/${updated.slug}`;
+
+            const subject = `You're invited: ${updated.name}`;
+            const text = `Hi,
+
+You've been invited to the event "${updated.name}" at PUM.
+
+Where: ${where}
+When: ${when}
+
+Approve your invite:
+${acceptUrl}
+
+More details: ${eventUrl}
+
+This invite was sent from ${MAIL_FROM}.
+`;
+
+            void sendInviteEmail(email, subject, text);
+        }
+    }
+
+    console.log("========== [PUT /api/events/:slug] END (success) ==========");
+    return res.status(200).json({ ok: true, slug: updated.slug, id: updated.id });
 });
 
 /* --------------------------- Upload: event photo --------------------------- */

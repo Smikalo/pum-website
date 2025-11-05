@@ -78,3 +78,12 @@ export async function uploadEventPhoto(token: string, file: File) {
 export async function createEvent(token: string, body: Json) {
     return fetchAuth("/api/events", { method: "POST", token, body: JSON.stringify(body) });
 }
+
+// Update event (JSON; photos already uploaded separately)
+export async function updateEvent(token: string, slug: string, body: Json) {
+    return fetchAuth(`/api/events/${slug}`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify(body),
+    });
+}
