@@ -3,6 +3,7 @@ import React from "react";
 import Link from "next/link";
 import MembersSearchBar from "@/components/MembersSearchBar";
 import { API_BASE } from "@/lib/config";
+import NewProjectButton from "@/components/NewProjectButton";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ function matchesQuery(p: Project, q: string): boolean {
 function highlight(text: string | undefined, q: string) {
     if (!text) return null;
     if (!q) return text;
-    const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const esc = q.replace(/[.*+?^${}()|[\]\\/+^]/g, "\\$&");
     const re = new RegExp(`(${esc})`, "ig");
     const parts = text.split(re);
     return parts.map((p, i) =>
@@ -122,10 +123,17 @@ export default async function ProjectsPage({
         <section className="section">
             <header className="mb-6">
                 <p className="kicker">PROJECTS</p>
-                <h1 className="display">Things we’ve built</h1>
-                <p className="mt-3 text-white/70 max-w-2xl">
-                    Explore hackathon winners, MVPs, and experiments. Filter by tags or tech, and open a project to see team, events, and a demo.
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <h1 className="display">Things we’ve built</h1>
+                        <p className="mt-3 text-white/70 max-w-2xl">
+                            Explore hackathon winners, MVPs, and experiments. Filter by tags or tech, and open a project to see
+                            team, events, and a demo.
+                        </p>
+                    </div>
+                    {/* Visible only for logged-in users (same behavior as NewEventButton) */}
+                    <NewProjectButton />
+                </div>
             </header>
 
             {/* Controls */}
@@ -159,13 +167,25 @@ export default async function ProjectsPage({
                 <div className="card p-3">
                     <div className="text-xs uppercase tracking-widest text-white/60 mb-2">Tags</div>
                     <div className="flex flex-wrap gap-2">
-                        <MultiFilterChips base="/projects" params={{ q, tech: techSel.join(","), sort }} values={allTags} selected={tagsSel} name="tag" />
+                        <MultiFilterChips
+                            base="/projects"
+                            params={{ q, tech: techSel.join(","), sort }}
+                            values={allTags}
+                            selected={tagsSel}
+                            name="tag"
+                        />
                     </div>
                 </div>
                 <div className="card p-3">
                     <div className="text-xs uppercase tracking-widest text-white/60 mb-2">Tech stack</div>
                     <div className="flex flex-wrap gap-2">
-                        <MultiFilterChips base="/projects" params={{ q, tag: tagsSel.join(","), sort }} values={allTech} selected={techSel} name="tech" />
+                        <MultiFilterChips
+                            base="/projects"
+                            params={{ q, tag: tagsSel.join(","), sort }}
+                            values={allTech}
+                            selected={techSel}
+                            name="tech"
+                        />
                     </div>
                 </div>
             </div>
@@ -184,12 +204,19 @@ export default async function ProjectsPage({
                         )}
                         <div className="text-xs text-white/60">{p.year ?? ""}</div>
                         <div className="font-semibold text-lg line-clamp-2">{highlight(p.title, q)}</div>
-                        {p.summary && <div className="mt-2 text-sm text-white/70 line-clamp-3">{highlight(p.summary, q)}</div>}
+                        {p.summary && (
+                            <div className="mt-2 text-sm text-white/70 line-clamp-3">
+                                {highlight(p.summary, q)}
+                            </div>
+                        )}
                         <div className="mt-3 flex flex-wrap gap-1.5">
                             {(p.tags || []).slice(0, 6).map((t) => (
-                                <span key={t} className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
-                  {highlight(t, q)}
-                </span>
+                                <span
+                                    key={t}
+                                    className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                >
+                                    {highlight(t, q)}
+                                </span>
                             ))}
                         </div>
                     </Link>
@@ -197,7 +224,10 @@ export default async function ProjectsPage({
             </div>
 
             <div className="mt-8 text-sm text-white/60">
-                Can’t find your idea? <Link href="/contact" className="underline underline-offset-4">Pitch us →</Link>
+                Can’t find your idea?{" "}
+                <Link href="/contact" className="underline underline-offset-4">
+                    Pitch us →
+                </Link>
             </div>
         </section>
     );
@@ -233,7 +263,10 @@ function MultiFilterChips({
     return (
         <>
             {selected.length ? (
-                <Link href={makeHref([])} className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10">
+                <Link
+                    href={makeHref([])}
+                    className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10"
+                >
                     Clear
                 </Link>
             ) : null}

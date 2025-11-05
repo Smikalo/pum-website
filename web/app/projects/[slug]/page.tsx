@@ -3,6 +3,7 @@ import React from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { API_BASE } from "@/lib/config";
+import EditProjectButton from "@/components/EditProjectButton";
 
 export const dynamic = "force-dynamic";
 
@@ -232,6 +233,15 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
 }
 
 /* ---------- Types ---------- */
+
+type ProjectMember = {
+    slug?: string;
+    name?: string;
+    avatarUrl?: string;
+    role?: string | null;
+    isCreator?: boolean;
+};
+
 type ProjectEvent = {
     slug: string;
     name?: string;
@@ -244,13 +254,25 @@ type ProjectEvent = {
     tags?: string[];
 };
 
+type BlogPost = {
+    slug: string;
+    title: string;
+    summary?: string | null;
+    cover?: string | null;
+    imageUrl?: string | null;
+    publishedAt?: string | null;
+    tags?: string[];
+};
+
+type ProjectLinks = Record<string, string>;
+
 type Project = {
     id?: string;
     slug: string;
     title: string;
     tags?: string[];
     techStack?: string[];
-    members?: { slug?: string; name?: string; avatarUrl?: string; role?: string }[];
+    members?: ProjectMember[];
     imageUrl?: string;
     summary?: string;
     description?: string;
@@ -258,8 +280,13 @@ type Project = {
     cover?: string;
     demoUrl?: string;
     repoUrl?: string;
+    status?: string | null;
     events?: ProjectEvent[];
     gallery?: string[];
+    blogPosts?: BlogPost[];
+    links?: ProjectLinks | null;
+    createdAt?: string | null;
+    updatedAt?: string | null;
 };
 
 /* ---------- API ---------- */
@@ -298,6 +325,18 @@ function normalizeProjectDetail(p: any): Project {
         };
     });
 
+    const blogPosts: BlogPost[] = Array.isArray(p.blogPosts)
+        ? p.blogPosts.map((b: any) => ({
+            slug: b.slug,
+            title: b.title,
+            summary: b.summary ?? null,
+            cover: b.cover ?? b.imageUrl ?? null,
+            imageUrl: b.imageUrl ?? null,
+            publishedAt: b.publishedAt ?? null,
+            tags: Array.isArray(b.tags) ? b.tags : [],
+        }))
+        : [];
+
     return {
         id: p.id ?? p.slug,
         slug: p.slug,
@@ -309,6 +348,8 @@ function normalizeProjectDetail(p: any): Project {
             name: m.name,
             avatarUrl: m.avatarUrl ?? m.avatar,
             role: m.role,
+            // IMPORTANT: carry through backend creator flag instead of inferring from role text
+            isCreator: !!m.isCreator,
         })),
         imageUrl: p.imageUrl ?? p.cover,
         summary: p.summary,
@@ -317,9 +358,13 @@ function normalizeProjectDetail(p: any): Project {
         cover: p.cover ?? p.imageUrl,
         demoUrl: p.demoUrl,
         repoUrl: p.repoUrl,
+        status: p.status ?? null,
         events,
-        // when coming from API, images[] matches "gallery" semantics; we keep them all here
         gallery: Array.isArray(p.images) ? p.images : p.gallery ?? [],
+        blogPosts,
+        links: (p.links as ProjectLinks | null) ?? null,
+        createdAt: p.createdAt ?? null,
+        updatedAt: p.updatedAt ?? null,
     };
 }
 
@@ -362,6 +407,33 @@ function eventDescriptionSnippet(ev: ProjectEvent): string | null {
     return `${plain.slice(0, 157)}…`;
 }
 
+function formatDate(value?: string | null): string | null {
+    if (!value) return null;
+    try {
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return null;
+        return d.toLocaleDateString();
+    } catch {
+        return null;
+    }
+}
+
+function normalizeUrl(url: string): string {
+    if (!url) return "#";
+    if (/^https?:\/\//i.test(url) || url.startsWith("mailto:")) return url;
+    return `https://${url}`;
+}
+
+function labelForLink(label: string, href: string): string {
+    if (label && label.trim()) return label;
+    try {
+        const u = new URL(href);
+        return u.hostname;
+    } catch {
+        return href;
+    }
+}
+
 /* ---------- Page ---------- */
 export default async function ProjectDetailPage({ params }: { params: { slug: string } }) {
     const project = await getProjectBySlug(params.slug);
@@ -384,18 +456,41 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
         project.imageUrl ||
         (project.gallery && project.gallery[0]) ||
         undefined;
-    // Avoid repeating the header image inside the gallery
     const gallery =
         (project.gallery || []).filter((src) => src && src !== cover) ?? [];
+
+    // CREATOR DETECTION: use backend isCreator flag instead of role label text
+    const creatorSlug =
+        project.members?.find((m) => m.slug && m.isCreator)?.slug ?? null;
+
+    const createdAt = formatDate(project.createdAt);
+    const updatedAt = formatDate(project.updatedAt);
+    const hasLinks = project.links && Object.keys(project.links).length > 0;
 
     return (
         <section className="section">
             <header className="mb-6">
                 <p className="kicker">PROJECT</p>
-                <h1 className="display">{project.title}</h1>
-                <div className="mt-2 text-white/70 text-sm">
-                    {project.year ? `${project.year} • ` : ""}
-                    {(project.tags || []).join(" • ")}
+                <div className="flex items-center justify-between gap-4">
+                    <div>
+                        <h1 className="display">{project.title}</h1>
+                        <div className="mt-2 text-white/70 text-sm flex flex-wrap items-center gap-2">
+                            {project.status && (
+                                <span className="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-medium uppercase tracking-wide">
+                                    {project.status}
+                                </span>
+                            )}
+                            {(project.year || (project.tags && project.tags.length)) && (
+                                <span>
+                                    {project.year ? `${project.year}` : ""}
+                                    {project.year && project.tags && project.tags.length ? " • " : ""}
+                                    {(project.tags || []).join(" • ")}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    {/* Edit button at top-right; creatorSlug uses isCreator flag, not role text */}
+                    <EditProjectButton slug={project.slug} creatorSlug={creatorSlug} />
                 </div>
             </header>
 
@@ -413,13 +508,18 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                 <article className="lg:col-span-3 space-y-6">
                     <div className="card p-5">
                         <h2 className="text-lg font-semibold mb-2">About</h2>
+
+                        {project.summary && (
+                            <p className="text-white/80 leading-relaxed mb-3">
+                                {project.summary}
+                            </p>
+                        )}
+
                         {project.description ? (
                             <MarkdownPreview markdown={project.description} />
-                        ) : project.summary ? (
-                            <p className="text-white/80 leading-relaxed">{project.summary}</p>
-                        ) : (
+                        ) : !project.summary ? (
                             <p className="text-white/60">No description yet.</p>
-                        )}
+                        ) : null}
 
                         {project.techStack && project.techStack.length > 0 && (
                             <div className="mt-3">
@@ -481,7 +581,7 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                         <Link
                                             key={`${ev.slug}-${i}`}
                                             href={`/events/${ev.slug}`}
-                                            className="flex gap-3 p-2 rounded-lg hover:bg-white/5 transition"
+                                            className="flex gap-3 p-2 rounded-lg hover:bg白/5 transition"
                                         >
                                             {coverUrl ? (
                                                 <img
@@ -545,6 +645,60 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                             </div>
                         </div>
                     )}
+
+                    {project.blogPosts && project.blogPosts.length > 0 && (
+                        <div className="card p-5">
+                            <h2 className="text-lg font-semibold mb-3">Related blog posts</h2>
+                            <div className="grid sm:grid-cols-2 gap-4">
+                                {project.blogPosts.map((b) => (
+                                    <Link
+                                        key={b.slug}
+                                        href={`/blog/${b.slug}`}
+                                        className="flex gap-3 p-2 rounded-lg hover:bg-white/5 transition"
+                                    >
+                                        {b.cover ? (
+                                            <img
+                                                src={b.cover}
+                                                alt={b.title}
+                                                className="w-32 h-24 object-cover rounded-md ring-1 ring-white/10 flex-shrink-0"
+                                            />
+                                        ) : (
+                                            <div className="w-32 h-24 rounded-md ring-1 ring-white/10 bg-white/5 flex items-center justify-center text-sm text-white/70 flex-shrink-0">
+                                                {b.title.charAt(0).toUpperCase()}
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <div className="font-semibold leading-tight hover:underline">
+                                                {b.title}
+                                            </div>
+                                            {b.publishedAt && (
+                                                <div className="text-xs text-white/60 mt-0.5">
+                                                    {new Date(b.publishedAt).toLocaleDateString()}
+                                                </div>
+                                            )}
+                                            {b.summary && (
+                                                <p className="mt-1 text-sm text-white/70 line-clamp-3">
+                                                    {b.summary}
+                                                </p>
+                                            )}
+                                            {b.tags && b.tags.length > 0 && (
+                                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                                    {b.tags.slice(0, 4).map((t) => (
+                                                        <span
+                                                            key={t}
+                                                            className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
+                                                        >
+                                                            {t}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </Link>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </article>
 
                 <aside className="lg:col-span-2 space-y-6">
@@ -575,11 +729,18 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                                     {m.name || "Unknown member"}
                                                 </span>
                                             )}
-                                            {m.role && (
-                                                <div className="text-xs text-white/60">
-                                                    {m.role}
-                                                </div>
-                                            )}
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                {m.role && (
+                                                    <div className="text-xs text-white/60">
+                                                        {m.role}
+                                                    </div>
+                                                )}
+                                                {m.isCreator && (
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/50">
+                                                        Creator
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </li>
                                 ))}
@@ -588,6 +749,71 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                             <p className="text-white/60">Team coming soon.</p>
                         )}
                     </div>
+
+                    {(project.status ||
+                        project.year ||
+                        createdAt ||
+                        updatedAt) && (
+                        <div className="card p-5">
+                            <h2 className="text-lg font-semibold mb-2">Project details</h2>
+                            <dl className="space-y-1 text-sm text-white/80">
+                                {project.status && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-white/60">Status</dt>
+                                        <dd className="text-right">{project.status}</dd>
+                                    </div>
+                                )}
+                                {project.year && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-white/60">Year</dt>
+                                        <dd className="text-right">{project.year}</dd>
+                                    </div>
+                                )}
+                                {createdAt && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-white/60">Created</dt>
+                                        <dd className="text-right">{createdAt}</dd>
+                                    </div>
+                                )}
+                                {updatedAt && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-white/60">Last updated</dt>
+                                        <dd className="text-right">{updatedAt}</dd>
+                                    </div>
+                                )}
+                            </dl>
+                        </div>
+                    )}
+
+                    {hasLinks && (
+                        <div className="card p-5">
+                            <h2 className="text-lg font-semibold mb-2">Links</h2>
+                            <ul className="space-y-2 text-sm">
+                                {Object.entries(project.links || {}).map(([label, hrefRaw]) => {
+                                    const href =
+                                        typeof hrefRaw === "string" ? hrefRaw : "";
+                                    if (!href) return null;
+                                    const url = normalizeUrl(href);
+                                    const text = labelForLink(label, url);
+                                    return (
+                                        <li key={label}>
+                                            <a
+                                                href={url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex items-center gap-1 text-white/80 hover:text-white underline underline-offset-4"
+                                            >
+                                                <span>{text}</span>
+                                                <span aria-hidden="true" className="text-xs">
+                                                    ↗
+                                                </span>
+                                            </a>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </div>
+                    )}
                 </aside>
             </div>
 

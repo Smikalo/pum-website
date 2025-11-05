@@ -153,8 +153,17 @@ async function main(){
             const pr = projMap.get(p.slug);
             await prisma.memberProject.upsert({
                 where:{ memberId_projectId:{ memberId:mr.id, projectId:pr.id } },
-                create:{ memberId:mr.id, projectId:pr.id, role:rel.role||null, contribution:rel.contribution||null },
-                update:{ role:rel.role||null, contribution:rel.contribution||null },
+                create:{
+                    memberId:mr.id,
+                    projectId:pr.id,
+                    role:rel.role||null,
+                    contribution:rel.contribution||null,
+                    // isCreator is left as default(false) here; can be managed via app logic later
+                },
+                update:{
+                    role:rel.role||null,
+                    contribution:rel.contribution||null,
+                },
             });
         }
     }
@@ -268,6 +277,65 @@ async function main(){
                 where:{ blogId_memberId:{ blogId:br.id, memberId:mr.id } },
                 create:{ blogId:br.id, memberId:mr.id, role:a.role||null },
                 update:{ role:a.role||null }
+            });
+        }
+    }
+
+    // Blog–Project relations (optional, from seed data if present)
+    // From blogs.json: each blog may list related projects
+    for (const b of blogs) {
+        const br = blogMap.get(b.slug);
+        if (!br) continue;
+
+        const rels = Array.isArray(b.projects) ? b.projects : [];
+        if (!rels.length) continue;
+
+        const data = [];
+        for (const rel of rels) {
+            if (!rel) continue;
+            const slug = rel.slug || rel.projectSlug;
+            if (!slug) continue;
+            const pr = projMap.get(slug);
+            if (!pr) continue;
+            data.push({ blogId: br.id, projectId: pr.id });
+        }
+
+        if (data.length) {
+            await prisma.projectBlog.createMany({
+                data,
+                skipDuplicates: true,
+            });
+        }
+    }
+
+    // From projects.json: each project may list related blogs / blog posts
+    for (const p of projects) {
+        const pr = projMap.get(p.slug);
+        if (!pr) continue;
+
+        // support either `blogs` or `blogPosts` in seed JSON, if present
+        const rels = Array.isArray(p.blogs)
+            ? p.blogs
+            : Array.isArray(p.blogPosts)
+                ? p.blogPosts
+                : [];
+
+        if (!rels.length) continue;
+
+        const data = [];
+        for (const rel of rels) {
+            if (!rel) continue;
+            const slug = rel.slug || rel.blogSlug;
+            if (!slug) continue;
+            const br = blogMap.get(slug);
+            if (!br) continue;
+            data.push({ blogId: br.id, projectId: pr.id });
+        }
+
+        if (data.length) {
+            await prisma.projectBlog.createMany({
+                data,
+                skipDuplicates: true,
             });
         }
     }

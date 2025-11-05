@@ -1,3 +1,4 @@
+// web/lib/api.ts
 import { API_BASE } from "@/lib/config";
 
 type Json = Record<string, any>;
@@ -51,7 +52,11 @@ export async function getMyProfile(token: string) {
 }
 
 export async function updateMyProfile(token: string, body: Json) {
-    return fetchAuth("/api/account/profile", { method: "PUT", token, body: JSON.stringify(body) });
+    return fetchAuth("/api/account/profile", {
+        method: "PUT",
+        token,
+        body: JSON.stringify(body),
+    });
 }
 
 export async function uploadAvatar(token: string, file: File) {
@@ -71,17 +76,54 @@ export async function uploadCv(token: string, file: File) {
 export async function uploadEventPhoto(token: string, file: File) {
     const fd = new FormData();
     fd.append("photo", file);
-    return fetchAuth("/api/uploads/event-photo", { method: "POST", token, body: fd as any });
+    return fetchAuth("/api/uploads/event-photo", {
+        method: "POST",
+        token,
+        body: fd as any,
+    });
+}
+
+// Upload a single project photo file; returns { url }
+export async function uploadProjectPhoto(token: string, file: File) {
+    const fd = new FormData();
+    fd.append("photo", file);
+    return fetchAuth("/api/uploads/project-photo", {
+        method: "POST",
+        token,
+        body: fd as any,
+    });
 }
 
 // Create event (JSON; photos already uploaded separately)
 export async function createEvent(token: string, body: Json) {
-    return fetchAuth("/api/events", { method: "POST", token, body: JSON.stringify(body) });
+    return fetchAuth("/api/events", {
+        method: "POST",
+        token,
+        body: JSON.stringify(body),
+    });
 }
 
 // Update event (JSON; photos already uploaded separately)
 export async function updateEvent(token: string, slug: string, body: Json) {
     return fetchAuth(`/api/events/${slug}`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify(body),
+    });
+}
+
+// Create project (JSON; photos already uploaded separately)
+export async function createProject(token: string, body: Json) {
+    return fetchAuth("/api/projects", {
+        method: "POST",
+        token,
+        body: JSON.stringify(body),
+    });
+}
+
+// Update project (JSON; photos already uploaded separately)
+export async function updateProject(token: string, slug: string, body: Json) {
+    return fetchAuth(`/api/projects/${slug}`, {
         method: "PUT",
         token,
         body: JSON.stringify(body),

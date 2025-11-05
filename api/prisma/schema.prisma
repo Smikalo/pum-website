@@ -53,25 +53,29 @@ model Tag {
 }
 
 model Project {
-  id            String          @id @default(cuid())
-  slug          String          @unique
+  id            String           @id @default(cuid())
+  slug          String           @unique
   title         String
   summary       String?
   description   String?
   year          Int?
   status        String?
   demoUrl       String?
+  repoUrl       String?          // NEW: source code URL
   imageUrl      String?
   cover         String?
   images        Json?
+  links         Json?            // NEW: additional links (label -> URL map)
   eventId       String?
-  event         Event?          @relation(fields: [eventId], references: [id])
+  event         Event?           @relation(fields: [eventId], references: [id])
   members       MemberProject[]
   techs         ProjectTech[]
   tags          ProjectTag[]
-  relatedEvents EventProject[]  // many-to-many: events linked to this project
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  relatedEvents EventProject[]   // many-to-many: events linked to this project
+  invites       ProjectInvite[]  // email invites to join the project
+  blogs         ProjectBlog[]    // many-to-many: related blog posts
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 }
 
 model Event {
@@ -87,8 +91,8 @@ model Event {
   photos          Json?
   projects        Project[]
   attendees       MemberEvent[]
-  invites         EventInvite[]   // <-- NEW
-  relatedProjects EventProject[]  // many-to-many: projects linked to this event
+  invites         EventInvite[]
+  relatedProjects EventProject[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
@@ -116,8 +120,10 @@ model MemberProject {
   projectId    String
   role         String?
   contribution String?
-  member       Member  @relation(fields: [memberId], references: [id])
-  project      Project @relation(fields: [projectId], references: [id])
+  isCreator    Boolean @default(false)
+
+  member  Member  @relation(fields: [memberId], references: [id])
+  project Project @relation(fields: [projectId], references: [id])
 
   @@id([memberId, projectId])
 }
@@ -164,15 +170,16 @@ model Blog {
   slug        String    @unique
   title       String
   summary     String?
-  content     String? // markdown or HTML
+  content     String?
   publishedAt DateTime?
   imageUrl    String?
   cover       String?
   images      Json?
 
-  authors BlogAuthor[]
-  techs   BlogTech[]
-  tags    BlogTag[]
+  authors  BlogAuthor[]
+  techs    BlogTech[]
+  tags     BlogTag[]
+  projects ProjectBlog[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -204,6 +211,15 @@ model BlogTag {
   tag    Tag    @relation(fields: [tagId], references: [id])
 
   @@id([blogId, tagId])
+}
+
+model ProjectBlog {
+  projectId String
+  blogId    String
+  project   Project @relation(fields: [projectId], references: [id])
+  blog      Blog    @relation(fields: [blogId], references: [id])
+
+  @@id([projectId, blogId])
 }
 
 enum Role {
@@ -249,7 +265,7 @@ model EventInvite {
   eventId    String
   email      String
   tokenHash  String   @unique
-  status     String   @default("PENDING") // PENDING, ACCEPTED, EXPIRED, REVOKED
+  status     String   @default("PENDING")
   createdAt  DateTime @default(now())
   expiresAt  DateTime
   consumedAt DateTime?
@@ -257,4 +273,20 @@ model EventInvite {
   event Event @relation(fields: [eventId], references: [id])
 
   @@index([eventId, email])
+}
+
+model ProjectInvite {
+  id         String   @id @default(cuid())
+  projectId  String
+  email      String
+  role       String?
+  tokenHash  String   @unique
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, email])
 }

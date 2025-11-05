@@ -23,6 +23,25 @@ async function ensureCsrf(): Promise<void> {
     });
 }
 
+type ConsumeResult =
+    | {
+    ok: true;
+    newUser?: boolean;
+    eventSlug?: string | null;
+    projectSlug?: string | null;
+}
+    | {
+    needsPassword: true;
+    email: string;
+    eventSlug?: string | null;
+    projectSlug?: string | null;
+    error?: string;
+}
+    | {
+    ok?: false;
+    error?: string;
+};
+
 function AcceptInviteInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -30,12 +49,25 @@ function AcceptInviteInner() {
 
     const [state, setState] = React.useState<"loading" | "needsPassword" | "done">("loading");
     const [email, setEmail] = React.useState<string>("");
-    const [eventSlug, setEventSlug] = React.useState<string>("");
+    const [targetSlug, setTargetSlug] = React.useState<string>("");
+    const [targetKind, setTargetKind] = React.useState<"event" | "project" | null>(null);
     const [name, setName] = React.useState<string>("");
     const [password, setPassword] = React.useState<string>("");
     const [passwordRepeat, setPasswordRepeat] = React.useState<string>("");
     const [error, setError] = React.useState<string | null>(null);
     const [submitting, setSubmitting] = React.useState(false);
+
+    function redirectFor(result: { eventSlug?: string | null; projectSlug?: string | null }) {
+        if (result.projectSlug) return `/projects/${result.projectSlug}`;
+        if (result.eventSlug) return `/events/${result.eventSlug}`;
+        return "/account";
+    }
+
+    function deriveKind(slugs: { eventSlug?: string | null; projectSlug?: string | null }): "event" | "project" | null {
+        if (slugs.projectSlug) return "project";
+        if (slugs.eventSlug) return "event";
+        return null;
+    }
 
     React.useEffect(() => {
         if (!token) {
@@ -60,24 +92,25 @@ function AcceptInviteInner() {
                     body: JSON.stringify({ token }),
                 });
 
-                const data = await res.json();
+                const data: ConsumeResult = await res.json();
 
-                if (res.ok && data?.ok) {
-                    // Accepted + logged in
-                    const dest = data.newUser ? "/account" : `/events/${data.eventSlug}`;
+                if (res.ok && (data as any)?.ok) {
+                    const dest = redirectFor(data as any);
                     router.replace(dest);
                     setState("done");
                     return;
                 }
 
-                if (data?.needsPassword) {
-                    setEmail(data.email || "");
-                    setEventSlug(data.eventSlug || "");
+                if ((data as any)?.needsPassword) {
+                    const d = data as any;
+                    setEmail(d.email || "");
+                    setTargetSlug(d.projectSlug || d.eventSlug || "");
+                    setTargetKind(deriveKind(d));
                     setState("needsPassword");
                     return;
                 }
 
-                setError(data?.error || "Invite invalid or expired.");
+                setError((data as any)?.error || "Invite invalid or expired.");
                 setState("done");
             } catch (err: any) {
                 setError(err?.message || "Something went wrong.");
@@ -112,15 +145,14 @@ function AcceptInviteInner() {
                 }),
             });
 
-            const data = await res.json();
+            const data: ConsumeResult = await res.json();
 
-            if (res.ok && data?.ok) {
-                // New account created + logged in
-                router.replace("/account");
-            } else if (data?.needsPassword) {
-                setError(data.error || "Please check your inputs.");
+            if (res.ok && (data as any)?.ok) {
+                router.replace(redirectFor(data as any));
+            } else if ((data as any)?.needsPassword) {
+                setError((data as any).error || "Please check your inputs.");
             } else {
-                setError(data?.error || "Invite invalid or expired.");
+                setError((data as any)?.error || "Invite invalid or expired.");
             }
         } catch (err: any) {
             setError(err?.message || "Something went wrong.");
@@ -141,14 +173,23 @@ function AcceptInviteInner() {
     }
 
     if (state === "needsPassword") {
+        const thing = targetKind === "project" ? "project" : "event";
         return (
             <div className="mx-auto max-w-xl px-4 py-12">
                 <h1 className="text-2xl font-semibold mb-3">Create your account</h1>
                 <p className="text-white/70 text-sm mb-6">
-                    We found an event invitation for{" "}
-                    <span className="font-mono">{email}</span>.
+                    We found an {thing} invitation for{" "}
+                    <span className="font-mono">{email}</span>
+                    {targetSlug ? (
+                        <>
+                            {" "}
+                            to <span className="font-semibold">{targetSlug}</span>.
+                        </>
+                    ) : (
+                        "."
+                    )}
                     <br />
-                    Set your name and password to create your account and join the event.
+                    Set your name and password to create your account and join.
                 </p>
 
                 {error && (
@@ -202,7 +243,7 @@ function AcceptInviteInner() {
                             disabled={submitting}
                             className="inline-flex items-center rounded-md bg-white px-4 py-2 text-sm font-medium text-black hover:bg_white/90 disabled:opacity-70"
                         >
-                            {submitting ? "Creating account…" : "Create account & join event"}
+                            {submitting ? "Creating account…" : "Create account & join"}
                         </button>
                     </div>
                 </form>
