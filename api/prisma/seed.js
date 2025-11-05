@@ -119,7 +119,7 @@ async function main(){
             update:{} });
     }
 
-    /* --------- PROJECTS (unchanged) --------- */
+    /* --------- PROJECTS (unchanged core) --------- */
     const projMap = new Map();
     for (const p of projects) {
         const eventId = p.event && evMap.get(p.event.slug)?.id;
@@ -155,6 +155,76 @@ async function main(){
                 where:{ memberId_projectId:{ memberId:mr.id, projectId:pr.id } },
                 create:{ memberId:mr.id, projectId:pr.id, role:rel.role||null, contribution:rel.contribution||null },
                 update:{ role:rel.role||null, contribution:rel.contribution||null },
+            });
+        }
+    }
+
+    /* --------- EVENT–PROJECT RELATIONS (NEW MANY-TO-MANY) --------- */
+    // From projects.json: link project -> one or more events
+    for (const p of projects) {
+        const pr = projMap.get(p.slug);
+        if (!pr) continue;
+
+        const eventSlugs = new Set();
+
+        // Primary event reference on the project
+        if (p.event && p.event.slug) {
+            eventSlugs.add(p.event.slug);
+        }
+
+        // Optional additional events on the project seed (p.events)
+        if (Array.isArray(p.events)) {
+            for (const rel of p.events) {
+                if (!rel) continue;
+                const slug = rel.slug || rel.eventSlug;
+                if (slug) eventSlugs.add(slug);
+            }
+        }
+
+        if (eventSlugs.size === 0) continue;
+
+        const data = [];
+        for (const slug of eventSlugs) {
+            const ev = evMap.get(slug);
+            if (!ev) continue;
+            data.push({ eventId: ev.id, projectId: pr.id });
+        }
+
+        if (data.length) {
+            await prisma.eventProject.createMany({
+                data,
+                skipDuplicates: true,
+            });
+        }
+    }
+
+    // From events.json: link event -> one or more projects
+    for (const e of events) {
+        if (!Array.isArray(e.projects) || e.projects.length === 0) continue;
+
+        const ev = evMap.get(e.slug);
+        if (!ev) continue;
+
+        const projectSlugs = new Set();
+        for (const rel of e.projects) {
+            if (!rel) continue;
+            const slug = rel.slug || rel.projectSlug;
+            if (slug) projectSlugs.add(slug);
+        }
+
+        if (projectSlugs.size === 0) continue;
+
+        const data = [];
+        for (const slug of projectSlugs) {
+            const pr = projMap.get(slug);
+            if (!pr) continue;
+            data.push({ eventId: ev.id, projectId: pr.id });
+        }
+
+        if (data.length) {
+            await prisma.eventProject.createMany({
+                data,
+                skipDuplicates: true,
             });
         }
     }

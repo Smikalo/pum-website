@@ -402,9 +402,32 @@ app.get("/api/projects/:slug", async (req, res) => {
             tags: { include: { tag: true } },
             members: { include: { member: { select: { slug: true, name: true, avatarUrl: true, id: true } } } },
             event: true,
+            relatedEvents: {
+                include: {
+                    event: true,
+                },
+            },
         },
     });
     if (!p) return res.status(404).json({ error: "Not found" });
+
+    // unify single event (legacy 1:N) and many-to-many relatedEvents
+    const eventsMap = new Map();
+    if (p.event) {
+        eventsMap.set(p.event.id, p.event);
+    }
+    for (const rel of p.relatedEvents || []) {
+        if (rel.event) {
+            eventsMap.set(rel.event.id, rel.event);
+        }
+    }
+    const events = Array.from(eventsMap.values()).map((e) => ({
+        slug: e.slug,
+        name: e.name,
+        dateStart: e.dateStart,
+        dateEnd: e.dateEnd,
+        locationName: e.locationName,
+    }));
 
     res.json({
         id: p.id,
@@ -419,6 +442,7 @@ app.get("/api/projects/:slug", async (req, res) => {
         images: Array.isArray(p.images) ? p.images.map((u) => abs(u, req)) : [],
         year: p.year || null,
         event: p.event ? { slug: p.event.slug, name: p.event.name, dateStart: p.event.dateStart } : null,
+        events,
         techStack: p.techs.map((x) => x.tech.name),
         tags: p.tags.map((x) => x.tag.name),
         members: p.members.map((r) => ({
@@ -576,6 +600,27 @@ app.get("/api/events/:slug", async (req, res) => {
                 },
             },
             invites: true,
+            relatedProjects: {
+                include: {
+                    project: {
+                        include: {
+                            techs: { include: { tech: true } },
+                            members: {
+                                include: {
+                                    member: {
+                                        select: {
+                                            slug: true,
+                                            name: true,
+                                            avatarUrl: true,
+                                            id: true,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
         },
     });
     if (!e) {
@@ -586,6 +631,31 @@ app.get("/api/events/:slug", async (req, res) => {
     console.log("[GET /api/events/:slug] found event id =", e.id);
 
     const pendingInvites = (e.invites || []).filter((i) => i.status === "PENDING");
+
+    const projects =
+        Array.isArray(e.relatedProjects) && e.relatedProjects.length
+            ? e.relatedProjects
+                .filter((rel) => !!rel.project)
+                .map((rel) => {
+                    const p = rel.project;
+                    return {
+                        slug: p.slug,
+                        title: p.title,
+                        summary: p.summary || null,
+                        description: p.description || null,
+                        imageUrl: abs(p.cover || p.imageUrl || null, req),
+                        cover: abs(p.cover || null, req),
+                        year: p.year || null,
+                        techStack: p.techs.map((t) => t.tech.name),
+                        members: p.members.map((r) => ({
+                            memberSlug: r.member.slug,
+                            memberId: r.member.id,
+                            memberName: r.member.name,
+                            avatarUrl: abs(r.member.avatarUrl || null, req),
+                        })),
+                    };
+                })
+            : [];
 
     res.json({
         id: e.id,
@@ -618,8 +688,7 @@ app.get("/api/events/:slug", async (req, res) => {
                 pending: true,
             })),
         ],
-        // projects are intentionally omitted here; event detail page will
-        // still fall back to the existing projects lookup logic.
+        projects,
     });
 });
 
@@ -646,6 +715,8 @@ const createEventSchema = z.object({
     photos: z.array(z.string().url()).max(20).optional(),
     // attendees from the create-event UI
     attendees: z.array(z.any()).optional(),
+    // related projects (many-to-many) by slug
+    projectSlugs: z.array(z.string().min(1)).max(200).optional(),
 });
 
 async function uniqueEventSlug(base) {
@@ -707,6 +778,7 @@ app.post("/api/events", async (req, res) => {
         lng: d.lng,
         description: d.description ? d.description.slice(0, 100) + "…" : null,
         attendeesCount: Array.isArray(d.attendees) ? d.attendees.length : 0,
+        projectSlugs: Array.isArray(d.projectSlugs) ? d.projectSlugs.length : 0,
     });
 
     const rawAttendees = Array.isArray(d.attendees) ? d.attendees : [];
@@ -744,6 +816,27 @@ app.post("/api/events", async (req, res) => {
     });
 
     console.log("[POST /api/events] created event id =", event.id);
+
+    // link related projects (many-to-many) if provided
+    const projectSlugs = Array.isArray(d.projectSlugs) ? d.projectSlugs : [];
+    if (projectSlugs.length) {
+        console.log("[POST /api/events] linking related projects by slugs =", projectSlugs);
+        const projects = await prisma.project.findMany({
+            where: { slug: { in: projectSlugs } },
+            select: { id: true, slug: true },
+        });
+        console.log("[POST /api/events] found projects for relation =", projects.map((p) => p.slug));
+
+        if (projects.length) {
+            await prisma.eventProject.createMany({
+                data: projects.map((p) => ({
+                    eventId: event.id,
+                    projectId: p.id,
+                })),
+                skipDuplicates: true,
+            });
+        }
+    }
 
     // Attach creator as member of the event with role "CREATOR"
     if (user && user.member && user.member.id) {
@@ -877,6 +970,7 @@ app.put("/api/events/:slug", async (req, res) => {
         include: {
             attendees: true,
             invites: true,
+            relatedProjects: true,
         },
     });
 
@@ -922,6 +1016,7 @@ app.put("/api/events/:slug", async (req, res) => {
         });
     }
     const d = parsed.data;
+    const hasProjectSlugs = Object.prototype.hasOwnProperty.call(req.body || {}, "projectSlugs");
     console.log("[PUT /api/events/:slug] parsed data (without photos) =", {
         name: d.name,
         dateStart: d.dateStart,
@@ -931,6 +1026,8 @@ app.put("/api/events/:slug", async (req, res) => {
         lng: d.lng,
         description: d.description ? d.description.slice(0, 100) + "…" : null,
         attendeesCount: Array.isArray(d.attendees) ? d.attendees.length : 0,
+        hasProjectSlugs,
+        projectSlugs: Array.isArray(d.projectSlugs) ? d.projectSlugs.length : 0,
     });
 
     console.log("[PUT /api/events/:slug] updating event record in DB…");
@@ -949,6 +1046,38 @@ app.put("/api/events/:slug", async (req, res) => {
     });
 
     console.log("[PUT /api/events/:slug] updated event id =", updated.id);
+
+    // update related projects (many-to-many) only if client sent projectSlugs
+    if (hasProjectSlugs) {
+        const projectSlugs = Array.isArray(d.projectSlugs) ? d.projectSlugs : [];
+        console.log("[PUT /api/events/:slug] updating related projects, slugs =", projectSlugs);
+
+        // clear existing relations
+        await prisma.eventProject.deleteMany({
+            where: { eventId: updated.id },
+        });
+
+        if (projectSlugs.length) {
+            const projects = await prisma.project.findMany({
+                where: { slug: { in: projectSlugs } },
+                select: { id: true, slug: true },
+            });
+            console.log(
+                "[PUT /api/events/:slug] found projects for new relations =",
+                projects.map((p) => p.slug),
+            );
+
+            if (projects.length) {
+                await prisma.eventProject.createMany({
+                    data: projects.map((p) => ({
+                        eventId: updated.id,
+                        projectId: p.id,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+    }
 
     const rawAttendees = Array.isArray(d.attendees) ? d.attendees : [];
     rawAttendees.forEach((a, idx) => {

@@ -387,9 +387,11 @@ async function fetchApiEventDetail(slug: string): Promise<{
         slug: string;
         title: string;
         imageUrl?: string | null;
+        cover?: string | null;
         year?: number | null;
         summary?: string | null;
-        techStack?: string[];
+        techStack?: string[] | null;
+        tech?: string[] | null;
         members?: { memberSlug?: string; memberId?: string }[];
     }[];
 } | null> {
@@ -514,17 +516,17 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                 (SEED_MEMBERS.find((s) => s.slug === m.slug)?.events || []).some((x) => x.slug === baseEvent.slug),
             );
 
-    // Projects at this event:
+    // Projects at this event (many-to-many via API detail or fallback to seeds)
     let projectsForEvent: Project[] = [];
     if (evDetail?.projects && evDetail.projects.length) {
         projectsForEvent = evDetail.projects.map((p) => ({
             id: p.slug,
             slug: p.slug,
             title: p.title,
-            imageUrl: p.imageUrl || undefined,
+            imageUrl: p.imageUrl ?? p.cover ?? undefined,
             year: (p.year ?? undefined) as number | undefined,
             summary: p.summary || undefined,
-            techStack: p.techStack || [],
+            techStack: (p.techStack ?? p.tech ?? []) || [],
             members:
                 p.members?.map((r) => ({
                     memberSlug: r.memberSlug,
@@ -581,7 +583,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                                 {baseEvent.tags.slice(0, 12).map((t) => (
                                     <span
                                         key={t}
-                                        className="text-[11px] px-2 py-1 rounded-full bg.white/5 ring-1 ring-white/10"
+                                        className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
                                     >
                                         {t}
                                     </span>

@@ -274,6 +274,16 @@ type Attendee =
     | { kind: "member"; member: Member }
     | { kind: "invite"; value: string };
 
+// Projects
+type ProjectRef = {
+    id: string;
+    slug: string;
+    title: string;
+    cover?: string | null;
+    year?: number | null;
+    summary?: string | null;
+};
+
 // --- Map preview using the same neon EventsMap as event detail page ---
 function MapPreview({
                         name,
@@ -335,7 +345,9 @@ export default function NewEventPage() {
         lng: "",
         description: "",
     });
+
     const [photos, setPhotos] = React.useState<File[]>([]);
+    const [headerIndex, setHeaderIndex] = React.useState<number | null>(null);
 
     // Map search
     const [searchQ, setSearchQ] = React.useState("");
@@ -348,6 +360,13 @@ export default function NewEventPage() {
     const [membersError, setMembersError] = React.useState<string | null>(null);
     const [attendees, setAttendees] = React.useState<Attendee[]>([]);
     const [attendeeQ, setAttendeeQ] = React.useState("");
+
+    // Projects
+    const [projects, setProjects] = React.useState<ProjectRef[]>([]);
+    const [projectsLoading, setProjectsLoading] = React.useState(true);
+    const [projectsError, setProjectsError] = React.useState<string | null>(null);
+    const [selectedProjectSlugs, setSelectedProjectSlugs] = React.useState<string[]>([]);
+    const [projectQ, setProjectQ] = React.useState("");
 
     const [submitting, setSubmitting] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
@@ -415,6 +434,45 @@ export default function NewEventPage() {
             }
         }
         loadMembers();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    // load projects for project picker
+    React.useEffect(() => {
+        let cancelled = false;
+
+        async function loadProjects() {
+            try {
+                const res = await fetch("/api/projects?size=999");
+                if (!res.ok) throw new Error("Failed to load projects");
+                const json = await res.json();
+                const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+                const mapped: ProjectRef[] = items.map((p) => ({
+                    id: p.id ?? p.slug,
+                    slug: p.slug ?? p.id,
+                    title: p.title,
+                    cover: p.cover ?? p.imageUrl ?? null,
+                    year: p.year ?? null,
+                    summary: p.summary ?? null,
+                }));
+                if (!cancelled) {
+                    setProjects(mapped);
+                    setProjectsError(null);
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    // eslint-disable-next-line no-console
+                    console.error("[NewEvent] projects load error", err);
+                    setProjectsError("Could not load projects.");
+                }
+            } finally {
+                if (!cancelled) setProjectsLoading(false);
+            }
+        }
+
+        loadProjects();
         return () => {
             cancelled = true;
         };
@@ -503,6 +561,18 @@ export default function NewEventPage() {
         setAttendees((prev) => prev.filter((_, i) => i !== index));
     }
 
+    // Projects helpers
+    function addProject(p: ProjectRef) {
+        setSelectedProjectSlugs((prev) =>
+            prev.includes(p.slug) ? prev : [...prev, p.slug],
+        );
+        setProjectQ("");
+    }
+
+    function removeProject(slug: string) {
+        setSelectedProjectSlugs((prev) => prev.filter((s) => s !== slug));
+    }
+
     const normalizedAttendeeQ = attendeeQ.trim().toLowerCase();
     const attendeeSuggestions = React.useMemo(() => {
         const alreadyIds = new Set(
@@ -526,6 +596,73 @@ export default function NewEventPage() {
             .slice(0, 30);
     }, [members, attendees, normalizedAttendeeQ]);
 
+    const normalizedProjectQ = projectQ.trim().toLowerCase();
+    const projectSuggestions = React.useMemo(() => {
+        const already = new Set(selectedProjectSlugs);
+        return projects
+            .filter((p) => {
+                if (already.has(p.slug)) return false;
+                if (!normalizedProjectQ) return true;
+                const summary = p.summary || "";
+                const year = p.year ? String(p.year) : "";
+                return (
+                    p.title.toLowerCase().includes(normalizedProjectQ) ||
+                    summary.toLowerCase().includes(normalizedProjectQ) ||
+                    year.includes(normalizedProjectQ)
+                );
+            })
+            .slice(0, 20);
+    }, [projects, selectedProjectSlugs, normalizedProjectQ]);
+
+    const selectedProjects = React.useMemo(
+        () =>
+            selectedProjectSlugs
+                .map((slug) => projects.find((p) => p.slug === slug))
+                .filter((p): p is ProjectRef => !!p),
+        [selectedProjectSlugs, projects],
+    );
+
+    // Photo helpers
+    function adjustHeaderAfterRemoval(
+        current: number | null,
+        removedIndex: number,
+        newLength: number,
+    ): number | null {
+        if (current == null) return null;
+        if (current === removedIndex) {
+            return newLength > 0 ? 0 : null;
+        }
+        if (current > removedIndex) return current - 1;
+        return current;
+    }
+
+    // ✅ FIXED: append new selection instead of replacing previous files
+    function handlePhotosChange(files: FileList | null) {
+        const incoming = Array.from(files || []);
+        if (incoming.length === 0) return;
+
+        setPhotos((prev) => {
+            const next = [...prev, ...incoming];
+            // keep header if still valid; otherwise default to the first photo
+            if (next.length === 0) {
+                setHeaderIndex(null);
+            } else if (headerIndex == null || headerIndex >= next.length) {
+                setHeaderIndex(0);
+            }
+            return next;
+        });
+    }
+
+    function removePhoto(index: number) {
+        setPhotos((prev) => {
+            const next = prev.filter((_, i) => i !== index);
+            setHeaderIndex((current) =>
+                adjustHeaderAfterRemoval(current, index, next.length),
+            );
+            return next;
+        });
+    }
+
     async function onSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!accessToken) return;
@@ -544,13 +681,25 @@ export default function NewEventPage() {
 
         try {
             // 1) upload photos (if any)
-            const photoUrls: string[] = [];
+            let finalPhotoUrls: string[] = [];
             if (photos.length) {
                 const uploads = await Promise.all(
                     photos.map((file) => api.uploadEventPhoto(accessToken, file)),
                 );
-                for (const u of uploads) {
-                    if (u?.url) photoUrls.push(u.url);
+                const newPhotoUrls = uploads
+                    .map((u) => u?.url)
+                    .filter((u): u is string => !!u);
+
+                if (newPhotoUrls.length) {
+                    const hi =
+                        headerIndex != null &&
+                        headerIndex >= 0 &&
+                        headerIndex < newPhotoUrls.length
+                            ? headerIndex
+                            : 0;
+                    const headerUrl = newPhotoUrls[hi];
+                    const rest = newPhotoUrls.filter((_, idx) => idx !== hi);
+                    finalPhotoUrls = [headerUrl, ...rest];
                 }
             }
 
@@ -567,7 +716,7 @@ export default function NewEventPage() {
                 lat: state.lat ? Number(state.lat) : null,
                 lng: state.lng ? Number(state.lng) : null,
                 description: state.description.trim() || null,
-                photos: photoUrls,
+                photos: finalPhotoUrls,
                 attendees: attendees.map((a) =>
                     a.kind === "member"
                         ? {
@@ -582,6 +731,7 @@ export default function NewEventPage() {
                             value: a.value,
                         },
                 ),
+                projectSlugs: selectedProjectSlugs,
             };
 
             const res = await api.createEvent(accessToken, body);
@@ -616,7 +766,7 @@ export default function NewEventPage() {
                 <p className="kicker">EVENTS</p>
                 <h1 className="display">Create a new event</h1>
                 <p className="mt-2 text-white/70 max-w-2xl">
-                    Add dates, location, details, attendees, and photos.
+                    Add dates, location, details, attendees, photos, and related projects.
                 </p>
             </header>
 
@@ -735,14 +885,13 @@ export default function NewEventPage() {
                                 type="file"
                                 multiple
                                 accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
-                                onChange={(e) =>
-                                    setPhotos(Array.from(e.target.files || []))
-                                }
+                                onChange={(e) => handlePhotosChange(e.target.files)}
                                 className={inputCls("photos")}
                                 aria-invalid={!!errors.photos}
                             />
                             <p className="text-xs text-white/50 mt-1">
-                                Up to 12 images; PNG/JPG/WEBP/GIF; max 8 MB each.
+                                Upload up to 12 images; PNG/JPG/WEBP/GIF; max 8 MB each.
+                                Choose one as the header image; the rest will appear in the gallery.
                             </p>
                             {errors.photos && (
                                 <p className="mt-1 text-xs text-red-300">{errors.photos}</p>
@@ -750,18 +899,43 @@ export default function NewEventPage() {
 
                             {photos.length > 0 && (
                                 <div className="mt-3 grid grid-cols-3 gap-2">
-                                    {photos.slice(0, 6).map((f, i) => (
+                                    {photos.map((f, i) => (
                                         <div
                                             key={i}
-                                            className="rounded-md bg-white/5 ring-1 ring-white/10 p-1"
+                                            className={`relative group rounded-md bg-white/5 ring-1 p-1 ${
+                                                headerIndex === i
+                                                    ? "ring-emerald-400/70"
+                                                    : "ring-white/10"
+                                            }`}
                                         >
+                                            <button
+                                                type="button"
+                                                onClick={() => removePhoto(i)}
+                                                className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                                aria-label={`Remove ${f.name}`}
+                                            >
+                                                ✕
+                                            </button>
                                             <img
                                                 src={URL.createObjectURL(f)}
                                                 alt={f.name}
                                                 className="w-full h-24 object-cover rounded"
                                             />
-                                            <div className="mt-1 text-[11px] truncate text-white/70">
-                                                {f.name}
+                                            <div className="mt-1 flex items-center justify-between gap-1">
+                                                <div className="text-[11px] truncate text-white/70">
+                                                    {f.name}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setHeaderIndex(i)}
+                                                    className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                                        headerIndex === i
+                                                            ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
+                                                            : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
+                                                    }`}
+                                                >
+                                                    {headerIndex === i ? "Header" : "Set header"}
+                                                </button>
                                             </div>
                                         </div>
                                     ))}
@@ -842,7 +1016,9 @@ export default function NewEventPage() {
                                 Attendees & invites
                             </h2>
                             {membersLoading && (
-                                <span className="text-[11px] text-white/50">Loading members…</span>
+                                <span className="text-[11px] text-white/50">
+                                    Loading members…
+                                </span>
                             )}
                             {membersError && !membersLoading && (
                                 <span className="text-[11px] text-red-300">
@@ -971,6 +1147,102 @@ export default function NewEventPage() {
                                         </div>
                                     ),
                                 )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Related projects */}
+                    <div className="card p-5 space-y-3">
+                        <div className="flex items-baseline justify-between">
+                            <h2 className="text-sm font-semibold text-white">
+                                Related projects
+                            </h2>
+                            {projectsLoading && (
+                                <span className="text-[11px] text-white/50">
+                                    Loading projects…
+                                </span>
+                            )}
+                            {projectsError && !projectsLoading && (
+                                <span className="text-[11px] text-red-300">
+                                    {projectsError}
+                                </span>
+                            )}
+                        </div>
+                        <p className="text-xs text-white/60">
+                            Link projects that are showcased or launched during this event.
+                            They will appear as project cards on the event page and vice versa.
+                        </p>
+
+                        <div className="space-y-2">
+                            <input
+                                value={projectQ}
+                                onChange={(e) => setProjectQ(e.target.value)}
+                                placeholder="Search projects by title, year, or tag"
+                                className={searchInputCls}
+                            />
+                            {!!projectSuggestions.length && (
+                                <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
+                                    {projectSuggestions.map((p) => (
+                                        <li
+                                            key={p.id}
+                                            className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                            onClick={() => addProject(p)}
+                                        >
+                                            {p.cover ? (
+                                                <img
+                                                    src={p.cover}
+                                                    alt={p.title}
+                                                    className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
+                                                />
+                                            ) : (
+                                                <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                    {p.title.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-medium text-white truncate">
+                                                    {p.title}
+                                                </div>
+                                                {p.year && (
+                                                    <div className="text-[11px] text-white/60">
+                                                        {p.year}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+
+                        {selectedProjects.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {selectedProjects.map((p) => (
+                                    <button
+                                        key={p.slug}
+                                        type="button"
+                                        onClick={() => removeProject(p.slug)}
+                                        className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
+                                    >
+                                        {p.cover ? (
+                                            <img
+                                                src={p.cover}
+                                                alt={p.title}
+                                                className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
+                                            />
+                                        ) : (
+                                            <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                {p.title.charAt(0).toUpperCase()}
+                                            </div>
+                                        )}
+                                        <span className="text-xs text-white">
+                                            {p.title}
+                                        </span>
+                                        <span className="text-[11px] text-white/60 group-hover:text-red-300">
+                                            ✕
+                                        </span>
+                                    </button>
+                                ))}
                             </div>
                         )}
                     </div>
