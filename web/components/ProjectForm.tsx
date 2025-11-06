@@ -402,9 +402,16 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
     // links
     const [links, setLinks] = React.useState<LinkEntry[]>([{ label: "", url: "" }]);
 
+    // 🔴 Delete confirmation state
+    const [deleteConfirm, setDeleteConfirm] = React.useState("");
+    const [deleting, setDeleting] = React.useState(false);
+
     const isEdit = mode === "edit";
 
     const meSlug = user?.member?.slug || null;
+    const roles = (user?.roles || []) as string[];
+    const isAdmin = roles.includes("ADMIN");
+    const isModerator = roles.includes("MODERATOR");
 
     /* ------------------------ Load members/events/blogs ------------------------ */
 
@@ -538,9 +545,16 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                     techInput: "",
                 }));
 
-                const existing = Array.isArray(p.images)
-                    ? p.images.filter((u: any) => typeof u === "string" && u)
-                    : [];
+                // Prefer p.photos (new API), fall back to p.images for backwards compatibility
+                const rawPhotos: any[] = Array.isArray(p.photos)
+                    ? p.photos
+                    : Array.isArray(p.images)
+                        ? p.images
+                        : [];
+                const existing = rawPhotos.filter(
+                    (u: any) => typeof u === "string" && u,
+                );
+
                 setExistingPhotos(existing);
 
                 let headerIdx: number | null = null;
@@ -654,6 +668,16 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
 
         setTeam([{ member: me, role: "Creator", isCreator: true }]);
     }, [meSlug, members, team.length, isEdit]);
+
+    /* ------------------------------ Derived permissions ------------------------------ */
+
+    const isCreator = React.useMemo(() => {
+        if (!meSlug) return false;
+        return team.some((t) => t.isCreator && t.member.slug === meSlug);
+    }, [team, meSlug]);
+
+    const hasAuth = !!(user && accessToken);
+    const canDelete = isEdit && hasAuth && (isAdmin || isModerator || isCreator);
 
     /* ------------------------------ Handlers ------------------------------ */
 
@@ -957,10 +981,10 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
             let result: any;
             if (isEdit) {
                 if (!slug) throw new Error("Missing project slug for edit.");
-                result = await (api as any).updateProject(accessToken, slug, payload);
+                result = await api.updateProject(accessToken, slug, payload);
                 setHint("Project saved.");
             } else {
-                result = await (api as any).createProject(accessToken, payload);
+                result = await api.createProject(accessToken, payload);
                 setHint("Project created.");
             }
 
@@ -972,6 +996,39 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
             setSubmitError(err?.message || "Failed to save project.");
         } finally {
             setSubmitting(false);
+        }
+    }
+
+    /* ---------------------------- Delete handler ---------------------------- */
+
+    async function handleDelete() {
+        if (!isEdit || !slug) return;
+        if (!accessToken || !user) {
+            setSubmitError("You need to be signed in to delete this project.");
+            return;
+        }
+        if (!canDelete) {
+            setSubmitError("You don't have permission to delete this project.");
+            return;
+        }
+        if (deleteConfirm.trim() !== slug) {
+            setSubmitError("Type the project slug exactly to confirm deletion.");
+            return;
+        }
+
+        setDeleting(true);
+        setSubmitError(null);
+        setHint(null);
+
+        try {
+            await api.deleteProject(accessToken, slug, deleteConfirm.trim());
+            setHint("Project deleted. Redirecting…");
+            router.replace("/projects");
+        } catch (err: any) {
+            console.error("[ProjectForm] delete error", err);
+            setSubmitError(err?.message || "Failed to delete project.");
+        } finally {
+            setDeleting(false);
         }
     }
 
@@ -1018,8 +1075,6 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
             );
         })
         .slice(0, 8);
-
-    const hasAuth = !!(user && accessToken);
 
     /* ------------------------------- Render ------------------------------- */
 
@@ -1425,7 +1480,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                             ) : (
                                 <ul className="space-y-2">
                                     {team.map((t) => {
-                                        const isCreator = !!t.isCreator;
+                                        const isCreatorFlag = !!t.isCreator;
                                         return (
                                             <li
                                                 key={t.member.id}
@@ -1447,7 +1502,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                                 <div className="text-sm font-medium">
                                                                     {t.member.name}
                                                                 </div>
-                                                                {isCreator && (
+                                                                {isCreatorFlag && (
                                                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/50">
                                                                         Creator
                                                                     </span>
@@ -1457,7 +1512,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                                 {t.member.slug}
                                                             </div>
                                                         </div>
-                                                        {isCreator ? (
+                                                        {isCreatorFlag ? (
                                                             <span className="text-[11px] text-white/40">
                                                                 Cannot remove
                                                             </span>
@@ -1785,6 +1840,56 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                 ))}
                             </div>
                         </div>
+
+                        {/* Danger zone: delete project */}
+                        {isEdit && slug && canDelete && (
+                            <div className="mt-5 border-t border-red-500/40 pt-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs uppercase tracking-widest text-red-300">
+                                        Danger zone
+                                    </span>
+                                    <span className="text-[11px] text-red-200/80">
+                                        This cannot be undone.
+                                    </span>
+                                </div>
+                                <p className="text-[11px] text-red-100/80">
+                                    Deleting this project will permanently remove its data,
+                                    connections, and references. You&apos;ll still be able to
+                                    create a new project with the same name later, but the old data
+                                    will not come back.
+                                </p>
+                                <label className="block text-[11px] text-red-100 mb-1">
+                                    Type <code className="font-mono">{slug}</code> to confirm
+                                    deletion:
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={deleteConfirm}
+                                        onChange={(e) => setDeleteConfirm(e.target.value)}
+                                        className="flex-1 rounded-md bg-red-900/40 ring-1 ring-red-500/60 px-3 py-1.5 text-xs text-red-50 placeholder:text-red-200/60 outline-none focus:ring-red-300"
+                                        placeholder={slug}
+                                        disabled={
+                                            !hasAuth || loadingProject || submitting || deleting
+                                        }
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleDelete}
+                                        disabled={
+                                            !hasAuth ||
+                                            loadingProject ||
+                                            submitting ||
+                                            deleting ||
+                                            deleteConfirm.trim() !== slug
+                                        }
+                                        className="px-3 py-1.5 rounded-md bg-red-600 text-xs font-semibold text-white disabled:opacity-60"
+                                    >
+                                        {deleting ? "Deleting…" : "Delete project"}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="pt-3 flex items-center justify-between gap-3">
                             <Link

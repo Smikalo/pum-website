@@ -19,7 +19,9 @@ async function fetchAuth(path: string, opts: RequestInit & { token: string }) {
 
     // Keep any caller-provided headers
     if (opts.headers) {
-        for (const [k, v] of Object.entries(opts.headers as Record<string, string>)) {
+        for (const [k, v] of Object.entries(
+            opts.headers as Record<string, string>,
+        )) {
             if (typeof v !== "undefined") headers[k] = v as any;
         }
     }
@@ -33,7 +35,9 @@ async function fetchAuth(path: string, opts: RequestInit & { token: string }) {
         });
     } catch (e) {
         // Connection/CORS/network
-        throw new Error("Network error. Check API_BASE, server status, and CORS.");
+        throw new Error(
+            "Network error. Check API_BASE, server status, and CORS.",
+        );
     }
 
     if (!res.ok) {
@@ -62,14 +66,22 @@ export async function updateMyProfile(token: string, body: Json) {
 export async function uploadAvatar(token: string, file: File) {
     const fd = new FormData();
     fd.append("avatar", file);
-    return fetchAuth("/api/account/avatar", { method: "POST", token, body: fd as any });
+    return fetchAuth("/api/account/avatar", {
+        method: "POST",
+        token,
+        body: fd as any,
+    });
 }
 
 // CV upload (PDF)
 export async function uploadCv(token: string, file: File) {
     const fd = new FormData();
     fd.append("cv", file);
-    return fetchAuth("/api/account/cv", { method: "POST", token, body: fd as any });
+    return fetchAuth("/api/account/cv", {
+        method: "POST",
+        token,
+        body: fd as any,
+    });
 }
 
 // Upload a single event photo file; returns { url }
@@ -112,6 +124,19 @@ export async function updateEvent(token: string, slug: string, body: Json) {
     });
 }
 
+// Delete event (requires slug confirmation on backend)
+export async function deleteEvent(
+    token: string,
+    slug: string,
+    confirmSlug: string,
+) {
+    return fetchAuth(`/api/events/${slug}`, {
+        method: "DELETE",
+        token,
+        body: JSON.stringify({ confirmSlug }),
+    });
+}
+
 // Create project (JSON; photos already uploaded separately)
 export async function createProject(token: string, body: Json) {
     return fetchAuth("/api/projects", {
@@ -122,10 +147,27 @@ export async function createProject(token: string, body: Json) {
 }
 
 // Update project (JSON; photos already uploaded separately)
-export async function updateProject(token: string, slug: string, body: Json) {
+export async function updateProject(
+    token: string,
+    slug: string,
+    body: Json,
+) {
     return fetchAuth(`/api/projects/${slug}`, {
         method: "PUT",
         token,
         body: JSON.stringify(body),
+    });
+}
+
+// Delete project (requires slug confirmation on backend)
+export async function deleteProject(
+    token: string,
+    slug: string,
+    confirmSlug: string,
+) {
+    return fetchAuth(`/api/projects/${slug}`, {
+        method: "DELETE",
+        token,
+        body: JSON.stringify({ confirmSlug }),
     });
 }

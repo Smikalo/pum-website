@@ -15,21 +15,32 @@ import { API_BASE } from "@/lib/config";
 function MarkdownPreview({ markdown }: { markdown: string }) {
     const src = (markdown || "").replace(/\r\n/g, "\n");
 
-    function splitFenced(input: string): Array<{ type: "text" | "code"; content: string; lang?: string }> {
+    function splitFenced(
+        input: string,
+    ): Array<{ type: "text" | "code"; content: string; lang?: string }> {
         const out: Array<{ type: "text" | "code"; content: string; lang?: string }> = [];
         const fence = /```(\w+)?\n([\s\S]*?)```/g;
         let lastIndex = 0;
         let m: RegExpExecArray | null;
         while ((m = fence.exec(input))) {
-            if (m.index > lastIndex) out.push({ type: "text", content: input.slice(lastIndex, m.index) });
-            out.push({ type: "code", content: m[2].replace(/\n$/, ""), lang: m[1] });
+            if (m.index > lastIndex)
+                out.push({ type: "text", content: input.slice(lastIndex, m.index) });
+            out.push({
+                type: "code",
+                content: m[2].replace(/\n$/, ""),
+                lang: m[1],
+            });
             lastIndex = fence.lastIndex;
         }
-        if (lastIndex < input.length) out.push({ type: "text", content: input.slice(lastIndex) });
+        if (lastIndex < input.length)
+            out.push({ type: "text", content: input.slice(lastIndex) });
         return out;
     }
 
-    function splitInline(text: string, re: RegExp): Array<string | { code: string }> {
+    function splitInline(
+        text: string,
+        re: RegExp,
+    ): Array<string | { code: string }> {
         const out: Array<string | { code: string }> = [];
         let last = 0;
         let m: RegExpExecArray | null;
@@ -43,7 +54,9 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
         return out;
     }
 
-    function splitLinks(text: string): Array<string | { label: string; href: string }> {
+    function splitLinks(
+        text: string,
+    ): Array<string | { label: string; href: string }> {
         const out: Array<string | { label: string; href: string }> = [];
         const re = /\[([^\]]+)\]\(([^)]+)\)/g;
         let last = 0;
@@ -68,7 +81,10 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
         return segments.flatMap((seg, idx) => {
             if (typeof seg !== "string") {
                 return (
-                    <code key={`code-${idx}`} className="px-1 rounded bg-white/10 text-white/90">
+                    <code
+                        key={`code-${idx}`}
+                        className="px-1 rounded bg-white/10 text-white/90"
+                    >
                         {seg.code}
                     </code>
                 );
@@ -99,7 +115,10 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                     typeof p === "string" ? (
                         p
                     ) : (
-                        <strong key={`b-${idx}-${j}-${k}`} className="text-white">
+                        <strong
+                            key={`b-${idx}-${j}-${k}`}
+                            className="text-white"
+                        >
                             {p.code}
                         </strong>
                     ),
@@ -113,7 +132,10 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                     typeof p === "string" ? (
                         p
                     ) : (
-                        <em key={`i-${idx}-${j}-${k}`} className="italic">
+                        <em
+                            key={`i-${idx}-${j}-${k}`}
+                            className="italic"
+                        >
                             {p.code}
                         </em>
                     ),
@@ -139,15 +161,24 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                 const content = h[2];
                 blocks.push(
                     level === 1 ? (
-                        <h3 key={`h-${i}`} className="text-2xl font-bold text-white mt-3">
+                        <h3
+                            key={`h-${i}`}
+                            className="text-2xl font-bold text-white mt-3"
+                        >
                             {inline(content)}
                         </h3>
                     ) : level === 2 ? (
-                        <h4 key={`h-${i}`} className="text-xl font-semibold text-white mt-2">
+                        <h4
+                            key={`h-${i}`}
+                            className="text-xl font-semibold text-white mt-2"
+                        >
                             {inline(content)}
                         </h4>
                     ) : (
-                        <h5 key={`h-${i}`} className="text-lg font-semibold text-white mt-2">
+                        <h5
+                            key={`h-${i}`}
+                            className="text-lg font-semibold text-white mt-2"
+                        >
                             {inline(content)}
                         </h5>
                     ),
@@ -160,14 +191,20 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                 while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
                     const item = lines[i].replace(/^\s*\d+\.\s+/, "");
                     items.push(
-                        <li key={`ol-${i}`} className="ml-4">
+                        <li
+                            key={`ol-${i}`}
+                            className="ml-4"
+                        >
                             {inline(item)}
                         </li>,
                     );
                     i++;
                 }
                 blocks.push(
-                    <ol key={`ol-block-${i}`} className="list-decimal pl-5 space-y-1">
+                    <ol
+                        key={`ol-block-${i}`}
+                        className="list-decimal pl-5 space-y-1"
+                    >
                         {items}
                     </ol>,
                 );
@@ -178,14 +215,20 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                 while (i < lines.length && /^\s*([-*+])\s+/.test(lines[i])) {
                     const item = lines[i].replace(/^\s*([-*+])\s+/, "");
                     items.push(
-                        <li key={`ul-${i}`} className="ml-4">
+                        <li
+                            key={`ul-${i}`}
+                            className="ml-4"
+                        >
                             {inline(item)}
                         </li>,
                     );
                     i++;
                 }
                 blocks.push(
-                    <ul key={`ul-block-${i}`} className="list-disc pl-5 space-y-1">
+                    <ul
+                        key={`ul-block-${i}`}
+                        className="list-disc pl-5 space-y-1"
+                    >
                         {items}
                     </ul>,
                 );
@@ -204,7 +247,10 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
             }
             const paraText = paras.join(" ");
             blocks.push(
-                <p key={`p-${i}`} className="text-white/85">
+                <p
+                    key={`p-${i}`}
+                    className="text-white/85"
+                >
                     {inline(paraText)}
                 </p>,
             );
@@ -232,7 +278,10 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                         <code>{seg.content}</code>
                     </pre>
                 ) : (
-                    <BlockText key={`txt-${i}`} text={seg.content} />
+                    <BlockText
+                        key={`txt-${i}`}
+                        text={seg.content}
+                    />
                 ),
             )}
         </div>
@@ -247,7 +296,10 @@ type SearchHit = {
     lon: string;
 };
 
-async function geocode(q: string, signal?: AbortSignal): Promise<SearchHit[]> {
+async function geocode(
+    q: string,
+    signal?: AbortSignal,
+): Promise<SearchHit[]> {
     if (!q.trim()) return [];
     const url = new URL("https://nominatim.openstreetmap.org/search");
     url.searchParams.set("q", q);
@@ -370,8 +422,10 @@ export default function EditEventPage({ params }: Props) {
     const [photos, setPhotos] = React.useState<File[]>([]);
 
     // header selection: either an existing photo index or a new photo index
-    const [headerExistingIndex, setHeaderExistingIndex] = React.useState<number | null>(null);
-    const [headerNewIndex, setHeaderNewIndex] = React.useState<number | null>(null);
+    const [headerExistingIndex, setHeaderExistingIndex] =
+        React.useState<number | null>(null);
+    const [headerNewIndex, setHeaderNewIndex] =
+        React.useState<number | null>(null);
 
     const [searchQ, setSearchQ] = React.useState("");
     const [hits, setHits] = React.useState<SearchHit[]>([]);
@@ -387,7 +441,9 @@ export default function EditEventPage({ params }: Props) {
     const [projects, setProjects] = React.useState<ProjectRef[]>([]);
     const [projectsLoading, setProjectsLoading] = React.useState(true);
     const [projectsError, setProjectsError] = React.useState<string | null>(null);
-    const [selectedProjectSlugs, setSelectedProjectSlugs] = React.useState<string[]>([]);
+    const [selectedProjectSlugs, setSelectedProjectSlugs] = React.useState<
+        string[]
+    >([]);
     const [projectQ, setProjectQ] = React.useState("");
 
     const [errors, setErrors] = React.useState<Errors>({});
@@ -398,6 +454,10 @@ export default function EditEventPage({ params }: Props) {
     const [loadingEvent, setLoadingEvent] = React.useState(true);
     const [loadError, setLoadError] = React.useState<string | null>(null);
     const [creatorSlug, setCreatorSlug] = React.useState<string | null>(null);
+
+    // delete confirmation state
+    const [deleteConfirmSlug, setDeleteConfirmSlug] = React.useState("");
+    const [deleting, setDeleting] = React.useState(false);
 
     /* -------------------- live map search (debounced) -------------------- */
 
@@ -444,7 +504,12 @@ export default function EditEventPage({ params }: Props) {
                     id: m.id ?? m.slug,
                     slug: m.slug ?? m.id,
                     name: m.name,
-                    avatarUrl: m.avatarUrl ?? m.avatar ?? m.photo ?? m.image ?? undefined,
+                    avatarUrl:
+                        m.avatarUrl ??
+                        m.avatar ??
+                        m.photo ??
+                        m.image ??
+                        undefined,
                     headline: m.headline ?? m.shortBio ?? undefined,
                     email: m.email ?? undefined,
                 }));
@@ -518,7 +583,10 @@ export default function EditEventPage({ params }: Props) {
             setLoadingEvent(true);
             setLoadError(null);
             try {
-                const url = new URL(`/api/events/${encodeURIComponent(params.slug)}`, API_BASE);
+                const url = new URL(
+                    `/api/events/${encodeURIComponent(params.slug)}`,
+                    API_BASE,
+                );
                 const res = await fetch(url.toString(), {
                     credentials: "include",
                 });
@@ -532,14 +600,19 @@ export default function EditEventPage({ params }: Props) {
                 const ev: any = await res.json();
                 if (cancelled) return;
 
-                const toInputValue = (iso: string | null | undefined): string => {
+                const toInputValue = (
+                    iso: string | null | undefined,
+                ): string => {
                     if (!iso) return "";
                     const d = new Date(iso);
                     if (Number.isNaN(d.getTime())) return "";
-                    const pad = (n: number) => n.toString().padStart(2, "0");
-                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
-                        d.getDate(),
-                    )}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                    const pad = (n: number) =>
+                        n.toString().padStart(2, "0");
+                    return `${d.getFullYear()}-${pad(
+                        d.getMonth() + 1,
+                    )}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+                        d.getMinutes(),
+                    )}`;
                 };
 
                 setState((prev) => ({
@@ -601,13 +674,18 @@ export default function EditEventPage({ params }: Props) {
                 if (Array.isArray(ev.projects)) {
                     const slugs = ev.projects
                         .map((p: any) => p?.slug)
-                        .filter((s: any) => typeof s === "string");
-                    setSelectedProjectSlugs(Array.from(new Set(slugs)));
+                        .filter(
+                            (s: any) => typeof s === "string",
+                        );
+                    setSelectedProjectSlugs(
+                        Array.from(new Set(slugs)),
+                    );
                 }
             } catch (err) {
                 // eslint-disable-next-line no-console
                 console.error("[EditEvent] loadEvent error", err);
-                if (!cancelled) setLoadError("Failed to load event.");
+                if (!cancelled)
+                    setLoadError("Failed to load event.");
             } finally {
                 if (!cancelled) setLoadingEvent(false);
             }
@@ -635,8 +713,12 @@ export default function EditEventPage({ params }: Props) {
                 const h = m.headline || "";
                 const email = m.email || "";
                 return (
-                    m.name.toLowerCase().includes(normalizedAttendeeQ) ||
-                    m.slug.toLowerCase().includes(normalizedAttendeeQ) ||
+                    m.name
+                        .toLowerCase()
+                        .includes(normalizedAttendeeQ) ||
+                    m.slug
+                        .toLowerCase()
+                        .includes(normalizedAttendeeQ) ||
                     h.toLowerCase().includes(normalizedAttendeeQ) ||
                     email.toLowerCase().includes(normalizedAttendeeQ)
                 );
@@ -655,8 +737,12 @@ export default function EditEventPage({ params }: Props) {
                 const summary = p.summary || "";
                 const year = p.year ? String(p.year) : "";
                 return (
-                    p.title.toLowerCase().includes(normalizedProjectQ) ||
-                    summary.toLowerCase().includes(normalizedProjectQ) ||
+                    p.title
+                        .toLowerCase()
+                        .includes(normalizedProjectQ) ||
+                    summary
+                        .toLowerCase()
+                        .includes(normalizedProjectQ) ||
                     year.includes(normalizedProjectQ)
                 );
             })
@@ -666,8 +752,13 @@ export default function EditEventPage({ params }: Props) {
     const selectedProjects = React.useMemo(
         () =>
             selectedProjectSlugs
-                .map((slug) => projects.find((p) => p.slug === slug))
-                .filter((p): p is ProjectRef => !!p),
+                .map((slug) =>
+                    projects.find((p) => p.slug === slug),
+                )
+                .filter(
+                    (p): p is ProjectRef =>
+                        !!p,
+                ),
         [selectedProjectSlugs, projects],
     );
 
@@ -677,9 +768,14 @@ export default function EditEventPage({ params }: Props) {
         return (
             <section className="section">
                 <h1 className="display">Edit event</h1>
-                <p className="mt-3 text-white/70">Loading event details…</p>
+                <p className="mt-3 text-white/70">
+                    Loading event details…
+                </p>
                 <p className="mt-4">
-                    <Link href="/events" className="underline underline-offset-4">
+                    <Link
+                        href="/events"
+                        className="underline underline-offset-4"
+                    >
                         ← Back to events
                     </Link>
                 </p>
@@ -692,11 +788,14 @@ export default function EditEventPage({ params }: Props) {
             <section className="section">
                 <h1 className="display">Event not found</h1>
                 <p className="mt-3 text-white/70">
-                    We couldn&apos;t find this event. It may have been removed or the link is
-                    incorrect.
+                    We couldn&apos;t find this event. It may have been
+                    removed or the link is incorrect.
                 </p>
                 <p className="mt-4">
-                    <Link href="/events" className="underline underline-offset-4">
+                    <Link
+                        href="/events"
+                        className="underline underline-offset-4"
+                    >
                         ← Back to events
                     </Link>
                 </p>
@@ -710,7 +809,10 @@ export default function EditEventPage({ params }: Props) {
                 <h1 className="display">Edit event</h1>
                 <p className="mt-3 text-white/70">{loadError}</p>
                 <p className="mt-4">
-                    <Link href="/events" className="underline underline-offset-4">
+                    <Link
+                        href="/events"
+                        className="underline underline-offset-4"
+                    >
                         ← Back to events
                     </Link>
                 </p>
@@ -727,10 +829,16 @@ export default function EditEventPage({ params }: Props) {
                     You need to be logged in to edit events.
                 </p>
                 <div className="mt-5 flex gap-3">
-                    <Link href={`/events/${params.slug}`} className="btn-secondary">
+                    <Link
+                        href={`/events/${params.slug}`}
+                        className="btn-secondary"
+                    >
                         ← Back to event
                     </Link>
-                    <Link href="/" className="btn-primary">
+                    <Link
+                        href="/"
+                        className="btn-primary"
+                    >
                         Log in
                     </Link>
                 </div>
@@ -742,7 +850,9 @@ export default function EditEventPage({ params }: Props) {
     const isAdmin = roles.includes("ADMIN");
     const isModerator = roles.includes("MODERATOR");
     const isCreator =
-        !!creatorSlug && user.member && user.member.slug === creatorSlug;
+        !!creatorSlug &&
+        user.member &&
+        user.member.slug === creatorSlug;
     const canEditEvent = isAdmin || isModerator || isCreator;
 
     if (!canEditEvent) {
@@ -750,13 +860,20 @@ export default function EditEventPage({ params }: Props) {
             <section className="section">
                 <h1 className="display">Edit event</h1>
                 <p className="mt-3 text-white/70 max-w-2xl">
-                    You don&apos;t have permission to edit this event.
+                    You don&apos;t have permission to edit this
+                    event.
                 </p>
                 <div className="mt-5 flex gap-3">
-                    <Link href={`/events/${params.slug}`} className="btn-secondary">
+                    <Link
+                        href={`/events/${params.slug}`}
+                        className="btn-secondary"
+                    >
                         ← Back to event
                     </Link>
-                    <Link href="/events" className="btn-primary">
+                    <Link
+                        href="/events"
+                        className="btn-primary"
+                    >
                         Browse all events
                     </Link>
                 </div>
@@ -773,10 +890,17 @@ export default function EditEventPage({ params }: Props) {
 
     function validate(): Errors {
         const e: Errors = {};
-        if (!state.name.trim()) e.name = "Event name is required.";
-        if (state.dateStart && Number.isNaN(new Date(state.dateStart).getTime()))
+        if (!state.name.trim())
+            e.name = "Event name is required.";
+        if (
+            state.dateStart &&
+            Number.isNaN(new Date(state.dateStart).getTime())
+        )
             e.dateStart = "Invalid start date.";
-        if (state.dateEnd && Number.isNaN(new Date(state.dateEnd).getTime()))
+        if (
+            state.dateEnd &&
+            Number.isNaN(new Date(state.dateEnd).getTime())
+        )
             e.dateEnd = "Invalid end date.";
         if (state.dateStart && state.dateEnd) {
             const a = new Date(state.dateStart).getTime();
@@ -784,15 +908,18 @@ export default function EditEventPage({ params }: Props) {
             if (a > b) e.dateEnd = "End must be after start.";
         }
 
-        const totalPhotos = existingPhotos.length + photos.length;
+        const totalPhotos =
+            existingPhotos.length + photos.length;
         if (totalPhotos > 12) {
             e.photos = "Please upload at most 12 photos in total.";
         }
 
         for (const f of photos) {
-            const okType = /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
+            const okType =
+                /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
             if (!okType) {
-                e.photos = "Only PNG, JPG/JPEG, WEBP, or GIF are allowed.";
+                e.photos =
+                    "Only PNG, JPG/JPEG, WEBP, or GIF are allowed.";
                 break;
             }
             if (f.size > 8 * 1024 * 1024) {
@@ -805,7 +932,13 @@ export default function EditEventPage({ params }: Props) {
 
     function addMemberAttendee(m: Member) {
         setAttendees((prev) => {
-            if (prev.some((a) => a.kind === "member" && a.member.id === m.id)) {
+            if (
+                prev.some(
+                    (a) =>
+                        a.kind === "member" &&
+                        a.member.id === m.id,
+                )
+            ) {
                 return prev;
             }
             return [...prev, { kind: "member", member: m }];
@@ -817,7 +950,13 @@ export default function EditEventPage({ params }: Props) {
         const v = value.trim();
         if (!v) return;
         setAttendees((prev) => {
-            if (prev.some((a) => a.kind === "invite" && a.value === v)) {
+            if (
+                prev.some(
+                    (a) =>
+                        a.kind === "invite" &&
+                        a.value === v,
+                )
+            ) {
                 return prev;
             }
             return [...prev, { kind: "invite", value: v }];
@@ -826,7 +965,9 @@ export default function EditEventPage({ params }: Props) {
     }
 
     function removeAttendee(index: number) {
-        setAttendees((prev) => prev.filter((_, i) => i !== index));
+        setAttendees((prev) =>
+            prev.filter((_, i) => i !== index),
+        );
     }
 
     function addProject(p: ProjectRef) {
@@ -837,7 +978,9 @@ export default function EditEventPage({ params }: Props) {
     }
 
     function removeProject(slug: string) {
-        setSelectedProjectSlugs((prev) => prev.filter((s) => s !== slug));
+        setSelectedProjectSlugs((prev) =>
+            prev.filter((s) => s !== slug),
+        );
     }
 
     // photo helpers
@@ -854,7 +997,7 @@ export default function EditEventPage({ params }: Props) {
         return current;
     }
 
-    // ✅ FIXED: append new files instead of replacing the previous selection
+    // ✅ append new files instead of replacing the previous selection
     function handleNewPhotos(files: FileList | null) {
         const incoming = Array.from(files || []);
         if (incoming.length === 0) {
@@ -869,10 +1012,14 @@ export default function EditEventPage({ params }: Props) {
                 setHeaderNewIndex(null);
             } else if (
                 headerExistingIndex == null &&
-                (headerNewIndex == null || headerNewIndex >= next.length)
+                (headerNewIndex == null ||
+                    headerNewIndex >= next.length)
             ) {
                 setHeaderNewIndex(0);
-            } else if (headerNewIndex != null && headerNewIndex >= next.length) {
+            } else if (
+                headerNewIndex != null &&
+                headerNewIndex >= next.length
+            ) {
                 setHeaderNewIndex(0);
             }
 
@@ -884,12 +1031,17 @@ export default function EditEventPage({ params }: Props) {
         setExistingPhotos((prev) => {
             const next = prev.filter((_, i) => i !== index);
             setHeaderExistingIndex((current) =>
-                adjustIndexAfterRemoval(current, index, next.length),
+                adjustIndexAfterRemoval(
+                    current,
+                    index,
+                    next.length,
+                ),
             );
             // if we lost the only header and no existing photos remain, but have new photos, pick a new header from new photos
             if (next.length === 0 && photos.length > 0) {
                 setHeaderExistingIndex(null);
-                if (headerNewIndex == null) setHeaderNewIndex(0);
+                if (headerNewIndex == null)
+                    setHeaderNewIndex(0);
             }
             return next;
         });
@@ -899,7 +1051,11 @@ export default function EditEventPage({ params }: Props) {
         setPhotos((prev) => {
             const next = prev.filter((_, i) => i !== index);
             setHeaderNewIndex((current) =>
-                adjustIndexAfterRemoval(current, index, next.length),
+                adjustIndexAfterRemoval(
+                    current,
+                    index,
+                    next.length,
+                ),
             );
             return next;
         });
@@ -936,11 +1092,19 @@ export default function EditEventPage({ params }: Props) {
             let newPhotoUrls: string[] = [];
             if (photos.length) {
                 const uploads = await Promise.all(
-                    photos.map((file) => api.uploadEventPhoto(accessToken, file)),
+                    photos.map((file) =>
+                        api.uploadEventPhoto(
+                            accessToken,
+                            file,
+                        ),
+                    ),
                 );
                 newPhotoUrls = uploads
                     .map((u) => u?.url)
-                    .filter((u): u is string => !!u);
+                    .filter(
+                        (u): u is string =>
+                            !!u,
+                    );
             }
 
             // Determine header & final order
@@ -949,15 +1113,29 @@ export default function EditEventPage({ params }: Props) {
             const finalNew = [...newPhotoUrls];
 
             // derive actual header choice (fall back to first existing/new if none set)
-            let chosenHeaderExistingIndex = headerExistingIndex;
+            let chosenHeaderExistingIndex =
+                headerExistingIndex;
             let chosenHeaderNewIndex = headerNewIndex;
 
-            if (finalExisting.length === 0 && finalNew.length === 0) {
+            if (
+                finalExisting.length === 0 &&
+                finalNew.length === 0
+            ) {
                 headerUrl = null;
-            } else if (chosenHeaderExistingIndex != null && finalExisting[chosenHeaderExistingIndex]) {
-                headerUrl = finalExisting[chosenHeaderExistingIndex];
-            } else if (chosenHeaderNewIndex != null && finalNew[chosenHeaderNewIndex]) {
-                headerUrl = finalNew[chosenHeaderNewIndex];
+            } else if (
+                chosenHeaderExistingIndex != null &&
+                finalExisting[chosenHeaderExistingIndex]
+            ) {
+                headerUrl =
+                    finalExisting[
+                        chosenHeaderExistingIndex
+                        ];
+            } else if (
+                chosenHeaderNewIndex != null &&
+                finalNew[chosenHeaderNewIndex]
+            ) {
+                headerUrl =
+                    finalNew[chosenHeaderNewIndex];
             } else if (finalExisting.length > 0) {
                 headerUrl = finalExisting[0];
                 chosenHeaderExistingIndex = 0;
@@ -969,52 +1147,82 @@ export default function EditEventPage({ params }: Props) {
             }
 
             const remainingExisting =
-                headerUrl && chosenHeaderExistingIndex != null
-                    ? finalExisting.filter((_, idx) => idx !== chosenHeaderExistingIndex)
+                headerUrl &&
+                chosenHeaderExistingIndex != null
+                    ? finalExisting.filter(
+                        (_,
+                         idx) =>
+                            idx !==
+                            chosenHeaderExistingIndex,
+                    )
                     : finalExisting;
 
             const remainingNew =
                 headerUrl && chosenHeaderNewIndex != null
-                    ? finalNew.filter((_, idx) => idx !== chosenHeaderNewIndex)
+                    ? finalNew.filter(
+                        (_,
+                         idx) =>
+                            idx !==
+                            chosenHeaderNewIndex,
+                    )
                     : finalNew;
 
             const finalPhotoUrls =
                 headerUrl == null
-                    ? [...remainingExisting, ...remainingNew]
-                    : [headerUrl, ...remainingExisting, ...remainingNew];
+                    ? [
+                        ...remainingExisting,
+                        ...remainingNew,
+                    ]
+                    : [
+                        headerUrl,
+                        ...remainingExisting,
+                        ...remainingNew,
+                    ];
 
             // 2) update event
             const body = {
                 name: state.name.trim(),
-                locationName: state.locationName.trim() || null,
+                locationName:
+                    state.locationName.trim() || null,
                 dateStart: state.dateStart
-                    ? new Date(state.dateStart).toISOString()
+                    ? new Date(
+                        state.dateStart,
+                    ).toISOString()
                     : null,
                 dateEnd: state.dateEnd
-                    ? new Date(state.dateEnd).toISOString()
+                    ? new Date(
+                        state.dateEnd,
+                    ).toISOString()
                     : null,
                 lat: state.lat ? Number(state.lat) : null,
                 lng: state.lng ? Number(state.lng) : null,
-                description: state.description.trim() || null,
+                description:
+                    state.description.trim() || null,
                 photos: finalPhotoUrls,
                 attendees: attendees.map((a) =>
                     a.kind === "member"
                         ? {
-                            type: "member",
+                            type: "member" as const,
                             memberId: a.member.id,
                             memberSlug: a.member.slug,
                             name: a.member.name,
-                            email: a.member.email || null,
+                            email:
+                                a.member.email ||
+                                null,
                         }
                         : {
-                            type: "invite",
+                            type: "invite" as const,
                             value: a.value,
                         },
                 ),
                 projectSlugs: selectedProjectSlugs,
             };
 
-            await api.updateEvent(accessToken, params.slug, body);
+            await api.updateEvent(
+                accessToken,
+                params.slug,
+                body,
+            );
             setHint("Event updated ✓ Redirecting…");
             setTimeout(() => {
                 router.push(`/events/${params.slug}`);
@@ -1022,14 +1230,73 @@ export default function EditEventPage({ params }: Props) {
         } catch (err: any) {
             // eslint-disable-next-line no-console
             console.error("[EditEvent] onSubmit error", err);
-            const msg = err?.message || "Failed to update event";
+            const msg =
+                err?.message ||
+                "Failed to update event";
             setError(msg);
         } finally {
             setSubmitting(false);
         }
     }
 
-    const inputCls = (field: keyof FormState | "photos" = "name") =>
+    async function onDelete(
+        e: React.MouseEvent<HTMLButtonElement>,
+    ) {
+        e.preventDefault();
+        if (!accessToken) return;
+
+        const trimmed = deleteConfirmSlug.trim();
+
+        setError(null);
+        setHint(null);
+
+        if (!trimmed) {
+            setError(
+                "Please type the event slug to confirm deletion.",
+            );
+            return;
+        }
+        if (trimmed !== params.slug) {
+            setError(
+                "Slug does not match. Type the exact event slug to confirm deletion.",
+            );
+            return;
+        }
+
+        const confirmed = window.confirm(
+            "This will permanently delete this event and all directly related data. This cannot be undone. Continue?",
+        );
+        if (!confirmed) return;
+
+        setDeleting(true);
+        try {
+            await api.deleteEvent(
+                accessToken,
+                params.slug,
+                trimmed,
+            );
+            setHint(
+                "Event deleted ✓ Redirecting to events…",
+            );
+            router.push("/events");
+        } catch (err: any) {
+            // eslint-disable-next-line no-console
+            console.error(
+                "[EditEvent] delete error",
+                err,
+            );
+            const msg =
+                err?.message ||
+                "Failed to delete event.";
+            setError(msg);
+        } finally {
+            setDeleting(false);
+        }
+    }
+
+    const inputCls = (
+        field: keyof FormState | "photos" = "name",
+    ) =>
         `w-full rounded-md bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 ring-1 outline-none ${
             errors[field]
                 ? "ring-red-400 focus:ring-red-400/80"
@@ -1047,8 +1314,11 @@ export default function EditEventPage({ params }: Props) {
                 <p className="kicker">EVENTS</p>
                 <h1 className="display">Edit event</h1>
                 <p className="mt-2 text-white/70 max-w-2xl">
-                    Update dates, location, details, attendees, photos, and related projects.
-                    Existing invites won&apos;t be resent when you save changes.
+                    Update dates, location, details,
+                    attendees, photos, and related
+                    projects. Existing invites
+                    won&apos;t be resent when you
+                    save changes.
                 </p>
             </header>
 
@@ -1070,7 +1340,10 @@ export default function EditEventPage({ params }: Props) {
                 </div>
             ) : null}
 
-            <form onSubmit={onSubmit} className="grid lg:grid-cols-5 gap-6">
+            <form
+                onSubmit={onSubmit}
+                className="grid lg:grid-cols-5 gap-6"
+            >
                 {/* Left */}
                 <div className="lg:col-span-3 space-y-5">
                     <div className="card p-5 space-y-3">
@@ -1081,13 +1354,20 @@ export default function EditEventPage({ params }: Props) {
                             <input
                                 required
                                 value={state.name}
-                                onChange={(e) => set("name", e.target.value)}
+                                onChange={(e) =>
+                                    set(
+                                        "name",
+                                        e.target.value,
+                                    )
+                                }
                                 className={inputCls("name")}
                                 placeholder="HackNight @ PUM"
                                 aria-invalid={!!errors.name}
                             />
                             {errors.name && (
-                                <p className="mt-1 text-xs text-red-300">{errors.name}</p>
+                                <p className="mt-1 text-xs text-red-300">
+                                    {errors.name}
+                                </p>
                             )}
                         </div>
 
@@ -1098,8 +1378,15 @@ export default function EditEventPage({ params }: Props) {
                                     Long description
                                 </label>
                                 <textarea
-                                    value={state.description}
-                                    onChange={(e) => set("description", e.target.value)}
+                                    value={
+                                        state.description
+                                    }
+                                    onChange={(e) =>
+                                        set(
+                                            "description",
+                                            e.target.value,
+                                        )
+                                    }
                                     className={`${inputCls()} min-h-[160px] resize-vertical`}
                                     placeholder="What is this event about? Who is it for? Agenda, expectations…"
                                 />
@@ -1107,10 +1394,17 @@ export default function EditEventPage({ params }: Props) {
                             <div className="space-y-1">
                                 <div className="flex items-center justify-between text-xs text-white/60">
                                     <span>Preview</span>
-                                    <span>Supports basic markdown</span>
+                                    <span>
+                                        Supports basic
+                                        markdown
+                                    </span>
                                 </div>
                                 <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 min-h-[160px] text-sm">
-                                    <MarkdownPreview markdown={state.description} />
+                                    <MarkdownPreview
+                                        markdown={
+                                            state.description
+                                        }
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -1124,9 +1418,18 @@ export default function EditEventPage({ params }: Props) {
                                 <input
                                     type="datetime-local"
                                     value={state.dateStart}
-                                    onChange={(e) => set("dateStart", e.target.value)}
-                                    className={inputCls("dateStart")}
-                                    aria-invalid={!!errors.dateStart}
+                                    onChange={(e) =>
+                                        set(
+                                            "dateStart",
+                                            e.target.value,
+                                        )
+                                    }
+                                    className={inputCls(
+                                        "dateStart",
+                                    )}
+                                    aria-invalid={
+                                        !!errors.dateStart
+                                    }
                                 />
                                 {errors.dateStart && (
                                     <p className="mt-1 text-xs text-red-300">
@@ -1141,9 +1444,18 @@ export default function EditEventPage({ params }: Props) {
                                 <input
                                     type="datetime-local"
                                     value={state.dateEnd}
-                                    onChange={(e) => set("dateEnd", e.target.value)}
-                                    className={inputCls("dateEnd")}
-                                    aria-invalid={!!errors.dateEnd}
+                                    onChange={(e) =>
+                                        set(
+                                            "dateEnd",
+                                            e.target.value,
+                                        )
+                                    }
+                                    className={inputCls(
+                                        "dateEnd",
+                                    )}
+                                    aria-invalid={
+                                        !!errors.dateEnd
+                                    }
                                 />
                                 {errors.dateEnd && (
                                     <p className="mt-1 text-xs text-red-300">
@@ -1157,129 +1469,202 @@ export default function EditEventPage({ params }: Props) {
                     <div className="card p-5 space-y-3">
                         {/* Photos (existing + new) */}
                         <div>
-                            <label className="block text-sm text-white/70 mb-1">Photos</label>
+                            <label className="block text-sm text-white/70 mb-1">
+                                Photos
+                            </label>
                             <input
                                 type="file"
                                 multiple
                                 accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
-                                onChange={(e) => handleNewPhotos(e.target.files)}
-                                className={inputCls("photos")}
-                                aria-invalid={!!errors.photos}
+                                onChange={(e) =>
+                                    handleNewPhotos(
+                                        e.target.files,
+                                    )
+                                }
+                                className={inputCls(
+                                    "photos",
+                                )}
+                                aria-invalid={
+                                    !!errors.photos
+                                }
                             />
                             <p className="text-xs text-white/50 mt-1">
-                                Up to 12 images total; PNG/JPG/WEBP/GIF; max 8 MB each. Choose one
-                                as the header; others will appear in the gallery.
+                                Up to 12 images total;
+                                PNG/JPG/WEBP/GIF; max 8 MB
+                                each. Choose one as the
+                                header; others will appear
+                                in the gallery.
                             </p>
                             {errors.photos && (
-                                <p className="mt-1 text-xs text-red-300">{errors.photos}</p>
+                                <p className="mt-1 text-xs text-red-300">
+                                    {errors.photos}
+                                </p>
                             )}
 
-                            {(existingPhotos.length > 0 || photos.length > 0) && (
+                            {(existingPhotos.length > 0 ||
+                                photos.length > 0) && (
                                 <div className="mt-3 space-y-3">
-                                    {existingPhotos.length > 0 && (
-                                        <div>
-                                            <p className="text-[11px] text-white/50 mb-1">
-                                                Existing photos
-                                            </p>
-                                            <div className="grid grid-cols-3 gap-2">
-                                                {existingPhotos.map((url, i) => (
-                                                    <div
-                                                        key={`existing-${i}`}
-                                                        className={`relative group rounded-md bg-white/5 p-1 ${
-                                                            headerExistingIndex === i
-                                                                ? "ring-emerald-400/70 ring-2"
-                                                                : "ring-1 ring-white/10"
-                                                        }`}
-                                                    >
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => removeExistingPhoto(i)}
-                                                            className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                                            aria-label={`Remove photo ${i + 1}`}
-                                                        >
-                                                            ✕
-                                                        </button>
-                                                        <img
-                                                            src={url}
-                                                            alt={`Event photo ${i + 1}`}
-                                                            className="w-full h-24 object-cover rounded"
-                                                        />
-                                                        <div className="mt-1 flex items-center justify-between gap-1">
-                                                            <span className="text-[11px] text-white/70 truncate">
-                                                                Existing #{i + 1}
-                                                            </span>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setHeaderFromExisting(i)}
-                                                                className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                                                                    headerExistingIndex === i &&
-                                                                    headerNewIndex == null
-                                                                        ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
-                                                                        : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
+                                    {existingPhotos.length >
+                                        0 && (
+                                            <div>
+                                                <p className="text-[11px] text-white/50 mb-1">
+                                                    Existing
+                                                    photos
+                                                </p>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    {existingPhotos.map(
+                                                        (
+                                                            url,
+                                                            i,
+                                                        ) => (
+                                                            <div
+                                                                key={`existing-${i}`}
+                                                                className={`relative group rounded-md bg-white/5 p-1 ${
+                                                                    headerExistingIndex ===
+                                                                    i
+                                                                        ? "ring-emerald-400/70 ring-2"
+                                                                        : "ring-1 ring-white/10"
                                                                 }`}
                                                             >
-                                                                {headerExistingIndex === i &&
-                                                                headerNewIndex == null
-                                                                    ? "Header"
-                                                                    : "Set header"}
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ))}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        removeExistingPhoto(
+                                                                            i,
+                                                                        )
+                                                                    }
+                                                                    className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                    aria-label={`Remove photo ${
+                                                                        i +
+                                                                        1
+                                                                    }`}
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                                <img
+                                                                    src={
+                                                                        url
+                                                                    }
+                                                                    alt={`Event photo ${
+                                                                        i +
+                                                                        1
+                                                                    }`}
+                                                                    className="w-full h-24 object-cover rounded"
+                                                                />
+                                                                <div className="mt-1 flex items-center justify-between gap-1">
+                                                                <span className="text-[11px] text-white/70 truncate">
+                                                                    Existing #
+                                                                    {i +
+                                                                        1}
+                                                                </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            setHeaderFromExisting(
+                                                                                i,
+                                                                            )
+                                                                        }
+                                                                        className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                                                            headerExistingIndex ===
+                                                                            i &&
+                                                                            headerNewIndex ==
+                                                                            null
+                                                                                ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
+                                                                                : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
+                                                                        }`}
+                                                                    >
+                                                                        {headerExistingIndex ===
+                                                                        i &&
+                                                                        headerNewIndex ==
+                                                                        null
+                                                                            ? "Header"
+                                                                            : "Set header"}
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ),
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
                                     {photos.length > 0 && (
                                         <div>
                                             <p className="text-[11px] text-white/50 mb-1">
-                                                New uploads (will be added on save)
+                                                New uploads
+                                                (will be
+                                                added on save)
                                             </p>
                                             <div className="grid grid-cols-3 gap-2">
-                                                {photos.map((f, i) => (
-                                                    <div
-                                                        key={`new-${i}`}
-                                                        className={`relative group rounded-md bg-white/5 p-1 ${
-                                                            headerNewIndex === i &&
-                                                            headerExistingIndex == null
-                                                                ? "ring-emerald-400/70 ring-2"
-                                                                : "ring-1 ring-white/10"
-                                                        }`}
-                                                    >
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => removeNewPhoto(i)}
-                                                            className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                                            aria-label={`Remove ${f.name}`}
+                                                {photos.map(
+                                                    (
+                                                        f,
+                                                        i,
+                                                    ) => (
+                                                        <div
+                                                            key={`new-${i}`}
+                                                            className={`relative group rounded-md bg-white/5 p-1 ${
+                                                                headerNewIndex ===
+                                                                i &&
+                                                                headerExistingIndex ==
+                                                                null
+                                                                    ? "ring-emerald-400/70 ring-2"
+                                                                    : "ring-1 ring-white/10"
+                                                            }`}
                                                         >
-                                                            ✕
-                                                        </button>
-                                                        <img
-                                                            src={URL.createObjectURL(f)}
-                                                            alt={f.name}
-                                                            className="w-full h-24 object-cover rounded"
-                                                        />
-                                                        <div className="mt-1 flex items-center justify-between gap-1">
-                                                            <div className="text-[11px] truncate text-white/70">
-                                                                {f.name}
-                                                            </div>
                                                             <button
                                                                 type="button"
-                                                                onClick={() => setHeaderFromNew(i)}
-                                                                className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                                                                    headerNewIndex === i &&
-                                                                    headerExistingIndex == null
-                                                                        ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
-                                                                        : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
-                                                                }`}
+                                                                onClick={() =>
+                                                                    removeNewPhoto(
+                                                                        i,
+                                                                    )
+                                                                }
+                                                                className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                aria-label={`Remove ${f.name}`}
                                                             >
-                                                                {headerNewIndex === i &&
-                                                                headerExistingIndex == null
-                                                                    ? "Header"
-                                                                    : "Set header"}
+                                                                ✕
                                                             </button>
+                                                            <img
+                                                                src={URL.createObjectURL(
+                                                                    f,
+                                                                )}
+                                                                alt={
+                                                                    f.name
+                                                                }
+                                                                className="w-full h-24 object-cover rounded"
+                                                            />
+                                                            <div className="mt-1 flex items-center justify-between gap-1">
+                                                                <div className="text-[11px] truncate text-white/70">
+                                                                    {
+                                                                        f.name
+                                                                    }
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        setHeaderFromNew(
+                                                                            i,
+                                                                        )
+                                                                    }
+                                                                    className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                                                        headerNewIndex ===
+                                                                        i &&
+                                                                        headerExistingIndex ==
+                                                                        null
+                                                                            ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
+                                                                            : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
+                                                                    }`}
+                                                                >
+                                                                    {headerNewIndex ===
+                                                                    i &&
+                                                                    headerExistingIndex ==
+                                                                    null
+                                                                        ? "Header"
+                                                                        : "Set header"}
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                ))}
+                                                    ),
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -1299,8 +1684,15 @@ export default function EditEventPage({ params }: Props) {
                             </label>
                             <input
                                 value={state.locationName}
-                                onChange={(e) => set("locationName", e.target.value)}
-                                className={inputCls("locationName")}
+                                onChange={(e) =>
+                                    set(
+                                        "locationName",
+                                        e.target.value,
+                                    )
+                                }
+                                className={inputCls(
+                                    "locationName",
+                                )}
                                 placeholder="Betahaus Berlin, Hall A"
                             />
                         </div>
@@ -1310,7 +1702,11 @@ export default function EditEventPage({ params }: Props) {
                             <div className="relative">
                                 <input
                                     value={searchQ}
-                                    onChange={(e) => setSearchQ(e.target.value)}
+                                    onChange={(e) =>
+                                        setSearchQ(
+                                            e.target.value,
+                                        )
+                                    }
                                     placeholder="Search address / place"
                                     className={searchInputCls}
                                 />
@@ -1327,18 +1723,32 @@ export default function EditEventPage({ params }: Props) {
                                             key={i}
                                             className="p-2 text-sm hover:bg-white/10 cursor-pointer"
                                             onClick={() => {
-                                                set("lat", h.lat);
-                                                set("lng", h.lon);
+                                                set(
+                                                    "lat",
+                                                    h.lat,
+                                                );
+                                                set(
+                                                    "lng",
+                                                    h.lon,
+                                                );
                                                 setHits([]);
-                                                setSearchQ(h.display_name);
-                                                set("locationName", h.display_name);
+                                                setSearchQ(
+                                                    h.display_name,
+                                                );
+                                                set(
+                                                    "locationName",
+                                                    h.display_name,
+                                                );
                                             }}
                                         >
                                             <div className="font-medium text-white">
-                                                {h.display_name}
+                                                {
+                                                    h.display_name
+                                                }
                                             </div>
                                             <div className="text-xs text-white/60 mt-0.5">
-                                                lat {h.lat}, lon {h.lon}
+                                                lat {h.lat}, lon{" "}
+                                                {h.lon}
                                             </div>
                                         </li>
                                     ))}
@@ -1354,7 +1764,12 @@ export default function EditEventPage({ params }: Props) {
                                 </label>
                                 <input
                                     value={state.lat}
-                                    onChange={(e) => set("lat", e.target.value)}
+                                    onChange={(e) =>
+                                        set(
+                                            "lat",
+                                            e.target.value,
+                                        )
+                                    }
                                     className={inputCls("lat")}
                                     placeholder="52.5"
                                 />
@@ -1365,7 +1780,12 @@ export default function EditEventPage({ params }: Props) {
                                 </label>
                                 <input
                                     value={state.lng}
-                                    onChange={(e) => set("lng", e.target.value)}
+                                    onChange={(e) =>
+                                        set(
+                                            "lng",
+                                            e.target.value,
+                                        )
+                                    }
                                     className={inputCls("lng")}
                                     placeholder="13.4"
                                 />
@@ -1394,21 +1814,38 @@ export default function EditEventPage({ params }: Props) {
                             )}
                         </div>
                         {membersError && (
-                            <p className="text-xs text-red-300">{membersError}</p>
+                            <p className="text-xs text-red-300">
+                                {membersError}
+                            </p>
                         )}
 
                         <div className="space-y-2">
                             <div className="flex gap-2">
                                 <input
                                     value={attendeeQ}
-                                    onChange={(e) => setAttendeeQ(e.target.value)}
+                                    onChange={(e) =>
+                                        setAttendeeQ(
+                                            e.target.value,
+                                        )
+                                    }
                                     onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
+                                        if (
+                                            e.key ===
+                                            "Enter"
+                                        ) {
                                             e.preventDefault();
-                                            if (attendeeSuggestions[0]) {
-                                                addMemberAttendee(attendeeSuggestions[0]);
-                                            } else if (attendeeQ.trim()) {
-                                                addInviteAttendee(attendeeQ);
+                                            if (
+                                                attendeeSuggestions[0]
+                                            ) {
+                                                addMemberAttendee(
+                                                    attendeeSuggestions[0],
+                                                );
+                                            } else if (
+                                                attendeeQ.trim()
+                                            ) {
+                                                addInviteAttendee(
+                                                    attendeeQ,
+                                                );
                                             }
                                         }
                                     }}
@@ -1417,7 +1854,11 @@ export default function EditEventPage({ params }: Props) {
                                 />
                                 <button
                                     type="button"
-                                    onClick={() => addInviteAttendee(attendeeQ)}
+                                    onClick={() =>
+                                        addInviteAttendee(
+                                            attendeeQ,
+                                        )
+                                    }
                                     className="px-3 py-2 rounded-md bg-white text-black text-xs font-medium disabled:opacity-60"
                                     disabled={!attendeeQ.trim()}
                                 >
@@ -1427,35 +1868,55 @@ export default function EditEventPage({ params }: Props) {
 
                             {!!attendeeSuggestions.length && (
                                 <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
-                                    {attendeeSuggestions.map((m) => (
-                                        <li
-                                            key={m.id}
-                                            className="p-2 text-sm hover:bg-white/10 cursor-pointer flex items-center gap-2"
-                                            onClick={() => addMemberAttendee(m)}
-                                        >
-                                            {m.avatarUrl ? (
-                                                <img
-                                                    src={m.avatarUrl}
-                                                    alt={m.name}
-                                                    className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20"
-                                                />
-                                            ) : (
-                                                <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
-                                                    {m.name.charAt(0).toUpperCase()}
-                                                </div>
-                                            )}
-                                            <div className="min-w-0">
-                                                <div className="text-xs font-medium text-white">
-                                                    {m.name}
-                                                </div>
-                                                {m.headline && (
-                                                    <div className="text-[11px] text-white/60 truncate">
-                                                        {m.headline}
+                                    {attendeeSuggestions.map(
+                                        (m) => (
+                                            <li
+                                                key={
+                                                    m.id
+                                                }
+                                                className="p-2 text-sm hover:bg-white/10 cursor-pointer flex items-center gap-2"
+                                                onClick={() =>
+                                                    addMemberAttendee(
+                                                        m,
+                                                    )
+                                                }
+                                            >
+                                                {m.avatarUrl ? (
+                                                    <img
+                                                        src={
+                                                            m.avatarUrl
+                                                        }
+                                                        alt={
+                                                            m.name
+                                                        }
+                                                        className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20"
+                                                    />
+                                                ) : (
+                                                    <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                        {m.name
+                                                            .charAt(
+                                                                0,
+                                                            )
+                                                            .toUpperCase()}
                                                     </div>
                                                 )}
-                                            </div>
-                                        </li>
-                                    ))}
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-medium text-white">
+                                                        {
+                                                            m.name
+                                                        }
+                                                    </div>
+                                                    {m.headline && (
+                                                        <div className="text-[11px] text-white/60 truncate">
+                                                            {
+                                                                m.headline
+                                                            }
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </li>
+                                        ),
+                                    )}
                                 </ul>
                             )}
                         </div>
@@ -1468,23 +1929,44 @@ export default function EditEventPage({ params }: Props) {
                                             key={`m-${a.member.id}`}
                                             className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
                                         >
-                                            {a.member.avatarUrl ? (
+                                            {a.member
+                                                .avatarUrl ? (
                                                 <img
-                                                    src={a.member.avatarUrl}
-                                                    alt={a.member.name}
+                                                    src={
+                                                        a
+                                                            .member
+                                                            .avatarUrl
+                                                    }
+                                                    alt={
+                                                        a
+                                                            .member
+                                                            .name
+                                                    }
                                                     className="w-6 h-6 rounded-full object-cover ring-1 ring-white/20"
                                                 />
                                             ) : (
                                                 <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
-                                                    {a.member.name.charAt(0).toUpperCase()}
+                                                    {a.member.name
+                                                        .charAt(
+                                                            0,
+                                                        )
+                                                        .toUpperCase()}
                                                 </div>
                                             )}
                                             <span className="text-xs text-white">
-                                                {a.member.name}
+                                                {
+                                                    a
+                                                        .member
+                                                        .name
+                                                }
                                             </span>
                                             <button
                                                 type="button"
-                                                onClick={() => removeAttendee(idx)}
+                                                onClick={() =>
+                                                    removeAttendee(
+                                                        idx,
+                                                    )
+                                                }
                                                 className="text-[11px] text-white/60 hover:text-white"
                                                 aria-label={`Remove ${a.member.name}`}
                                             >
@@ -1501,7 +1983,11 @@ export default function EditEventPage({ params }: Props) {
                                             </span>
                                             <button
                                                 type="button"
-                                                onClick={() => removeAttendee(idx)}
+                                                onClick={() =>
+                                                    removeAttendee(
+                                                        idx,
+                                                    )
+                                                }
                                                 className="text-[11px] text-white/60 hover:text-white"
                                                 aria-label={`Remove invite ${a.value}`}
                                             >
@@ -1527,79 +2013,123 @@ export default function EditEventPage({ params }: Props) {
                             )}
                         </div>
                         {projectsError && (
-                            <p className="text-xs text-red-300">{projectsError}</p>
+                            <p className="text-xs text-red-300">
+                                {projectsError}
+                            </p>
                         )}
 
                         <div className="space-y-2">
                             <input
                                 value={projectQ}
-                                onChange={(e) => setProjectQ(e.target.value)}
+                                onChange={(e) =>
+                                    setProjectQ(
+                                        e.target.value,
+                                    )
+                                }
                                 placeholder="Search projects by title, year, or tag"
                                 className={searchInputCls}
                             />
                             {!!projectSuggestions.length && (
                                 <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
-                                    {projectSuggestions.map((p) => (
-                                        <li
-                                            key={p.id}
-                                            className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
-                                            onClick={() => addProject(p)}
-                                        >
-                                            {p.cover ? (
-                                                <img
-                                                    src={p.cover}
-                                                    alt={p.title}
-                                                    className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
-                                                />
-                                            ) : (
-                                                <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
-                                                    {p.title.charAt(0).toUpperCase()}
-                                                </div>
-                                            )}
-                                            <div className="min-w-0">
-                                                <div className="text-xs font-medium text-white truncate">
-                                                    {p.title}
-                                                </div>
-                                                {p.year && (
-                                                    <div className="text-[11px] text-white/60">
-                                                        {p.year}
+                                    {projectSuggestions.map(
+                                        (p) => (
+                                            <li
+                                                key={
+                                                    p.id
+                                                }
+                                                className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                                onClick={() =>
+                                                    addProject(
+                                                        p,
+                                                    )
+                                                }
+                                            >
+                                                {p.cover ? (
+                                                    <img
+                                                        src={
+                                                            p.cover
+                                                        }
+                                                        alt={
+                                                            p.title
+                                                        }
+                                                        className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
+                                                    />
+                                                ) : (
+                                                    <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                        {p.title
+                                                            .charAt(
+                                                                0,
+                                                            )
+                                                            .toUpperCase()}
                                                     </div>
                                                 )}
-                                            </div>
-                                        </li>
-                                    ))}
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-medium text-white truncate">
+                                                        {
+                                                            p.title
+                                                        }
+                                                    </div>
+                                                    {p.year && (
+                                                        <div className="text-[11px] text-white/60">
+                                                            {
+                                                                p.year
+                                                            }
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </li>
+                                        ),
+                                    )}
                                 </ul>
                             )}
                         </div>
 
                         {selectedProjects.length > 0 && (
                             <div className="mt-3 flex flex-wrap gap-2">
-                                {selectedProjects.map((p) => (
-                                    <button
-                                        key={p.slug}
-                                        type="button"
-                                        onClick={() => removeProject(p.slug)}
-                                        className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
-                                    >
-                                        {p.cover ? (
-                                            <img
-                                                src={p.cover}
-                                                alt={p.title}
-                                                className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
-                                            />
-                                        ) : (
-                                            <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
-                                                {p.title.charAt(0).toUpperCase()}
-                                            </div>
-                                        )}
-                                        <span className="text-xs text-white">
-                                            {p.title}
-                                        </span>
-                                        <span className="text-[11px] text-white/60 group-hover:text-red-300">
-                                            ✕
-                                        </span>
-                                    </button>
-                                ))}
+                                {selectedProjects.map(
+                                    (p) => (
+                                        <button
+                                            key={
+                                                p.slug
+                                            }
+                                            type="button"
+                                            onClick={() =>
+                                                removeProject(
+                                                    p.slug,
+                                                )
+                                            }
+                                            className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
+                                        >
+                                            {p.cover ? (
+                                                <img
+                                                    src={
+                                                        p.cover
+                                                    }
+                                                    alt={
+                                                        p.title
+                                                    }
+                                                    className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
+                                                />
+                                            ) : (
+                                                <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                    {p.title
+                                                        .charAt(
+                                                            0,
+                                                        )
+                                                        .toUpperCase()}
+                                                </div>
+                                            )}
+                                            <span className="text-xs text-white">
+                                                {
+                                                    p.title
+                                                }
+                                            </span>
+                                            <span className="text-[11px] text-white/60 group-hover:text-red-300">
+                                                ✕
+                                            </span>
+                                        </button>
+                                    ),
+                                )}
                             </div>
                         )}
                     </div>
@@ -1611,7 +2141,9 @@ export default function EditEventPage({ params }: Props) {
                             disabled={submitting}
                             className="w-full px-4 py-2 rounded-md bg-white text-black font-semibold disabled:opacity-60"
                         >
-                            {submitting ? "Saving…" : "Save changes"}
+                            {submitting
+                                ? "Saving…"
+                                : "Save changes"}
                         </button>
                         <div className="mt-3 text-center">
                             <Link
@@ -1620,6 +2152,52 @@ export default function EditEventPage({ params }: Props) {
                             >
                                 Cancel
                             </Link>
+                        </div>
+
+                        {/* Danger zone: delete event */}
+                        <div className="mt-5 border-t border-white/10 pt-4">
+                            <h2 className="text-sm font-semibold text-red-300">
+                                Danger zone
+                            </h2>
+                            <p className="mt-1 text-xs text-white/60">
+                                Deleting this event will
+                                permanently remove it and
+                                all data directly related
+                                to it. This cannot be
+                                undone.
+                            </p>
+                            <label className="mt-3 block text-xs text-white/70">
+                                Type{" "}
+                                <code className="rounded bg-white/10 px-1 py-0.5 text-[11px]">
+                                    {params.slug}
+                                </code>{" "}
+                                to confirm deletion.
+                            </label>
+                            <input
+                                value={deleteConfirmSlug}
+                                onChange={(e) =>
+                                    setDeleteConfirmSlug(
+                                        e.target.value,
+                                    )
+                                }
+                                className={`${inputCls()} mt-1`}
+                                placeholder={params.slug}
+                            />
+                            <button
+                                type="button"
+                                onClick={onDelete}
+                                disabled={
+                                    deleting ||
+                                    !accessToken ||
+                                    deleteConfirmSlug.trim() !==
+                                    params.slug
+                                }
+                                className="mt-3 w-full px-4 py-2 rounded-md bg-red-600 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                            >
+                                {deleting
+                                    ? "Deleting…"
+                                    : "Delete event"}
+                            </button>
                         </div>
                     </div>
                 </aside>

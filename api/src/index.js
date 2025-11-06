@@ -236,6 +236,10 @@ const qpSchema = z.object({
     size: z.string().optional(),
 });
 
+const deleteBySlugSchema = z.object({
+    confirmSlug: z.string().min(1),
+});
+
 /* ------------------------------ Members ------------------------------ */
 app.get("/api/members", async (req, res) => {
     const qp = qpSchema.parse(req.query);
@@ -1626,6 +1630,153 @@ This invite was sent from ${MAIL_FROM}.
         .json({ ok: true, slug: updated.slug, id: updated.id });
 });
 
+app.delete("/api/projects/:slug", async (req, res) => {
+    console.log("========== [DELETE /api/projects/:slug] BEGIN ==========");
+    console.log("[DELETE /api/projects/:slug] slug =", req.params.slug);
+
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn(
+            "[DELETE /api/projects/:slug] blocked: unauthenticated",
+        );
+        console.log(
+            "========== [DELETE /api/projects/:slug] END (unauthenticated) ==========",
+        );
+        return;
+    }
+
+    const userRoles = (user.roles || []).map((r) => r.role);
+    console.log(
+        "[DELETE /api/projects/:slug] authenticated user id =",
+        user.id,
+        "roles =",
+        userRoles,
+    );
+
+    const project = await prisma.project.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+            members: true,
+        },
+    });
+
+    if (!project) {
+        console.warn(
+            "[DELETE /api/projects/:slug] 404 for slug",
+            req.params.slug,
+        );
+        console.log(
+            "========== [DELETE /api/projects/:slug] END (not found) ==========",
+        );
+        return res
+            .status(404)
+            .json({ ok: false, error: "Not found" });
+    }
+
+    const isAdminOrModerator = userRoles.some((r) =>
+        ["ADMIN", "MODERATOR"].includes(r),
+    );
+
+    let isCreator = false;
+    if (user.member && user.member.id) {
+        isCreator = (project.members || []).some(
+            (m) => m.memberId === user.member.id && !!m.isCreator,
+        );
+    }
+
+    if (!isAdminOrModerator && !isCreator) {
+        console.warn(
+            "[DELETE /api/projects/:slug] blocked: insufficient permissions for user",
+            user.id,
+        );
+        console.log(
+            "========== [DELETE /api/projects/:slug] END (forbidden) ==========",
+        );
+        return res
+            .status(403)
+            .json({ ok: false, error: "Insufficient permissions" });
+    }
+
+    const parsed = deleteBySlugSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[DELETE /api/projects/:slug] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [DELETE /api/projects/:slug] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+
+    const { confirmSlug } = parsed.data;
+    if (confirmSlug !== project.slug) {
+        console.warn(
+            "[DELETE /api/projects/:slug] slug confirmation mismatch, got",
+            confirmSlug,
+            "expected",
+            project.slug,
+        );
+        console.log(
+            "========== [DELETE /api/projects/:slug] END (slug mismatch) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Slug confirmation does not match",
+        });
+    }
+
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.projectTech.deleteMany({
+                where: { projectId: project.id },
+            });
+            await tx.projectTag.deleteMany({
+                where: { projectId: project.id },
+            });
+            await tx.projectBlog.deleteMany({
+                where: { projectId: project.id },
+            });
+            await tx.eventProject.deleteMany({
+                where: { projectId: project.id },
+            });
+            await tx.memberProject.deleteMany({
+                where: { projectId: project.id },
+            });
+            await tx.projectInvite.deleteMany({
+                where: { projectId: project.id },
+            });
+            // If new relations to projectId are added in the future,
+            // they should also be deleted here.
+
+            await tx.project.delete({
+                where: { id: project.id },
+            });
+        });
+
+        console.log(
+            "========== [DELETE /api/projects/:slug] END (success) ==========",
+        );
+        return res.status(200).json({ ok: true });
+    } catch (err) {
+        console.error(
+            "[DELETE /api/projects/:slug] error during deletion",
+            err,
+        );
+        console.log(
+            "========== [DELETE /api/projects/:slug] END (error) ==========",
+        );
+        return res.status(500).json({
+            ok: false,
+            error: "Failed to delete project",
+        });
+    }
+});
+
 /* --------------------------- Upload: event photo --------------------------- */
 const eventsDir = path.join(UPLOAD_ROOT, "events");
 fs.mkdirSync(eventsDir, { recursive: true });
@@ -2661,6 +2812,156 @@ This invite was sent from ${MAIL_FROM}.
     return res
         .status(200)
         .json({ ok: true, slug: updated.slug, id: updated.id });
+});
+
+app.delete("/api/events/:slug", async (req, res) => {
+    console.log("========== [DELETE /api/events/:slug] BEGIN ==========");
+    console.log("[DELETE /api/events/:slug] slug =", req.params.slug);
+
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn(
+            "[DELETE /api/events/:slug] blocked: unauthenticated",
+        );
+        console.log(
+            "========== [DELETE /api/events/:slug] END (unauthenticated) ==========",
+        );
+        return;
+    }
+
+    const roles = (user.roles || []).map((r) => r.role);
+    console.log(
+        "[DELETE /api/events/:slug] authenticated user id =",
+        user.id,
+        "roles =",
+        roles,
+    );
+
+    const event = await prisma.event.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+            attendees: true,
+        },
+    });
+
+    if (!event) {
+        console.warn(
+            "[DELETE /api/events/:slug] 404 for slug",
+            req.params.slug,
+        );
+        console.log(
+            "========== [DELETE /api/events/:slug] END (not found) ==========",
+        );
+        return res
+            .status(404)
+            .json({ ok: false, error: "Not found" });
+    }
+
+    const isAdminOrModerator = roles.some((r) =>
+        ["ADMIN", "MODERATOR"].includes(r),
+    );
+
+    let isCreator = false;
+    if (user.member && user.member.id) {
+        isCreator = (event.attendees || []).some(
+            (a) =>
+                a.memberId === user.member.id &&
+                typeof a.role === "string" &&
+                a.role === "CREATOR",
+        );
+    }
+
+    if (!isAdminOrModerator && !isCreator) {
+        console.warn(
+            "[DELETE /api/events/:slug] blocked: insufficient permissions for user",
+            user.id,
+        );
+        console.log(
+            "========== [DELETE /api/events/:slug] END (forbidden) ==========",
+        );
+        return res
+            .status(403)
+            .json({ ok: false, error: "Insufficient permissions" });
+    }
+
+    const parsed = deleteBySlugSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[DELETE /api/events/:slug] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [DELETE /api/events/:slug] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+
+    const { confirmSlug } = parsed.data;
+    if (confirmSlug !== event.slug) {
+        console.warn(
+            "[DELETE /api/events/:slug] slug confirmation mismatch, got",
+            confirmSlug,
+            "expected",
+            event.slug,
+        );
+        console.log(
+            "========== [DELETE /api/events/:slug] END (slug mismatch) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Slug confirmation does not match",
+        });
+    }
+
+    try {
+        await prisma.$transaction(async (tx) => {
+            // Detach this event from any projects that have a direct eventId FK
+            await tx.project.updateMany({
+                where: { eventId: event.id },
+                data: { eventId: null },
+            });
+
+            await tx.eventProject.deleteMany({
+                where: { eventId: event.id },
+            });
+
+            await tx.memberEvent.deleteMany({
+                where: { eventId: event.id },
+            });
+
+            await tx.eventInvite.deleteMany({
+                where: { eventId: event.id },
+            });
+
+            // If new relations to eventId are added in the future,
+            // they should also be deleted here.
+
+            await tx.event.delete({
+                where: { id: event.id },
+            });
+        });
+
+        console.log(
+            "========== [DELETE /api/events/:slug] END (success) ==========",
+        );
+        return res.status(200).json({ ok: true });
+    } catch (err) {
+        console.error(
+            "[DELETE /api/events/:slug] error during deletion",
+            err,
+        );
+        console.log(
+            "========== [DELETE /api/events/:slug] END (error) ==========",
+        );
+        return res.status(500).json({
+            ok: false,
+            error: "Failed to delete event",
+        });
+    }
 });
 
 /* -------------------------- Invite consumption -------------------------- */
