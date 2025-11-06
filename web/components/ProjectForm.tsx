@@ -248,6 +248,10 @@ type TeamEntry = {
     isCreator?: boolean;
 };
 
+type InviteEntry = {
+    value: string;
+};
+
 type EventRef = {
     id: string;
     slug: string;
@@ -379,6 +383,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
     const [membersError, setMembersError] = React.useState<string | null>(null);
     const [memberQ, setMemberQ] = React.useState("");
     const [team, setTeam] = React.useState<TeamEntry[]>([]);
+    const [invites, setInvites] = React.useState<InviteEntry[]>([]);
 
     // events
     const [events, setEvents] = React.useState<EventRef[]>([]);
@@ -435,7 +440,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
             setEventsLoading(true);
             setEventsError(null);
             try {
-                const res = await fetch("/api/events?size=999", { credentials: "include" });
+                const url = new URL("/api/events", API_BASE);
+                url.searchParams.set("size", "999");
+                const res = await fetch(url.toString(), { credentials: "include" });
                 if (!res.ok) throw new Error("Failed to load events");
                 const data = await res.json();
                 const items: any[] = Array.isArray(data) ? data : data.items ?? [];
@@ -462,7 +469,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
             setBlogsLoading(true);
             setBlogsError(null);
             try {
-                const res = await fetch("/api/blogs?size=999", { credentials: "include" });
+                const url = new URL("/api/blogs", API_BASE);
+                url.searchParams.set("size", "999");
+                const res = await fetch(url.toString(), { credentials: "include" });
                 if (!res.ok) throw new Error("Failed to load blogs");
                 const data = await res.json();
                 const items: any[] = Array.isArray(data) ? data : data.items ?? [];
@@ -555,7 +564,6 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                         const found = members.find((mm) => mm.slug === slugVal);
                         if (!found) continue;
 
-                        // Trust backend isCreator flag only; don't infer from label or slug.
                         const isCreator = !!m.isCreator;
 
                         entries.push({
@@ -746,6 +754,23 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
         setErrors((e) => ({ ...e, team: undefined }));
     }
 
+    function addInvite(value: string) {
+        const trimmed = (value || "").trim();
+        if (!trimmed) return;
+        setInvites((prev) => {
+            const lower = trimmed.toLowerCase();
+            if (prev.some((inv) => inv.value.toLowerCase() === lower)) {
+                return prev;
+            }
+            return [...prev, { value: trimmed }];
+        });
+        setMemberQ("");
+    }
+
+    function removeInvite(idx: number) {
+        setInvites((prev) => prev.filter((_, i) => i !== idx));
+    }
+
     function removeTeamMember(memberId: string) {
         setTeam((prev) => {
             const target = prev.find((t) => t.member.id === memberId);
@@ -761,6 +786,22 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
         setTeam((prev) =>
             prev.map((t) => (t.member.id === memberId ? { ...t, role } : t)),
         );
+    }
+
+    function handleMemberSearchKeyDown(
+        e: React.KeyboardEvent<HTMLInputElement>,
+        suggestions: Member[],
+    ) {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        const query = memberQ.trim();
+        if (!query) return;
+        const first = suggestions[0];
+        if (first) {
+            addTeamMember(first);
+        } else {
+            addInvite(query);
+        }
     }
 
     function toggleEventSlug(slug: string) {
@@ -879,6 +920,20 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 }))
                 .filter((l) => l.label || l.url);
 
+            const memberPayload = team.map((t) => ({
+                memberId: t.member.id,
+                memberSlug: t.member.slug,
+                role: t.role.trim() || null,
+                isCreator: !!t.isCreator,
+            }));
+
+            const invitePayload = invites
+                .map((inv) => inv.value.trim())
+                .filter(Boolean)
+                .map((email) => ({
+                    value: email,
+                }));
+
             const payload: any = {
                 title: state.title.trim(),
                 summary: state.summary.trim() || null,
@@ -893,12 +948,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 cover: coverUrl,
                 tags: state.tags,
                 techStack: state.techStack,
-                members: team.map((t) => ({
-                    memberId: t.member.id,
-                    memberSlug: t.member.slug,
-                    role: t.role.trim() || null,
-                    isCreator: !!t.isCreator,
-                })),
+                members: [...memberPayload, ...invitePayload],
                 eventSlugs: selectedEventSlugs,
                 blogSlugs: selectedBlogSlugs,
                 links: cleanLinks,
@@ -1311,18 +1361,22 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                 <h2 className="text-sm font-semibold">Team & roles</h2>
                                 <p className="text-xs text-white/60">
                                     Add members who worked on this project and define their roles.
+                                    You can also type an email and press Enter to add an invite.
                                 </p>
                             </div>
                         </div>
 
                         <div>
-                            <label className="block text-xs mb-1">Search members</label>
+                            <label className="block text-xs mb-1">Search members / invite</label>
                             <input
                                 type="text"
                                 value={memberQ}
                                 onChange={(e) => setMemberQ(e.target.value)}
+                                onKeyDown={(e) =>
+                                    handleMemberSearchKeyDown(e, memberSuggestions)
+                                }
                                 className={searchInputCls()}
-                                placeholder="Search by name or slug…"
+                                placeholder="Search by name or slug… or type an email and press Enter to invite"
                                 disabled={
                                     membersLoading || !hasAuth || loadingProject || submitting
                                 }
@@ -1445,6 +1499,37 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                 </ul>
                             )}
                         </div>
+
+                        {invites.length > 0 && (
+                            <div className="mt-3">
+                                <div className="text-xs uppercase tracking-widest text-white/60 mb-1">
+                                    Invites to send
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {invites.map((inv, idx) => (
+                                        <span
+                                            key={`${inv.value}-${idx}`}
+                                            className="inline-flex items-center gap-1 rounded-full bg-white/5 ring-1 ring-white/10 px-2 py-1 text-[11px]"
+                                        >
+                                            <span className="font-mono">
+                                                {inv.value}
+                                            </span>
+                                            <span className="text-white/50">
+                                                invite
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeInvite(idx)}
+                                                className="text-white/60 hover:text-red-300"
+                                                aria-label={`Remove invite ${inv.value}`}
+                                            >
+                                                ✕
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Related events */}

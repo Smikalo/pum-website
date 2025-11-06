@@ -1,3 +1,4 @@
+// web/app/projects/[slug]/page.tsx
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
@@ -266,6 +267,14 @@ type BlogPost = {
 
 type ProjectLinks = Record<string, string>;
 
+type ProjectInvite = {
+    id: string;
+    email: string;
+    role?: string | null;
+    status?: string | null;
+    createdAt?: string | null;
+};
+
 type Project = {
     id?: string;
     slug: string;
@@ -285,6 +294,7 @@ type Project = {
     gallery?: string[];
     blogPosts?: BlogPost[];
     links?: ProjectLinks | null;
+    invites?: ProjectInvite[];
     createdAt?: string | null;
     updatedAt?: string | null;
 };
@@ -337,6 +347,16 @@ function normalizeProjectDetail(p: any): Project {
         }))
         : [];
 
+    const invites: ProjectInvite[] = Array.isArray(p.invites)
+        ? p.invites.map((inv: any) => ({
+            id: String(inv.id ?? inv.email ?? inv.tokenHash ?? Math.random()),
+            email: inv.email ?? "",
+            role: inv.role ?? null,
+            status: inv.status ?? null,
+            createdAt: inv.createdAt ?? null,
+        }))
+        : [];
+
     return {
         id: p.id ?? p.slug,
         slug: p.slug,
@@ -363,6 +383,7 @@ function normalizeProjectDetail(p: any): Project {
         gallery: Array.isArray(p.images) ? p.images : p.gallery ?? [],
         blogPosts,
         links: (p.links as ProjectLinks | null) ?? null,
+        invites,
         createdAt: p.createdAt ?? null,
         updatedAt: p.updatedAt ?? null,
     };
@@ -434,6 +455,29 @@ function labelForLink(label: string, href: string): string {
     }
 }
 
+function formatInviteStatusLabel(status?: string | null): string {
+    if (!status) return "Pending";
+    const up = String(status).toUpperCase();
+    if (up === "PENDING") return "Pending";
+    if (up === "ACCEPTED") return "Accepted";
+    if (up === "CANCELLED" || up === "CANCELED") return "Cancelled";
+    if (up === "EXPIRED") return "Expired";
+    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+}
+
+function inviteStatusClasses(status?: string | null): string {
+    const base =
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] uppercase tracking-wide";
+    const up = status?.toUpperCase();
+    if (!up || up === "PENDING") {
+        return `${base} border-amber-400/70 text-amber-200 bg-amber-500/10`;
+    }
+    if (up === "ACCEPTED") {
+        return `${base} border-emerald-400/70 text-emerald-200 bg-emerald-500/10`;
+    }
+    return `${base} border-white/30 text-white/80 bg-white/5`;
+}
+
 /* ---------- Page ---------- */
 export default async function ProjectDetailPage({ params }: { params: { slug: string } }) {
     const project = await getProjectBySlug(params.slug);
@@ -466,6 +510,8 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
     const createdAt = formatDate(project.createdAt);
     const updatedAt = formatDate(project.updatedAt);
     const hasLinks = project.links && Object.keys(project.links).length > 0;
+    const invites = project.invites || [];
+    const hasInvites = invites.length > 0;
 
     return (
         <section className="section">
@@ -581,7 +627,7 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                         <Link
                                             key={`${ev.slug}-${i}`}
                                             href={`/events/${ev.slug}`}
-                                            className="flex gap-3 p-2 rounded-lg hover:bg白/5 transition"
+                                            className="flex gap-3 p-2 rounded-lg hover:bg-white/5 transition"
                                         >
                                             {coverUrl ? (
                                                 <img
@@ -749,6 +795,36 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                             <p className="text-white/60">Team coming soon.</p>
                         )}
                     </div>
+
+                    {hasInvites && (
+                        <div className="card p-5">
+                            <h2 className="text-lg font-semibold mb-2">Invitations</h2>
+                            <ul className="space-y-2 text-sm">
+                                {invites.map((inv) => {
+                                    const sentAt = formatDate(inv.createdAt);
+                                    const statusLabel = formatInviteStatusLabel(inv.status);
+                                    const pillClass = inviteStatusClasses(inv.status);
+                                    return (
+                                        <li
+                                            key={inv.id}
+                                            className="flex items-center justify-between gap-3"
+                                        >
+                                            <div className="min-w-0">
+                                                <div className="font-mono text-xs truncate">
+                                                    {inv.email}
+                                                </div>
+                                                <div className="text-[11px] text-white/60">
+                                                    {inv.role || "Invite"}
+                                                    {sentAt ? ` • Sent ${sentAt}` : ""}
+                                                </div>
+                                            </div>
+                                            <span className={pillClass}>{statusLabel}</span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </div>
+                    )}
 
                     {(project.status ||
                         project.year ||
