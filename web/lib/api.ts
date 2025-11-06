@@ -1,4 +1,3 @@
-// web/lib/api.ts
 import { API_BASE } from "@/lib/config";
 
 type Json = Record<string, any>;
@@ -73,7 +72,7 @@ export async function uploadAvatar(token: string, file: File) {
     });
 }
 
-// CV upload (PDF)
+// CV upload (PDF) for current user
 export async function uploadCv(token: string, file: File) {
     const fd = new FormData();
     fd.append("cv", file);
@@ -169,5 +168,61 @@ export async function deleteProject(
         method: "DELETE",
         token,
         body: JSON.stringify({ confirmSlug }),
+    });
+}
+
+// Update another member's profile (admin/mod only, backend-enforced)
+export async function updateMemberProfile(
+    token: string,
+    slug: string,
+    body: Json,
+) {
+    return fetchAuth(`/api/members/${slug}`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify(body),
+    });
+}
+
+// Delete a member (admin/mod only, backend-enforced; requires slug confirmation)
+export async function deleteMember(
+    token: string,
+    slug: string,
+    confirmSlug: string,
+) {
+    return fetchAuth(`/api/members/${slug}`, {
+        method: "DELETE",
+        token,
+        body: JSON.stringify({ confirmSlug }),
+    });
+}
+
+// Upload a member's CV (admin/mod member-admin page; PDF)
+export async function uploadMemberCv(
+    token: string,
+    slug: string,
+    file: File,
+) {
+    const fd = new FormData();
+    fd.append("cv", file);
+    return fetchAuth(`/api/members/${slug}/cv`, {
+        method: "POST",
+        token,
+        body: fd as any,
+    });
+}
+
+// Upload a member's avatar (admin/mod member-admin page; image)
+export async function uploadMemberAvatar(
+    token: string,
+    slug: string,
+    file: File,
+) {
+    const fd = new FormData();
+    fd.append("avatar", file);
+    return fetchAuth(`/api/members/${slug}/avatar`, {
+        method: "POST",
+        token,
+        body: fd as any,
     });
 }

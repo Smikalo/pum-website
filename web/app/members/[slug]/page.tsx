@@ -4,6 +4,7 @@ import Link from "next/link";
 import { API_BASE } from "@/lib/config";
 import type { Metadata } from "next";
 import { toImageSrc } from "@/lib/images";
+import EditMemberButton from "@/components/EditMemberButton";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ type ApiMember = {
     techStack?: (string | null)[] | null;
     expertise?: (string | null)[] | null;
     cvUrl?: string | null;
+    isAdminMember?: boolean | null;
 
     projects?: {
         slug: string;
@@ -64,6 +66,7 @@ type UiMember = {
     techStack: string[];
     expertise: string[];
     cvUrl?: string | null;
+    isAdminMember: boolean;
 
     projects: {
         slug: string;
@@ -85,7 +88,8 @@ type UiMember = {
 };
 
 /* ---------------------------- Small utils ---------------------------- */
-const isString = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
+const isString = (v: unknown): v is string =>
+    typeof v === "string" && v.trim().length > 0;
 
 /** normalize any image-like value to a usable src (undefined if bad) */
 function toImageOrUndef(v?: string | null): string | undefined {
@@ -96,7 +100,9 @@ function toImageOrUndef(v?: string | null): string | undefined {
 
 /* ---------------------------- Fetch helpers ---------------------------- */
 async function getMemberBySlug(slug: string): Promise<UiMember | null> {
-    const res = await fetch(`${API_BASE}/api/members/${slug}`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE}/api/members/${slug}`, {
+        cache: "no-store",
+    });
     if (res.status === 404) return null;
     if (!res.ok) throw new Error("Failed to load member");
 
@@ -106,7 +112,10 @@ async function getMemberBySlug(slug: string): Promise<UiMember | null> {
     const avatarSrc = toImageOrUndef(m.avatarUrl ?? m.avatar) ?? null;
 
     // arrays → string[] (filter out null/empty)
-    const photos = (m.photos ?? []).filter(isString).map((p) => toImageSrc(p)).filter(isString);
+    const photos = (m.photos ?? [])
+        .filter(isString)
+        .map((p) => toImageSrc(p))
+        .filter(isString);
     const skills = (m.skills ?? []).filter(isString);
     const techStack = (m.techStack ?? []).filter(isString);
     const expertise = (m.expertise ?? []).filter(isString);
@@ -148,22 +157,32 @@ async function getMemberBySlug(slug: string): Promise<UiMember | null> {
         techStack,
         expertise,
         cvUrl: m.cvUrl ?? null,
+        isAdminMember: !!m.isAdminMember,
         projects,
         events,
     };
 }
 
 /* ------------------------- Dynamic metadata ------------------------- */
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+export async function generateMetadata({
+                                           params,
+                                       }: {
+    params: { slug: string };
+}): Promise<Metadata> {
     const member = await getMemberBySlug(params.slug);
     return {
         title: member ? `${member.name} – PUM` : "Member – PUM",
-        description: member?.headline || member?.bio || "PUM member profile",
+        description:
+            member?.headline || member?.bio || "PUM member profile",
     };
 }
 
 /* -------------------------------- Page -------------------------------- */
-export default async function MemberDetailPage({ params }: { params: { slug: string } }) {
+export default async function MemberDetailPage({
+                                                   params,
+                                               }: {
+    params: { slug: string };
+}) {
     const member = await getMemberBySlug(params.slug);
 
     if (!member) {
@@ -171,7 +190,10 @@ export default async function MemberDetailPage({ params }: { params: { slug: str
             <section className="section">
                 <h1 className="display">Member not found</h1>
                 <p className="mt-4">
-                    <Link href="/members" className="underline underline-offset-4">
+                    <Link
+                        href="/members"
+                        className="underline underline-offset-4"
+                    >
                         Back to members
                     </Link>
                 </p>
@@ -185,31 +207,59 @@ export default async function MemberDetailPage({ params }: { params: { slug: str
     return (
         <section className="section">
             <header className="mb-6 flex flex-col md:flex-row items-start md:items-center gap-4">
-                <img src={avatar} alt={member.name} className="w-28 h-28 rounded-full object-cover ring-2 ring-white/10" />
+                <img
+                    src={avatar}
+                    alt={member.name}
+                    className="w-28 h-28 rounded-full object-cover ring-2 ring-white/10"
+                />
                 <div className="flex-1">
                     <p className="kicker">MEMBER</p>
                     <h1 className="display">{member.name}</h1>
-                    {member.headline && <p className="text-white/70 mt-1">{member.headline}</p>}
+                    {member.headline && (
+                        <p className="text-white/70 mt-1">
+                            {member.headline}
+                        </p>
+                    )}
                     <div className="mt-2 flex flex-wrap gap-2">
                         {member.expertise.map((x) => (
-                            <span key={x} className="text-xs px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
-                {x}
-              </span>
+                            <span
+                                key={x}
+                                className="text-xs px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                            >
+                                {x}
+                            </span>
                         ))}
                     </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                    {linkItems.length ? (
-                        linkItems.map((l) => (
-                            <a key={l.href} className="btn-secondary" href={l.href} target={l.external ? "_blank" : undefined} rel="noreferrer">
-                                {l.label}
-                            </a>
-                        ))
-                    ) : (
-                        <Link className="btn-primary" href="/contact">
-                            Contact
-                        </Link>
-                    )}
+                <div className="flex flex-col items-end gap-2">
+                    <EditMemberButton
+                        slug={member.slug}
+                        isAdminMember={member.isAdminMember}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                        {linkItems.length ? (
+                            linkItems.map((l) => (
+                                <a
+                                    key={l.href}
+                                    className="btn-secondary"
+                                    href={l.href}
+                                    target={
+                                        l.external ? "_blank" : undefined
+                                    }
+                                    rel="noreferrer"
+                                >
+                                    {l.label}
+                                </a>
+                            ))
+                        ) : (
+                            <Link
+                                className="btn-primary"
+                                href="/contact"
+                            >
+                                Contact
+                            </Link>
+                        )}
+                    </div>
                 </div>
             </header>
 
@@ -218,41 +268,84 @@ export default async function MemberDetailPage({ params }: { params: { slug: str
                 <div className="lg:col-span-3 space-y-6">
                     {(member.bio || member.shortBio) && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">About</h2>
-                            <MarkdownView markdown={member.bio ?? member.shortBio ?? ""} />
+                            <h2 className="text-lg font-semibold mb-3">
+                                About
+                            </h2>
+                            <MarkdownView
+                                markdown={
+                                    member.bio ??
+                                    member.shortBio ??
+                                    ""
+                                }
+                            />
                         </div>
                     )}
 
                     {member.projects.length > 0 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">Projects</h2>
+                            <h2 className="text-lg font-semibold mb-3">
+                                Projects
+                            </h2>
                             <div className="space-y-4">
                                 {member.projects.map((p) => (
-                                    <div key={p.slug} className="flex gap-3">
-                                        {p.cover && <img src={p.cover} alt={p.title} className="w-36 h-24 object-cover rounded-md ring-1 ring-white/10" />}
+                                    <div
+                                        key={p.slug}
+                                        className="flex gap-3"
+                                    >
+                                        {p.cover && (
+                                            <img
+                                                src={p.cover}
+                                                alt={p.title}
+                                                className="w-36 h-24 object-cover rounded-md ring-1 ring-white/10"
+                                            />
+                                        )}
                                         <div>
-                                            <div className="font-semibold">{p.title}</div>
+                                            <div className="font-semibold">
+                                                {p.title}
+                                            </div>
                                             {(p.role || p.year) && (
                                                 <div className="text-xs text-white/60">
-                                                    {p.role ? `Role: ${p.role}` : ""}
-                                                    {p.role && p.year ? " • " : ""}
-                                                    {p.year ? `Year: ${p.year}` : ""}
+                                                    {p.role
+                                                        ? `Role: ${p.role}`
+                                                        : ""}
+                                                    {p.role &&
+                                                    p.year
+                                                        ? " • "
+                                                        : ""}
+                                                    {p.year
+                                                        ? `Year: ${p.year}`
+                                                        : ""}
                                                 </div>
                                             )}
-                                            {p.summary && <div className="text-sm text-white/80 mt-1">{p.summary}</div>}
+                                            {p.summary && (
+                                                <div className="text-sm text-white/80 mt-1">
+                                                    {p.summary}
+                                                </div>
+                                            )}
                                             {!!p.tech.length && (
                                                 <div className="mt-2 flex flex-wrap gap-1.5">
-                                                    {p.tech.map((t) => (
-                                                        <span key={t} className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
-                              {t}
-                            </span>
-                                                    ))}
+                                                    {p.tech.map(
+                                                        (t) => (
+                                                            <span
+                                                                key={
+                                                                    t
+                                                                }
+                                                                className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                                            >
+                                                                {t}
+                                                            </span>
+                                                        ),
+                                                    )}
                                                 </div>
                                             )}
                                             {p.slug && (
                                                 <div className="mt-1">
-                                                    <Link href={`/projects/${p.slug}`} className="text-xs underline underline-offset-4">
-                                                        Open project →
+                                                    <Link
+                                                        href={`/projects/${p.slug}`}
+                                                        className="text-xs underline underline-offset-4"
+                                                    >
+                                                        Open project
+                                                        →
                                                     </Link>
                                                 </div>
                                             )}
@@ -265,10 +358,19 @@ export default async function MemberDetailPage({ params }: { params: { slug: str
 
                     {member.photos.length > 0 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">Gallery</h2>
+                            <h2 className="text-lg font-semibold mb-3">
+                                Gallery
+                            </h2>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 {member.photos.map((src, i) => (
-                                    <img key={i} src={src} alt={`${member.name} photo ${i + 1}`} className="w-full h-32 object-cover rounded-md ring-1 ring-white/10" />
+                                    <img
+                                        key={i}
+                                        src={src}
+                                        alt={`${member.name} photo ${
+                                            i + 1
+                                        }`}
+                                        className="w-full h-32 object-cover rounded-md ring-1 ring-white/10"
+                                    />
                                 ))}
                             </div>
                         </div>
@@ -277,9 +379,16 @@ export default async function MemberDetailPage({ params }: { params: { slug: str
                     {/* CV viewer (inline) */}
                     {member.cvUrl && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">Curriculum Vitae</h2>
+                            <h2 className="text-lg font-semibold mb-3">
+                                Curriculum Vitae
+                            </h2>
                             <div className="mb-3">
-                                <a href={member.cvUrl} className="btn-secondary" target="_blank" rel="noreferrer">
+                                <a
+                                    href={member.cvUrl}
+                                    className="btn-secondary"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
                                     Download CV (PDF)
                                 </a>
                             </div>
@@ -298,19 +407,28 @@ export default async function MemberDetailPage({ params }: { params: { slug: str
                 <aside className="lg:col-span-2 space-y-6">
                     {member.location && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-2">Location</h2>
-                            <div className="text-white/80">{member.location}</div>
+                            <h2 className="text-lg font-semibold mb-2">
+                                Location
+                            </h2>
+                            <div className="text-white/80">
+                                {member.location}
+                            </div>
                         </div>
                     )}
 
                     {member.skills.length > 0 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-2">Skills</h2>
+                            <h2 className="text-lg font-semibold mb-2">
+                                Skills
+                            </h2>
                             <div className="flex flex-wrap gap-1.5">
                                 {member.skills.map((s) => (
-                                    <span key={s} className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
-                    {s}
-                  </span>
+                                    <span
+                                        key={s}
+                                        className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                    >
+                                        {s}
+                                    </span>
                                 ))}
                             </div>
                         </div>
@@ -318,12 +436,17 @@ export default async function MemberDetailPage({ params }: { params: { slug: str
 
                     {member.techStack.length > 0 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-2">Tech stack</h2>
+                            <h2 className="text-lg font-semibold mb-2">
+                                Tech stack
+                            </h2>
                             <div className="flex flex-wrap gap-1.5">
                                 {member.techStack.map((s) => (
-                                    <span key={s} className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
-                    {s}
-                  </span>
+                                    <span
+                                        key={s}
+                                        className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                    >
+                                        {s}
+                                    </span>
                                 ))}
                             </div>
                         </div>
@@ -331,23 +454,47 @@ export default async function MemberDetailPage({ params }: { params: { slug: str
 
                     {member.events.length > 0 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-2">Events</h2>
+                            <h2 className="text-lg font-semibold mb-2">
+                                Events
+                            </h2>
                             <ul className="space-y-2">
                                 {member.events.map((ev) => (
-                                    <li key={ev.slug} className="flex items-start gap-3">
+                                    <li
+                                        key={ev.slug}
+                                        className="flex items-start gap-3"
+                                    >
                                         <span className="mt-1 inline-block w-2 h-2 rounded-full bg-cyan-300 ring-1 ring-white/50 shadow-[0_0_12px_rgba(56,189,248,.9)]" />
                                         <div>
-                                            <Link href={`/events/${ev.slug}`} className="font-medium hover:underline">
+                                            <Link
+                                                href={`/events/${ev.slug}`}
+                                                className="font-medium hover:underline"
+                                            >
                                                 {ev.name}
                                             </Link>
-                                            {(ev.dateStart || ev.dateEnd) && (
+                                            {(ev.dateStart ||
+                                                ev.dateEnd) && (
                                                 <div className="text-xs text-white/60">
-                                                    {ev.dateStart ? new Date(ev.dateStart).toLocaleDateString() : ""}
-                                                    {ev.dateStart && ev.dateEnd ? " – " : ""}
-                                                    {ev.dateEnd ? new Date(ev.dateEnd).toLocaleDateString() : ""}
+                                                    {ev.dateStart
+                                                        ? new Date(
+                                                            ev.dateStart,
+                                                        ).toLocaleDateString()
+                                                        : ""}
+                                                    {ev.dateStart &&
+                                                    ev.dateEnd
+                                                        ? " – "
+                                                        : ""}
+                                                    {ev.dateEnd
+                                                        ? new Date(
+                                                            ev.dateEnd,
+                                                        ).toLocaleDateString()
+                                                        : ""}
                                                 </div>
                                             )}
-                                            {ev.role && <div className="text-xs text-white/70">Role: {ev.role}</div>}
+                                            {ev.role && (
+                                                <div className="text-xs text-white/70">
+                                                    Role: {ev.role}
+                                                </div>
+                                            )}
                                         </div>
                                     </li>
                                 ))}
@@ -358,7 +505,10 @@ export default async function MemberDetailPage({ params }: { params: { slug: str
             </div>
 
             <div className="mt-8">
-                <Link href="/members" className="underline underline-offset-4">
+                <Link
+                    href="/members"
+                    className="underline underline-offset-4"
+                >
                     ← Back to all members
                 </Link>
             </div>
@@ -384,33 +534,52 @@ function MarkdownView({ markdown }: { markdown: string }) {
     return (
         <div className="space-y-3 leading-relaxed text-white/90">
             {segments.map((seg, i) =>
-                    seg.type === "code" ? (
-                        <pre
-                            key={`code-${i}`}
-                            className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
-                            aria-label={seg.lang ? `Code block (${seg.lang})` : "Code block"}
-                        >
-            <code>{seg.content}</code>
-          </pre>
-                    ) : (
-                        <BlockText key={`txt-${i}`} text={seg.content} />
-                    )
+                seg.type === "code" ? (
+                    <pre
+                        key={`code-${i}`}
+                        className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
+                        aria-label={
+                            seg.lang
+                                ? `Code block (${seg.lang})`
+                                : "Code block"
+                        }
+                    >
+                        <code>{seg.content}</code>
+                    </pre>
+                ) : (
+                    <BlockText
+                        key={`txt-${i}`}
+                        text={seg.content}
+                    />
+                ),
             )}
         </div>
     );
 }
 
-function splitFenced(input: string): Array<{ type: "text" | "code"; content: string; lang?: string }> {
-    const out: Array<{ type: "text" | "code"; content: string; lang?: string }> = [];
+function splitFenced(
+    input: string,
+): Array<{ type: "text" | "code"; content: string; lang?: string }> {
+    const out: Array<{
+        type: "text" | "code";
+        content: string;
+        lang?: string;
+    }> = [];
     const fence = /```(\w+)?\n([\s\S]*?)```/g;
     let lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = fence.exec(input))) {
-        if (m.index > lastIndex) out.push({ type: "text", content: input.slice(lastIndex, m.index) });
-        out.push({ type: "code", content: m[2].replace(/\n$/, ""), lang: m[1] });
+        if (m.index > lastIndex)
+            out.push({ type: "text", content: input.slice(lastIndex, m.index) });
+        out.push({
+            type: "code",
+            content: m[2].replace(/\n$/, ""),
+            lang: m[1],
+        });
         lastIndex = fence.lastIndex;
     }
-    if (lastIndex < input.length) out.push({ type: "text", content: input.slice(lastIndex) });
+    if (lastIndex < input.length)
+        out.push({ type: "text", content: input.slice(lastIndex) });
     return out;
 }
 
@@ -434,18 +603,27 @@ function BlockText({ text }: { text: string }) {
             const content = hMatch[2];
             blocks.push(
                 level === 1 ? (
-                    <h3 key={`h-${i}`} className="text-2xl font-bold text-white mt-3">
+                    <h3
+                        key={`h-${i}`}
+                        className="text-2xl font-bold text-white mt-3"
+                    >
                         {inline(content)}
                     </h3>
                 ) : level === 2 ? (
-                    <h4 key={`h-${i}`} className="text-xl font-semibold text-white mt-2">
+                    <h4
+                        key={`h-${i}`}
+                        className="text-xl font-semibold text-white mt-2"
+                    >
                         {inline(content)}
                     </h4>
                 ) : (
-                    <h5 key={`h-${i}`} className="text-lg font-semibold text-white mt-2">
+                    <h5
+                        key={`h-${i}`}
+                        className="text-lg font-semibold text-white mt-2"
+                    >
                         {inline(content)}
                     </h5>
-                )
+                ),
             );
             i++;
             continue;
@@ -454,19 +632,25 @@ function BlockText({ text }: { text: string }) {
         // Ordered list
         if (/^\s*\d+\.\s+/.test(line)) {
             const items: React.ReactNode[] = [];
-            while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+            while (
+                i < lines.length &&
+                /^\s*\d+\.\s+/.test(lines[i])
+                ) {
                 const item = lines[i].replace(/^\s*\d+\.\s+/, "");
                 items.push(
                     <li key={`ol-${i}`} className="ml-4">
                         {inline(item)}
-                    </li>
+                    </li>,
                 );
                 i++;
             }
             blocks.push(
-                <ol key={`ol-block-${i}`} className="list-decimal pl-5 space-y-1">
+                <ol
+                    key={`ol-block-${i}`}
+                    className="list-decimal pl-5 space-y-1"
+                >
                     {items}
-                </ol>
+                </ol>,
             );
             continue;
         }
@@ -474,19 +658,25 @@ function BlockText({ text }: { text: string }) {
         // Unordered list
         if (/^\s*([-*+])\s+/.test(line)) {
             const items: React.ReactNode[] = [];
-            while (i < lines.length && /^\s*([-*+])\s+/.test(lines[i])) {
+            while (
+                i < lines.length &&
+                /^\s*([-*+])\s+/.test(lines[i])
+                ) {
                 const item = lines[i].replace(/^\s*([-*+])\s+/, "");
                 items.push(
                     <li key={`ul-${i}`} className="ml-4">
                         {inline(item)}
-                    </li>
+                    </li>,
                 );
                 i++;
             }
             blocks.push(
-                <ul key={`ul-block-${i}`} className="list-disc pl-5 space-y-1">
+                <ul
+                    key={`ul-block-${i}`}
+                    className="list-disc pl-5 space-y-1"
+                >
                     {items}
-                </ul>
+                </ul>,
             );
             continue;
         }
@@ -507,7 +697,7 @@ function BlockText({ text }: { text: string }) {
         blocks.push(
             <p key={`p-${i}`} className="text-white/85">
                 {inline(paraText)}
-            </p>
+            </p>,
         );
     }
 
@@ -523,7 +713,10 @@ function inline(text: string): React.ReactNode[] {
     return segments.flatMap((seg, idx) => {
         if (typeof seg !== "string") {
             return (
-                <code key={`code-${idx}`} className="px-1 rounded bg-white/10 text-white/90">
+                <code
+                    key={`code-${idx}`}
+                    className="px-1 rounded bg-white/10 text-white/90"
+                >
                     {seg.code}
                 </code>
             );
@@ -534,7 +727,13 @@ function inline(text: string): React.ReactNode[] {
             if (typeof s !== "string") {
                 const href = normalizeHref(s.href);
                 return (
-                    <a key={`a-${idx}-${j}`} href={href} target="_blank" rel="noreferrer" className="underline underline-offset-4">
+                    <a
+                        key={`a-${idx}-${j}`}
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-4"
+                    >
                         {s.label}
                     </a>
                 );
@@ -550,10 +749,13 @@ function inline(text: string): React.ReactNode[] {
                 typeof p === "string" ? (
                     p
                 ) : (
-                    <strong key={`b-${idx}-${j}-${k}`} className="text-white">
+                    <strong
+                        key={`b-${idx}-${j}-${k}`}
+                        className="text-white"
+                    >
                         {p.code}
                     </strong>
-                )
+                ),
             );
         });
 
@@ -565,10 +767,13 @@ function inline(text: string): React.ReactNode[] {
                 typeof p === "string" ? (
                     p
                 ) : (
-                    <em key={`i-${idx}-${j}-${k}`} className="italic">
+                    <em
+                        key={`i-${idx}-${j}-${k}`}
+                        className="italic"
+                    >
                         {p.code}
                     </em>
-                )
+                ),
             );
         });
 
@@ -576,7 +781,10 @@ function inline(text: string): React.ReactNode[] {
     });
 }
 
-function splitInline(text: string, re: RegExp): Array<string | { code: string }> {
+function splitInline(
+    text: string,
+    re: RegExp,
+): Array<string | { code: string }> {
     const out: Array<string | { code: string }> = [];
     let last = 0;
     let m: RegExpExecArray | null;
@@ -590,7 +798,9 @@ function splitInline(text: string, re: RegExp): Array<string | { code: string }>
     return out;
 }
 
-function splitLinks(text: string): Array<string | { label: string; href: string }> {
+function splitLinks(
+    text: string,
+): Array<string | { label: string; href: string }> {
     const out: Array<string | { label: string; href: string }> = [];
     const re = /\[([^\]]+)\]\(([^)]+)\)/g;
     let last = 0;
@@ -605,7 +815,8 @@ function splitLinks(text: string): Array<string | { label: string; href: string 
 }
 
 function normalizeHref(href: string): string {
-    if (/^https?:\/\//i.test(href) || href.startsWith("mailto:")) return href;
+    if (/^https?:\/\//i.test(href) || href.startsWith("mailto:"))
+        return href;
     return `https://${href}`;
 }
 
@@ -621,7 +832,9 @@ function makeLinkItems(links: Record<string, string>) {
         let external = true;
 
         if (key === "email" || href.startsWith("mailto:")) {
-            href = href.startsWith("mailto:") ? href : `mailto:${href}`;
+            href = href.startsWith("mailto:")
+                ? href
+                : `mailto:${href}`;
             external = false;
             label = "Email";
         } else if (!/^https?:\/\//i.test(href)) {
@@ -634,7 +847,8 @@ function makeLinkItems(links: Record<string, string>) {
     normalized.sort((a, b) => {
         const ai = order.indexOf(a.key);
         const bi = order.indexOf(b.key);
-        if (ai === -1 && bi === -1) return a.key.localeCompare(b.key);
+        if (ai === -1 && bi === -1)
+            return a.key.localeCompare(b.key);
         if (ai === -1) return 1;
         if (bi === -1) return -1;
         return ai - bi;

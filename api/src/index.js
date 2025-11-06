@@ -74,6 +74,14 @@ app.use(
     express.static(UPLOAD_ROOT, { maxAge: "1h", etag: true }),
 );
 
+/* CV directory (shared with account CV uploads) */
+const CV_DIR = path.join(UPLOAD_ROOT, "cv");
+fs.mkdirSync(CV_DIR, { recursive: true });
+
+/* Avatars directory (for member/account avatars) */
+const AVATAR_DIR = path.join(UPLOAD_ROOT, "avatars");
+fs.mkdirSync(AVATAR_DIR, { recursive: true });
+
 /* ------------------------ Helpers ------------------------ */
 const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || null;
 const JWT_ACCESS_SECRET =
@@ -240,6 +248,31 @@ const deleteBySlugSchema = z.object({
     confirmSlug: z.string().min(1),
 });
 
+const memberProfileUpdateSchema = z.object({
+    name: z.string().min(1).max(120).optional(),
+    headline: z.string().max(200).nullable().optional(),
+    shortBio: z.string().max(500).nullable().optional(),
+    markdown: z.string().max(100_000).optional(),
+    links: z.record(z.string().url()).optional(),
+    focusArea: z
+        .enum([
+            "FRONTEND",
+            "BACKEND",
+            "ML",
+            "DATA",
+            "DEVOPS",
+            "DESIGN",
+            "PM",
+            "OTHER",
+        ])
+        .nullable()
+        .optional(),
+    skills: z.array(z.string().min(1)).optional(),
+    techStack: z.array(z.string().min(1)).optional(),
+    // Admin-only: change member's access role (for linked users)
+    accessRole: z.enum(["MEMBER", "MODERATOR"]).optional(),
+});
+
 /* ------------------------------ Members ------------------------------ */
 app.get("/api/members", async (req, res) => {
     const qp = qpSchema.parse(req.query);
@@ -349,15 +382,33 @@ app.get("/api/members/:slug", async (req, res) => {
     }
 
     let cvUrl = null;
-    const uForCv = await prisma.user.findFirst({
+    const userRolesSet = new Set();
+
+    const usersForMember = await prisma.user.findMany({
         where: { memberId: m.id },
-        select: { id: true },
+        include: { roles: true },
     });
-    if (uForCv) {
-        const p = path.join(UPLOAD_ROOT, "cv", `${uForCv.id}-latest.pdf`);
-        if (fs.existsSync(p))
-            cvUrl = abs(`/uploads/cv/${uForCv.id}-latest.pdf`, req);
+
+    if (usersForMember.length) {
+        // Collect roles
+        for (const u of usersForMember) {
+            for (const r of u.roles || []) {
+                if (r.role) userRolesSet.add(r.role);
+            }
+        }
+
+        // Find first existing CV file for any linked user
+        for (const u of usersForMember) {
+            const p = path.join(CV_DIR, `${u.id}-latest.pdf`);
+            if (fs.existsSync(p)) {
+                cvUrl = abs(`/uploads/cv/${u.id}-latest.pdf`, req);
+                break;
+            }
+        }
     }
+
+    const userRoles = Array.from(userRolesSet);
+    const isAdminMember = userRoles.includes("ADMIN");
 
     res.json({
         id: m.id,
@@ -393,14 +444,809 @@ app.get("/api/members/:slug", async (req, res) => {
         events: m.events.map((r) => ({
             id: r.event.id,
             slug: r.event.slug,
-            name: r.event.name,
+            name: r.role || r.event.name, // keep original behavior if needed
             role: r.role || null,
             dateStart: r.event.dateStart,
             dateEnd: r.event.dateEnd,
         })),
+        userRoles,
+        isAdminMember,
         cvUrl,
     });
 });
+
+app.put("/api/members/:slug", async (req, res) => {
+    console.log("========== [PUT /api/members/:slug] BEGIN ==========");
+    console.log("[PUT /api/members/:slug] slug =", req.params.slug);
+    console.log(
+        "[PUT /api/members/:slug] raw body =",
+        JSON.stringify(req.body),
+    );
+
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn(
+            "[PUT /api/members/:slug] blocked: unauthenticated",
+        );
+        console.log(
+            "========== [PUT /api/members/:slug] END (unauthenticated) ==========",
+        );
+        return;
+    }
+
+    const roles = (user.roles || []).map((r) => r.role);
+    const isAdminOrModerator = roles.some((r) =>
+        ["ADMIN", "MODERATOR"].includes(r),
+    );
+    const isAdmin = roles.includes("ADMIN");
+
+    if (!isAdminOrModerator) {
+        console.warn(
+            "[PUT /api/members/:slug] blocked: insufficient permissions for user",
+            user.id,
+        );
+        console.log(
+            "========== [PUT /api/members/:slug] END (forbidden) ==========",
+        );
+        return res
+            .status(403)
+            .json({ ok: false, error: "Insufficient permissions" });
+    }
+
+    const member = await prisma.member.findUnique({
+        where: { slug: req.params.slug },
+    });
+
+    if (!member) {
+        console.warn(
+            "[PUT /api/members/:slug] 404 for slug",
+            req.params.slug,
+        );
+        console.log(
+            "========== [PUT /api/members/:slug] END (not found) ==========",
+        );
+        return res.status(404).json({ ok: false, error: "Not found" });
+    }
+
+    const usersForMember = await prisma.user.findMany({
+        where: { memberId: member.id },
+        include: { roles: true },
+    });
+
+    const isAdminMember = usersForMember.some((u) =>
+        (u.roles || []).some((r) => r.role === "ADMIN"),
+    );
+
+    if (isAdminMember) {
+        console.warn(
+            "[PUT /api/members/:slug] blocked: attempted edit of admin member id",
+            member.id,
+        );
+        console.log(
+            "========== [PUT /api/members/:slug] END (admin blocked) ==========",
+        );
+        return res.status(403).json({
+            ok: false,
+            error: "Cannot edit admin member from this page",
+        });
+    }
+
+    const parsed = memberProfileUpdateSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[PUT /api/members/:slug] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [PUT /api/members/:slug] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+
+    const bodyHasAccessRole = Object.prototype.hasOwnProperty.call(
+        req.body || {},
+        "accessRole",
+    );
+
+    // Only admins may change accessRole
+    if (bodyHasAccessRole && !isAdmin) {
+        console.warn(
+            "[PUT /api/members/:slug] blocked: non-admin attempting to change accessRole",
+            user.id,
+        );
+        console.log(
+            "========== [PUT /api/members/:slug] END (accessRole forbidden) ==========",
+        );
+        return res.status(403).json({
+            ok: false,
+            error: "Only admins can change member access role",
+        });
+    }
+
+    const d = parsed.data;
+    const data = {};
+    const {
+        name,
+        headline,
+        shortBio,
+        markdown,
+        links,
+        focusArea,
+        accessRole,
+    } = d;
+    if (typeof name !== "undefined") data.name = name;
+    if (typeof headline !== "undefined") data.headline = headline;
+    if (typeof shortBio !== "undefined") data.shortBio = shortBio;
+    if (typeof markdown !== "undefined") data.bio = markdown;
+    if (typeof links !== "undefined") data.links = links;
+    if (typeof focusArea !== "undefined") data.focusArea = focusArea;
+
+    const skills = d.skills || null;
+    const techStack = d.techStack || null;
+
+    try {
+        await prisma.$transaction(async (tx) => {
+            if (Object.keys(data).length) {
+                await tx.member.update({
+                    where: { id: member.id },
+                    data,
+                });
+            }
+
+            if (skills) {
+                const ids = await upsertStringList(skills, "skill");
+                await tx.memberSkill.deleteMany({
+                    where: {
+                        memberId: member.id,
+                        NOT: { skillId: { in: ids } },
+                    },
+                });
+                for (const sid of ids) {
+                    await tx.memberSkill.upsert({
+                        where: {
+                            memberId_skillId: {
+                                memberId: member.id,
+                                skillId: sid,
+                            },
+                        },
+                        update: {},
+                        create: { memberId: member.id, skillId: sid },
+                    });
+                }
+            }
+
+            if (techStack) {
+                const ids = await upsertStringList(techStack, "tech");
+                await tx.memberTech.deleteMany({
+                    where: {
+                        memberId: member.id,
+                        NOT: { techId: { in: ids } },
+                    },
+                });
+                for (const tid of ids) {
+                    await tx.memberTech.upsert({
+                        where: {
+                            memberId_techId: {
+                                memberId: member.id,
+                                techId: tid,
+                            },
+                        },
+                        update: {},
+                        create: { memberId: member.id, techId: tid },
+                    });
+                }
+            }
+
+            // Access role change for linked users (admin-only, non-admin members only)
+            if (bodyHasAccessRole && accessRole && usersForMember.length) {
+                const userIds = usersForMember.map((u) => u.id);
+
+                // Remove existing MEMBER/MODERATOR roles for these users
+                await tx.userRole.deleteMany({
+                    where: {
+                        userId: { in: userIds },
+                        role: { in: ["MEMBER", "MODERATOR"] },
+                    },
+                });
+
+                // Assign the new role
+                await tx.userRole.createMany({
+                    data: userIds.map((uid) => ({
+                        userId: uid,
+                        role: accessRole,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        });
+
+        // Reload member with full shape for client
+        const updated = await prisma.member.findUnique({
+            where: { id: member.id },
+            include: {
+                skills: { include: { skill: true } },
+                techs: { include: { tech: true } },
+                projects: { include: { project: true } },
+                events: { include: { event: true } },
+            },
+        });
+
+        // Reload linked users & CV info
+        const refreshedUsers = await prisma.user.findMany({
+            where: { memberId: member.id },
+            include: { roles: true },
+        });
+
+        const roleSet = new Set();
+        let cvUrl = null;
+
+        for (const u of refreshedUsers) {
+            for (const r of u.roles || []) {
+                if (r.role) roleSet.add(r.role);
+            }
+            if (!cvUrl) {
+                const p = path.join(CV_DIR, `${u.id}-latest.pdf`);
+                if (fs.existsSync(p)) {
+                    cvUrl = abs(`/uploads/cv/${u.id}-latest.pdf`, req);
+                }
+            }
+        }
+
+        const userRoles = Array.from(roleSet);
+        const isAdminMemberAfter = userRoles.includes("ADMIN");
+
+        console.log(
+            "[PUT /api/members/:slug] END (success) member id =",
+            updated?.id,
+        );
+        return res.status(200).json({
+            ok: true,
+            member: {
+                id: updated.id,
+                slug: updated.slug,
+                name: updated.name,
+                avatar: abs(updated.avatar || updated.avatarUrl || null, req),
+                avatarUrl: abs(
+                    updated.avatarUrl || updated.avatar || null,
+                    req,
+                ),
+                headline: updated.headline,
+                shortBio: updated.shortBio,
+                bio: updated.bio || updated.longBio,
+                markdown: updated.bio || updated.longBio || "",
+                location: updated.location,
+                links: updated.links || {},
+                photos: updated.photos || [],
+                skills: updated.skills.map((x) => x.skill.name),
+                techStack: updated.techs.map((x) => x.tech.name),
+                focusArea: updated.focusArea || null,
+                projects: updated.projects.map((r) => ({
+                    id: r.project.id,
+                    slug: r.project.slug,
+                    title: r.project.title,
+                    role: r.role,
+                    contribution: r.contribution,
+                    cover: abs(
+                        r.project.cover || r.project.imageUrl || null,
+                        req,
+                    ),
+                    year: r.project.year,
+                    tech: [],
+                    techStack: [],
+                    summary: r.project.summary || null,
+                })),
+                events: updated.events.map((r) => ({
+                    id: r.event.id,
+                    slug: r.event.slug,
+                    name: r.event.name,
+                    role: r.role || null,
+                    dateStart: r.event.dateStart,
+                    dateEnd: r.event.dateEnd,
+                })),
+                userRoles,
+                isAdminMember: isAdminMemberAfter,
+                cvUrl,
+            },
+        });
+    } catch (err) {
+        console.error(
+            "[PUT /api/members/:slug] error during update",
+            err,
+        );
+        console.log(
+            "========== [PUT /api/members/:slug] END (error) ==========",
+        );
+        return res.status(500).json({
+            ok: false,
+            error: "Failed to update member",
+        });
+    }
+});
+
+app.delete("/api/members/:slug", async (req, res) => {
+    console.log("========== [DELETE /api/members/:slug] BEGIN ==========");
+    console.log("[DELETE /api/members/:slug] slug =", req.params.slug);
+
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn(
+            "[DELETE /api/members/:slug] blocked: unauthenticated",
+        );
+        console.log(
+            "========== [DELETE /api/members/:slug] END (unauthenticated) ==========",
+        );
+        return;
+    }
+
+    const roles = (user.roles || []).map((r) => r.role);
+    const isAdminOrModerator = roles.some((r) =>
+        ["ADMIN", "MODERATOR"].includes(r),
+    );
+
+    if (!isAdminOrModerator) {
+        console.warn(
+            "[DELETE /api/members/:slug] blocked: insufficient permissions for user",
+            user.id,
+        );
+        console.log(
+            "========== [DELETE /api/members/:slug] END (forbidden) ==========",
+        );
+        return res
+            .status(403)
+            .json({ ok: false, error: "Insufficient permissions" });
+    }
+
+    const member = await prisma.member.findUnique({
+        where: { slug: req.params.slug },
+    });
+
+    if (!member) {
+        console.warn(
+            "[DELETE /api/members/:slug] 404 for slug",
+            req.params.slug,
+        );
+        console.log(
+            "========== [DELETE /api/members/:slug] END (not found) ==========",
+        );
+        return res
+            .status(404)
+            .json({ ok: false, error: "Not found" });
+    }
+
+    const usersForMember = await prisma.user.findMany({
+        where: { memberId: member.id },
+        include: { roles: true },
+    });
+
+    const isAdminMemberDelete = usersForMember.some((u) =>
+        (u.roles || []).some((r) => r.role === "ADMIN"),
+    );
+
+    if (isAdminMemberDelete) {
+        console.warn(
+            "[DELETE /api/members/:slug] blocked: attempted delete of admin member id",
+            member.id,
+        );
+        console.log(
+            "========== [DELETE /api/members/:slug] END (admin blocked) ==========",
+        );
+        return res
+            .status(403)
+            .json({ ok: false, error: "Cannot delete admin member" });
+    }
+
+    const parsed = deleteBySlugSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[DELETE /api/members/:slug] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [DELETE /api/members/:slug] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+
+    const { confirmSlug } = parsed.data;
+    if (confirmSlug !== member.slug) {
+        console.warn(
+            "[DELETE /api/members/:slug] slug confirmation mismatch, got",
+            confirmSlug,
+            "expected",
+            member.slug,
+        );
+        console.log(
+            "========== [DELETE /api/members/:slug] END (slug mismatch) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Slug confirmation does not match",
+        });
+    }
+
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.memberSkill.deleteMany({
+                where: { memberId: member.id },
+            });
+            await tx.memberTech.deleteMany({
+                where: { memberId: member.id },
+            });
+            await tx.memberProject.deleteMany({
+                where: { memberId: member.id },
+            });
+            await tx.memberEvent.deleteMany({
+                where: { memberId: member.id },
+            });
+            // If new relations to memberId are added in the future,
+            // they should also be deleted here.
+
+            await tx.user.updateMany({
+                where: { memberId: member.id },
+                data: { memberId: null },
+            });
+
+            await tx.member.delete({
+                where: { id: member.id },
+            });
+        });
+
+        console.log(
+            "========== [DELETE /api/members/:slug] END (success) ==========",
+        );
+        return res.status(200).json({ ok: true });
+    } catch (err) {
+        console.error(
+            "[DELETE /api/members/:slug] error during deletion",
+            err,
+        );
+        console.log(
+            "========== [DELETE /api/members/:slug] END (error) ==========",
+        );
+        return res.status(500).json({
+            ok: false,
+            error: "Failed to delete member",
+        });
+    }
+});
+
+/* ------------------------- Member CV upload (admin) ------------------------- */
+/**
+ * POST /api/members/:slug/cv
+ * Used by MemberAdminEditor to upload a new CV for the member.
+ * This mirrors the /api/account/cv behavior but targets the member by slug.
+ */
+const memberCvStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, CV_DIR),
+    filename: (req, file, cb) => {
+        const ext = (file.originalname.split(".").pop() || "pdf").toLowerCase();
+        const safeExt = ext === "pdf" ? "pdf" : "pdf";
+        const tmpName = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
+        cb(null, tmpName);
+    },
+});
+
+const uploadMemberCv = multer({
+    storage: memberCvStorage,
+    limits: { fileSize: 16 * 1024 * 1024, files: 1 }, // 16 MB
+    fileFilter: (_req, file, cb) => {
+        if (file.mimetype === "application/pdf") cb(null, true);
+        else cb(new Error("Unsupported file type"));
+    },
+});
+
+app.post(
+    "/api/members/:slug/cv",
+    async (req, res, next) => {
+        console.log("[POST /api/members/:slug/cv] incoming upload");
+        const user = await requireUser(req, res);
+        if (!user) {
+            console.warn(
+                "[POST /api/members/:slug/cv] blocked: unauthenticated",
+            );
+            return;
+        }
+
+        const roles = (user.roles || []).map((r) => r.role);
+        const isAdminOrModerator = roles.some((r) =>
+            ["ADMIN", "MODERATOR"].includes(r),
+        );
+        if (!isAdminOrModerator) {
+            console.warn(
+                "[POST /api/members/:slug/cv] blocked: insufficient permissions",
+                user.id,
+            );
+            return res.status(403).json({
+                ok: false,
+                error: "Insufficient permissions",
+            });
+        }
+
+        const member = await prisma.member.findUnique({
+            where: { slug: req.params.slug },
+        });
+        if (!member) {
+            console.warn(
+                "[POST /api/members/:slug/cv] member not found for slug",
+                req.params.slug,
+            );
+            return res
+                .status(404)
+                .json({ ok: false, error: "Member not found" });
+        }
+
+        const usersForMember = await prisma.user.findMany({
+            where: { memberId: member.id },
+            include: { roles: true },
+        });
+
+        const isAdminMember = usersForMember.some((u) =>
+            (u.roles || []).some((r) => r.role === "ADMIN"),
+        );
+        if (isAdminMember) {
+            console.warn(
+                "[POST /api/members/:slug/cv] blocked: attempt to upload CV for admin member",
+                member.id,
+            );
+            return res.status(403).json({
+                ok: false,
+                error: "Cannot modify admin member from this page",
+            });
+        }
+
+        if (!usersForMember.length) {
+            console.warn(
+                "[POST /api/members/:slug/cv] no users linked to member id",
+                member.id,
+            );
+            return res.status(400).json({
+                ok: false,
+                error: "No user account linked to this member",
+            });
+        }
+
+        req._memberForCv = member;
+        req._usersForCv = usersForMember;
+        return uploadMemberCv.single("cv")(req, res, (err) => {
+            if (err) return next(err);
+            return next();
+        });
+    },
+    async (req, res) => {
+        const member = req._memberForCv;
+        const usersForMember = req._usersForCv || [];
+        if (!req.file) {
+            return res
+                .status(400)
+                .json({ ok: false, error: "No file uploaded" });
+        }
+
+        const userForCv = usersForMember[0];
+        const userId = userForCv.id;
+
+        const finalName = `${userId}-latest.pdf`;
+        const finalPath = path.join(CV_DIR, finalName);
+
+        try {
+            fs.renameSync(req.file.path, finalPath);
+        } catch (err) {
+            console.error(
+                "[POST /api/members/:slug/cv] failed to move CV file",
+                err,
+            );
+            return res.status(500).json({
+                ok: false,
+                error: "Failed to store CV file",
+            });
+        }
+
+        const url = abs(`/uploads/cv/${finalName}`, req);
+        console.log(
+            "[POST /api/members/:slug/cv] stored CV for userId",
+            userId,
+            "at",
+            url,
+        );
+
+        return res.status(201).json({ ok: true, url });
+    },
+);
+
+/* ------------------------- Member avatar upload (admin/mod) ------------------------- */
+/**
+ * POST /api/members/:slug/avatar
+ * Used by MemberAdminEditor to upload a new avatar for the member.
+ * Stores file under /uploads/avatars and updates member.avatarUrl.
+ */
+const memberAvatarStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
+    filename: (req, file, cb) => {
+        const ext = (file.originalname.split(".").pop() || "jpg")
+            .toLowerCase();
+        const safeExt = /^(png|jpg|jpeg|webp|gif)$/.test(ext)
+            ? ext
+            : "jpg";
+        const tmpName = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
+        cb(null, tmpName);
+    },
+});
+
+const uploadMemberAvatar = multer({
+    storage: memberAvatarStorage,
+    limits: { fileSize: 8 * 1024 * 1024, files: 1 }, // 8 MB
+    fileFilter: (_req, file, cb) => {
+        if (/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype))
+            cb(null, true);
+        else cb(new Error("Unsupported file type"));
+    },
+});
+
+app.post(
+    "/api/members/:slug/avatar",
+    async (req, res, next) => {
+        console.log("[POST /api/members/:slug/avatar] incoming upload");
+        const user = await requireUser(req, res);
+        if (!user) {
+            console.warn(
+                "[POST /api/members/:slug/avatar] blocked: unauthenticated",
+            );
+            return;
+        }
+
+        const roles = (user.roles || []).map((r) => r.role);
+        const isAdminOrModerator = roles.some((r) =>
+            ["ADMIN", "MODERATOR"].includes(r),
+        );
+        if (!isAdminOrModerator) {
+            console.warn(
+                "[POST /api/members/:slug/avatar] blocked: insufficient permissions",
+                user.id,
+            );
+            return res.status(403).json({
+                ok: false,
+                error: "Insufficient permissions",
+            });
+        }
+
+        const member = await prisma.member.findUnique({
+            where: { slug: req.params.slug },
+        });
+        if (!member) {
+            console.warn(
+                "[POST /api/members/:slug/avatar] member not found for slug",
+                req.params.slug,
+            );
+            return res
+                .status(404)
+                .json({ ok: false, error: "Member not found" });
+        }
+
+        const usersForMember = await prisma.user.findMany({
+            where: { memberId: member.id },
+            include: { roles: true },
+        });
+
+        const isAdminMember = usersForMember.some((u) =>
+            (u.roles || []).some((r) => r.role === "ADMIN"),
+        );
+        if (isAdminMember) {
+            console.warn(
+                "[POST /api/members/:slug/avatar] blocked: attempt to upload avatar for admin member",
+                member.id,
+            );
+            return res.status(403).json({
+                ok: false,
+                error: "Cannot modify admin member from this page",
+            });
+        }
+
+        req._memberForAvatar = member;
+        return uploadMemberAvatar.single("avatar")(req, res, (err) => {
+            if (err) return next(err);
+            return next();
+        });
+    },
+    async (req, res) => {
+        const member = req._memberForAvatar;
+        if (!req.file) {
+            return res
+                .status(400)
+                .json({ ok: false, error: "No file uploaded" });
+        }
+
+        const relPath = `/uploads/avatars/${req.file.filename}`;
+        const absUrl = abs(relPath, req);
+
+        // Optionally delete old avatar file if it lived under /uploads/avatars
+        try {
+            if (member.avatarUrl && member.avatarUrl.startsWith("/uploads/avatars/")) {
+                const oldFsPath = path.join(
+                    UPLOAD_ROOT,
+                    member.avatarUrl.replace(/^\/uploads\//, ""),
+                );
+                if (fs.existsSync(oldFsPath)) {
+                    fs.unlinkSync(oldFsPath);
+                }
+            }
+        } catch (err) {
+            console.warn(
+                "[POST /api/members/:slug/avatar] failed to delete old avatar",
+                err,
+            );
+        }
+
+        await prisma.member.update({
+            where: { id: member.id },
+            data: { avatarUrl: relPath },
+        });
+
+        console.log(
+            "[POST /api/members/:slug/avatar] stored avatar for memberId",
+            member.id,
+            "at",
+            absUrl,
+        );
+
+        return res.status(201).json({
+            ok: true,
+            url: absUrl,
+            relativePath: relPath,
+        });
+    },
+);
+
+/* ------------------------------ Projects ------------------------------ */
+// (unchanged from your version below here, just left as-is)
+
+const projectLinkSchema = z.object({
+    label: z.string().max(200).optional().nullable(),
+    url: z.string().url(),
+});
+
+const createProjectSchema = z.object({
+    title: z.string().min(1).max(200),
+    summary: z.string().max(2000).optional().nullable(),
+    description: z.string().max(20_000).optional().nullable(),
+    status: z.string().max(200).optional().nullable(),
+    year: z.number().int().optional().nullable(),
+    demoUrl: z.string().url().optional().nullable(),
+    repoUrl: z.string().url().optional().nullable(),
+    photos: z.array(z.string().url()).max(20).optional(),
+    techStack: z
+        .array(z.string().min(1).max(40))
+        .max(50)
+        .optional(),
+    tags: z
+        .array(z.string().min(1).max(40))
+        .max(50)
+        .optional(),
+    members: z.array(z.any()).optional(),
+    blogSlugs: z.array(z.string().min(1)).max(200).optional(),
+    eventSlugs: z.array(z.string().min(1)).max(200).optional(),
+    links: z.array(projectLinkSchema).max(50).optional(),
+});
+
+async function uniqueProjectSlug(base) {
+    const b =
+        slugify(base || "project", { lower: true, strict: true }) ||
+        "project";
+    let slug = b;
+    let i = 1;
+    while (await prisma.project.findUnique({ where: { slug } })) {
+        i += 1;
+        slug = `${b}-${i}`;
+        if (i > 9999) break;
+    }
+    return slug;
+}
 
 /* ------------------------------ Projects ------------------------------ */
 app.get("/api/projects", async (req, res) => {
@@ -598,7 +1444,11 @@ app.get("/api/projects/:slug", async (req, res) => {
             : [],
         year: p.year || null,
         event: p.event
-            ? { slug: p.event.slug, name: p.event.name, dateStart: p.event.dateStart }
+            ? {
+                slug: p.event.slug,
+                name: p.event.name,
+                dateStart: p.event.dateStart,
+            }
             : null,
         events,
         techStack: p.techs.map((x) => x.tech.name),
@@ -614,50 +1464,6 @@ app.get("/api/projects/:slug", async (req, res) => {
         invites,
     });
 });
-
-/* -------- Projects: create/edit (event-style) -------- */
-
-const projectLinkSchema = z.object({
-    label: z.string().max(200).optional().nullable(),
-    url: z.string().url(),
-});
-
-const createProjectSchema = z.object({
-    title: z.string().min(1).max(200),
-    summary: z.string().max(2000).optional().nullable(),
-    description: z.string().max(20_000).optional().nullable(),
-    status: z.string().max(200).optional().nullable(),
-    year: z.number().int().optional().nullable(),
-    demoUrl: z.string().url().optional().nullable(),
-    repoUrl: z.string().url().optional().nullable(),
-    photos: z.array(z.string().url()).max(20).optional(),
-    techStack: z
-        .array(z.string().min(1).max(40))
-        .max(50)
-        .optional(),
-    tags: z
-        .array(z.string().min(1).max(40))
-        .max(50)
-        .optional(),
-    members: z.array(z.any()).optional(),
-    blogSlugs: z.array(z.string().min(1)).max(200).optional(),
-    eventSlugs: z.array(z.string().min(1)).max(200).optional(),
-    links: z.array(projectLinkSchema).max(50).optional(),
-});
-
-async function uniqueProjectSlug(base) {
-    const b =
-        slugify(base || "project", { lower: true, strict: true }) ||
-        "project";
-    let slug = b;
-    let i = 1;
-    while (await prisma.project.findUnique({ where: { slug } })) {
-        i += 1;
-        slug = `${b}-${i}`;
-        if (i > 9999) break;
-    }
-    return slug;
-}
 
 app.post("/api/projects", async (req, res) => {
     console.log("========== [POST /api/projects] BEGIN ==========");
