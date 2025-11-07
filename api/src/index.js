@@ -10,7 +10,7 @@ const slugify = require("slugify");
 const multer = require("multer");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
-const argon2 = require("argon2"); // ← for invite-based signups
+const argon2 = require("argon2");
 
 const { prisma } = require("./db");
 const { authRouter } = require("./auth");
@@ -33,9 +33,7 @@ console.log("[config] WEB_ORIGIN =", WEB_ORIGIN);
 
 app.use((req, _res, next) => {
     console.log(
-        `[req] ${req.method} ${req.originalUrl} origin=${
-            req.headers.origin || "n/a"
-        }`,
+        `[req] ${req.method} ${req.originalUrl} origin=${req.headers.origin || "n/a"}`,
     );
     next();
 });
@@ -81,6 +79,16 @@ fs.mkdirSync(CV_DIR, { recursive: true });
 /* Avatars directory (for member/account avatars) */
 const AVATAR_DIR = path.join(UPLOAD_ROOT, "avatars");
 fs.mkdirSync(AVATAR_DIR, { recursive: true });
+
+/* Events / projects / blogs upload dirs */
+const eventsDir = path.join(UPLOAD_ROOT, "events");
+fs.mkdirSync(eventsDir, { recursive: true });
+
+const projectsDir = path.join(UPLOAD_ROOT, "projects");
+fs.mkdirSync(projectsDir, { recursive: true });
+
+const blogsDir = path.join(UPLOAD_ROOT, "blogs");
+fs.mkdirSync(blogsDir, { recursive: true });
 
 /* ------------------------ Helpers ------------------------ */
 const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || null;
@@ -269,7 +277,6 @@ const memberProfileUpdateSchema = z.object({
         .optional(),
     skills: z.array(z.string().min(1)).optional(),
     techStack: z.array(z.string().min(1)).optional(),
-    // Admin-only: change member's access role (for linked users)
     accessRole: z.enum(["MEMBER", "MODERATOR"]).optional(),
 });
 
@@ -390,14 +397,12 @@ app.get("/api/members/:slug", async (req, res) => {
     });
 
     if (usersForMember.length) {
-        // Collect roles
         for (const u of usersForMember) {
             for (const r of u.roles || []) {
                 if (r.role) userRolesSet.add(r.role);
             }
         }
 
-        // Find first existing CV file for any linked user
         for (const u of usersForMember) {
             const p = path.join(CV_DIR, `${u.id}-latest.pdf`);
             if (fs.existsSync(p)) {
@@ -444,7 +449,7 @@ app.get("/api/members/:slug", async (req, res) => {
         events: m.events.map((r) => ({
             id: r.event.id,
             slug: r.event.slug,
-            name: r.role || r.event.name, // keep original behavior if needed
+            name: r.role || r.event.name,
             role: r.role || null,
             dateStart: r.event.dateStart,
             dateEnd: r.event.dateEnd,
@@ -552,7 +557,6 @@ app.put("/api/members/:slug", async (req, res) => {
         "accessRole",
     );
 
-    // Only admins may change accessRole
     if (bodyHasAccessRole && !isAdmin) {
         console.warn(
             "[PUT /api/members/:slug] blocked: non-admin attempting to change accessRole",
@@ -641,11 +645,9 @@ app.put("/api/members/:slug", async (req, res) => {
                 }
             }
 
-            // Access role change for linked users (admin-only, non-admin members only)
             if (bodyHasAccessRole && accessRole && usersForMember.length) {
                 const userIds = usersForMember.map((u) => u.id);
 
-                // Remove existing MEMBER/MODERATOR roles for these users
                 await tx.userRole.deleteMany({
                     where: {
                         userId: { in: userIds },
@@ -653,7 +655,6 @@ app.put("/api/members/:slug", async (req, res) => {
                     },
                 });
 
-                // Assign the new role
                 await tx.userRole.createMany({
                     data: userIds.map((uid) => ({
                         userId: uid,
@@ -664,7 +665,6 @@ app.put("/api/members/:slug", async (req, res) => {
             }
         });
 
-        // Reload member with full shape for client
         const updated = await prisma.member.findUnique({
             where: { id: member.id },
             include: {
@@ -675,7 +675,6 @@ app.put("/api/members/:slug", async (req, res) => {
             },
         });
 
-        // Reload linked users & CV info
         const refreshedUsers = await prisma.user.findMany({
             where: { memberId: member.id },
             include: { roles: true },
@@ -886,8 +885,6 @@ app.delete("/api/members/:slug", async (req, res) => {
             await tx.memberEvent.deleteMany({
                 where: { memberId: member.id },
             });
-            // If new relations to memberId are added in the future,
-            // they should also be deleted here.
 
             await tx.user.updateMany({
                 where: { memberId: member.id },
@@ -919,14 +916,10 @@ app.delete("/api/members/:slug", async (req, res) => {
 });
 
 /* ------------------------- Member CV upload (admin) ------------------------- */
-/**
- * POST /api/members/:slug/cv
- * Used by MemberAdminEditor to upload a new CV for the member.
- * This mirrors the /api/account/cv behavior but targets the member by slug.
- */
+
 const memberCvStorage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, CV_DIR),
-    filename: (req, file, cb) => {
+    filename: (_req, file, cb) => {
         const ext = (file.originalname.split(".").pop() || "pdf").toLowerCase();
         const safeExt = ext === "pdf" ? "pdf" : "pdf";
         const tmpName = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
@@ -936,10 +929,10 @@ const memberCvStorage = multer.diskStorage({
 
 const uploadMemberCv = multer({
     storage: memberCvStorage,
-    limits: { fileSize: 16 * 1024 * 1024, files: 1 }, // 16 MB
+    limits: { fileSize: 16 * 1024 * 1024, files: 1 },
     fileFilter: (_req, file, cb) => {
         if (file.mimetype === "application/pdf") cb(null, true);
-        else cb(new Error("Unsupported file type"));
+        else cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "cv"));
     },
 });
 
@@ -1061,19 +1054,12 @@ app.post(
 );
 
 /* ------------------------- Member avatar upload (admin/mod) ------------------------- */
-/**
- * POST /api/members/:slug/avatar
- * Used by MemberAdminEditor to upload a new avatar for the member.
- * Stores file under /uploads/avatars and updates member.avatarUrl.
- */
+
 const memberAvatarStorage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
-    filename: (req, file, cb) => {
-        const ext = (file.originalname.split(".").pop() || "jpg")
-            .toLowerCase();
-        const safeExt = /^(png|jpg|jpeg|webp|gif)$/.test(ext)
-            ? ext
-            : "jpg";
+    filename: (_req, file, cb) => {
+        const ext = (file.originalname.split(".").pop() || "jpg").toLowerCase();
+        const safeExt = /^(png|jpg|jpeg|webp|gif)$/i.test(ext) ? ext : "jpg";
         const tmpName = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
         cb(null, tmpName);
     },
@@ -1081,11 +1067,11 @@ const memberAvatarStorage = multer.diskStorage({
 
 const uploadMemberAvatar = multer({
     storage: memberAvatarStorage,
-    limits: { fileSize: 8 * 1024 * 1024, files: 1 }, // 8 MB
+    limits: { fileSize: 8 * 1024 * 1024, files: 1 },
     fileFilter: (_req, file, cb) => {
         if (/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype))
             cb(null, true);
-        else cb(new Error("Unsupported file type"));
+        else cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "avatar"));
     },
 });
 
@@ -1165,9 +1151,11 @@ app.post(
         const relPath = `/uploads/avatars/${req.file.filename}`;
         const absUrl = abs(relPath, req);
 
-        // Optionally delete old avatar file if it lived under /uploads/avatars
         try {
-            if (member.avatarUrl && member.avatarUrl.startsWith("/uploads/avatars/")) {
+            if (
+                member.avatarUrl &&
+                member.avatarUrl.startsWith("/uploads/avatars/")
+            ) {
                 const oldFsPath = path.join(
                     UPLOAD_ROOT,
                     member.avatarUrl.replace(/^\/uploads\//, ""),
@@ -1204,7 +1192,6 @@ app.post(
 );
 
 /* ------------------------------ Projects ------------------------------ */
-// (unchanged from your version below here, just left as-is)
 
 const projectLinkSchema = z.object({
     label: z.string().max(200).optional().nullable(),
@@ -1248,7 +1235,6 @@ async function uniqueProjectSlug(base) {
     return slug;
 }
 
-/* ------------------------------ Projects ------------------------------ */
 app.get("/api/projects", async (req, res) => {
     const page = Number.isFinite(Number(req.query.page))
         ? Number(req.query.page)
@@ -1674,7 +1660,6 @@ app.post("/api/projects", async (req, res) => {
         }
     }
 
-    // --- TEAM: create MemberProject rows for all selected members ---
     const membersWithId = rawMembers.filter(
         (m) =>
             m &&
@@ -1684,7 +1669,6 @@ app.post("/api/projects", async (req, res) => {
     const creatorMemberId =
         user && user.member && user.member.id ? user.member.id : null;
 
-    // Ensure creator has a row (respect payload role/isCreator if present)
     if (creatorMemberId) {
         const fromPayload = membersWithId.find(
             (m) => m.memberId === creatorMemberId,
@@ -1722,7 +1706,6 @@ app.post("/api/projects", async (req, res) => {
         );
     }
 
-    // Other members
     for (const m of membersWithId) {
         if (creatorMemberId && m.memberId === creatorMemberId) continue;
         const role =
@@ -1751,7 +1734,6 @@ app.post("/api/projects", async (req, res) => {
         }
     }
 
-    // --- Invites ---
     const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
     const memberIdsFromPayload = [];
     const inviteMap = new Map();
@@ -2189,7 +2171,6 @@ app.put("/api/projects/:slug", async (req, res) => {
         }
     }
 
-    // --- TEAM & invites (unchanged from your previous version) ---
     if (hasMembers) {
         const rawMembers = Array.isArray(d.members) ? d.members : [];
         rawMembers.forEach((m, idx) => {
@@ -2218,7 +2199,6 @@ app.put("/api/projects/:slug", async (req, res) => {
         const inviteMap = new Map();
         const newMemberIdsSet = new Set();
 
-        // Upsert memberProject rows
         for (const m of rawMembers) {
             if (!m || typeof m !== "object") continue;
             if (typeof m.memberId === "string") {
@@ -2275,7 +2255,6 @@ app.put("/api/projects/:slug", async (req, res) => {
             }
         }
 
-        // Remove members not in payload (but keep creator rows)
         for (const existing of project.members || []) {
             if (newMemberIdsSet.has(existing.memberId)) continue;
             if (existing.isCreator) {
@@ -2299,7 +2278,6 @@ app.put("/api/projects/:slug", async (req, res) => {
             });
         }
 
-        // Invites from rawMembers (emails + existing members)
         for (const m of rawMembers) {
             if (!m || typeof m !== "object") continue;
             let role = null;
@@ -2556,8 +2534,6 @@ app.delete("/api/projects/:slug", async (req, res) => {
             await tx.projectInvite.deleteMany({
                 where: { projectId: project.id },
             });
-            // If new relations to projectId are added in the future,
-            // they should also be deleted here.
 
             await tx.project.delete({
                 where: { id: project.id },
@@ -2584,28 +2560,26 @@ app.delete("/api/projects/:slug", async (req, res) => {
 });
 
 /* --------------------------- Upload: event photo --------------------------- */
-const eventsDir = path.join(UPLOAD_ROOT, "events");
-fs.mkdirSync(eventsDir, { recursive: true });
 
-const storage = multer.diskStorage({
+const eventPhotoStorage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, eventsDir),
     filename: (_req, file, cb) => {
-        const ext = (file.originalname.split(".").pop() || "bin")
-            .toLowerCase();
-        const safeExt = /^(png|jpg|jpeg|webp|gif)$/.test(ext)
+        const ext = (file.originalname.split(".").pop() || "bin").toLowerCase();
+        const safeExt = /^(png|jpg|jpeg|webp|gif)$/i.test(ext)
             ? ext
             : "bin";
         const name = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
         cb(null, name);
     },
 });
-const upload = multer({
-    storage,
-    limits: { fileSize: 8 * 1024 * 1024, files: 12 }, // 8 MB
+
+const uploadEventPhoto = multer({
+    storage: eventPhotoStorage,
+    limits: { fileSize: 8 * 1024 * 1024, files: 12 },
     fileFilter: (_req, file, cb) => {
         if (/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype))
             cb(null, true);
-        else cb(new Error("Unsupported file type"));
+        else cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "photo"));
     },
 });
 
@@ -2618,7 +2592,7 @@ app.post("/api/uploads/event-photo", async (req, res, next) => {
         );
         return;
     }
-    return upload.single("photo")(req, res, async (err) => {
+    return uploadEventPhoto.single("photo")(req, res, (err) => {
         if (err) return next(err);
         if (!req.file)
             return res
@@ -2634,28 +2608,26 @@ app.post("/api/uploads/event-photo", async (req, res, next) => {
 });
 
 /* --------------------------- Upload: project photo --------------------------- */
-const projectsDir = path.join(UPLOAD_ROOT, "projects");
-fs.mkdirSync(projectsDir, { recursive: true });
 
-const projectStorage = multer.diskStorage({
+const projectPhotoStorage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, projectsDir),
     filename: (_req, file, cb) => {
-        const ext = (file.originalname.split(".").pop() || "bin")
-            .toLowerCase();
-        const safeExt = /^(png|jpg|jpeg|webp|gif)$/.test(ext)
+        const ext = (file.originalname.split(".").pop() || "bin").toLowerCase();
+        const safeExt = /^(png|jpg|jpeg|webp|gif)$/i.test(ext)
             ? ext
             : "bin";
         const name = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
         cb(null, name);
     },
 });
+
 const uploadProjectPhoto = multer({
-    storage: projectStorage,
-    limits: { fileSize: 8 * 1024 * 1024, files: 12 }, // 8 MB
+    storage: projectPhotoStorage,
+    limits: { fileSize: 8 * 1024 * 1024, files: 12 },
     fileFilter: (_req, file, cb) => {
         if (/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype))
             cb(null, true);
-        else cb(new Error("Unsupported file type"));
+        else cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "photo"));
     },
 });
 
@@ -2668,7 +2640,7 @@ app.post("/api/uploads/project-photo", async (req, res, next) => {
         );
         return;
     }
-    return uploadProjectPhoto.single("photo")(req, res, async (err) => {
+    return uploadProjectPhoto.single("photo")(req, res, (err) => {
         if (err) return next(err);
         if (!req.file)
             return res
@@ -2683,7 +2655,175 @@ app.post("/api/uploads/project-photo", async (req, res, next) => {
     });
 });
 
+/* --------------------------- Upload: blog photo --------------------------- */
+const blogStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, blogsDir),
+    filename: (_req, file, cb) => {
+        const orig = file.originalname || "unnamed";
+        const ext = (orig.split(".").pop() || "bin").toLowerCase();
+        const safeExt = /^(png|jpg|jpeg|webp|gif)$/.test(ext) ? ext : "bin";
+        const name = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
+        cb(null, name);
+    },
+});
+
+const uploadBlogPhoto = multer({
+    storage: blogStorage,
+    limits: { fileSize: 8 * 1024 * 1024, files: 1 }, // 8 MB, expect a single "photo"
+    fileFilter: (req, file, cb) => {
+        console.log("[uploadBlogPhoto.fileFilter] fieldname =", file.fieldname);
+        console.log(
+            "[uploadBlogPhoto.fileFilter] originalname =",
+            file.originalname,
+            "mimetype =",
+            file.mimetype,
+        );
+
+        // When no file is actually chosen, some clients send an empty part
+        // with mimetype application/octet-stream and no filename.
+        const noRealFile =
+            !file.originalname ||
+            file.mimetype === "application/octet-stream";
+
+        if (noRealFile) {
+            console.log(
+                "[uploadBlogPhoto.fileFilter] detected empty file field; skipping file",
+            );
+            // Tell Multer to silently skip this "file" instead of throwing.
+            return cb(null, false);
+        }
+
+        if (/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype)) {
+            console.log(
+                "[uploadBlogPhoto.fileFilter] accepting file with mimetype",
+                file.mimetype,
+            );
+            return cb(null, true);
+        }
+
+        console.warn(
+            "[uploadBlogPhoto.fileFilter] rejecting file due to unsupported mimetype:",
+            file.mimetype,
+        );
+        const err = new Error("Unsupported file type");
+        err.code = "UNSUPPORTED_FILE_TYPE";
+        return cb(err);
+    },
+});
+
+app.post("/api/uploads/blog-photo", async (req, res) => {
+    console.log("========== [POST /api/uploads/blog-photo] BEGIN ==========");
+    console.log(
+        "[POST /api/uploads/blog-photo] headers.content-type =",
+        req.headers["content-type"],
+    );
+    console.log(
+        "[POST /api/uploads/blog-photo] query =",
+        JSON.stringify(req.query),
+    );
+
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn(
+            "[POST /api/uploads/blog-photo] blocked: unauthenticated",
+        );
+        console.log(
+            "========== [POST /api/uploads/blog-photo] END (unauthenticated) ==========",
+        );
+        return;
+    }
+
+    console.log(
+        "[POST /api/uploads/blog-photo] authenticated user id =",
+        user.id,
+        "email =",
+        user.email,
+    );
+
+    uploadBlogPhoto.single("photo")(req, res, (err) => {
+        if (err) {
+            console.error(
+                "[POST /api/uploads/blog-photo] Multer/fileFilter error =",
+                err && err.stack ? err.stack : err,
+            );
+
+            if (err.code === "UNSUPPORTED_FILE_TYPE") {
+                console.log(
+                    "========== [POST /api/uploads/blog-photo] END (unsupported file type) ==========",
+                );
+                return res
+                    .status(400)
+                    .json({ ok: false, error: "Unsupported file type" });
+            }
+
+            console.log(
+                "========== [POST /api/uploads/blog-photo] END (multer error) ==========",
+            );
+            return res
+                .status(400)
+                .json({ ok: false, error: "Upload failed" });
+        }
+
+        if (!req.file) {
+            console.warn(
+                "[POST /api/uploads/blog-photo] no file accepted by Multer (empty field or filtered out)",
+            );
+            console.log(
+                "========== [POST /api/uploads/blog-photo] END (no file) ==========",
+            );
+            return res
+                .status(400)
+                .json({ ok: false, error: "No file uploaded" });
+        }
+
+        const url = abs(`/uploads/blogs/${req.file.filename}`, req);
+        console.log(
+            "[POST /api/uploads/blog-photo] stored file =",
+            req.file.filename,
+            "-> url =",
+            url,
+        );
+        console.log(
+            "========== [POST /api/uploads/blog-photo] END (success) ==========",
+        );
+        return res.status(201).json({ ok: true, url });
+    });
+});
+
 /* ------------------------------ Blogs ------------------------------ */
+
+const blogCreateSchema = z.object({
+    title: z.string().min(1).max(200),
+    summary: z.string().max(2000).optional().nullable(),
+    content: z.string().max(100_000).optional().nullable(),
+    publishedAt: z.string().optional().nullable(),
+    photos: z.array(z.string().url()).max(20).optional(),
+    techStack: z
+        .array(z.string().min(1).max(40))
+        .max(50)
+        .optional(),
+    tags: z
+        .array(z.string().min(1).max(40))
+        .max(50)
+        .optional(),
+    authorSlugs: z.array(z.string().min(1)).max(50).optional(),
+    projectSlugs: z.array(z.string().min(1)).max(200).optional(),
+});
+
+async function uniqueBlogSlug(base) {
+    const b =
+        slugify(base || "blog", { lower: true, strict: true }) ||
+        "blog";
+    let slug = b;
+    let i = 1;
+    while (await prisma.blog.findUnique({ where: { slug } })) {
+        i += 1;
+        slug = `${b}-${i}`;
+        if (i > 9999) break;
+    }
+    return slug;
+}
+
 app.get("/api/blogs", async (req, res) => {
     const page = Number.isFinite(Number(req.query.page))
         ? Number(req.query.page)
@@ -2776,12 +2916,809 @@ app.get("/api/blogs", async (req, res) => {
                 name: r.member.name,
                 avatarUrl: abs(r.member.avatarUrl || null, req),
                 headline: r.member.headline || null,
+                role:
+                    typeof r.role === "string" && r.role.trim()
+                        ? r.role.trim()
+                        : null,
             })),
         })),
         page,
         size,
         total,
     });
+});
+
+app.get("/api/blogs/:slug", async (req, res) => {
+    const b = await prisma.blog.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+            techs: { include: { tech: true } },
+            tags: { include: { tag: true } },
+            authors: {
+                include: {
+                    member: {
+                        select: {
+                            slug: true,
+                            name: true,
+                            avatarUrl: true,
+                            headline: true,
+                        },
+                    },
+                },
+            },
+        },
+    });
+    if (!b) return res.status(404).json({ error: "Not found" });
+
+    const images = Array.isArray(b.images) ? b.images : [];
+    const cover =
+        b.cover || b.imageUrl || (images.length ? images[0] : null);
+
+    res.json({
+        id: b.id,
+        slug: b.slug,
+        title: b.title,
+        summary: b.summary || null,
+        content: b.content || null,
+        cover: abs(cover, req),
+        imageUrl: abs(b.imageUrl || cover || null, req),
+        images: images.map((u) => abs(u, req)),
+        publishedAt: b.publishedAt || null,
+        techStack: b.techs.map((x) => x.tech.name),
+        tags: b.tags.map((x) => x.tag.name),
+        authors: (b.authors || []).map((r) => ({
+            slug: r.member.slug,
+            name: r.member.name,
+            avatarUrl: abs(r.member.avatarUrl || null, req),
+            headline: r.member.headline || null,
+            role:
+                typeof r.role === "string" && r.role.trim()
+                    ? r.role.trim()
+                    : null,
+        })),
+    });
+});
+
+app.post("/api/blogs", async (req, res) => {
+    console.log("========== [POST /api/blogs] BEGIN ==========");
+    console.log("[POST /api/blogs] raw body =", JSON.stringify(req.body));
+
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn("[POST /api/blogs] blocked: unauthenticated");
+        console.log(
+            "========== [POST /api/blogs] END (unauthenticated) ==========",
+        );
+        return;
+    }
+
+    const roles = (user.roles || []).map((r) => r.role);
+    const hasMemberRole = roles.some((r) =>
+        ["ADMIN", "MODERATOR", "MEMBER"].includes(r),
+    );
+    if (!hasMemberRole) {
+        console.warn(
+            "[POST /api/blogs] blocked: insufficient permissions",
+        );
+        console.log(
+            "========== [POST /api/blogs] END (forbidden) ==========",
+        );
+        return res
+            .status(403)
+            .json({ ok: false, error: "Insufficient permissions" });
+    }
+
+    const parsed = blogCreateSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[POST /api/blogs] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [POST /api/blogs] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+
+    const d = parsed.data;
+    console.log("[POST /api/blogs] parsed data =", {
+        title: d.title,
+        hasSummary: !!d.summary,
+        hasContent: !!d.content,
+        publishedAt: d.publishedAt || null,
+        techStackCount: Array.isArray(d.techStack)
+            ? d.techStack.length
+            : 0,
+        tagsCount: Array.isArray(d.tags) ? d.tags.length : 0,
+        authorSlugsCount: Array.isArray(d.authorSlugs)
+            ? d.authorSlugs.length
+            : 0,
+        projectSlugsCount: Array.isArray(d.projectSlugs)
+            ? d.projectSlugs.length
+            : 0,
+        photosCount: Array.isArray(d.photos) ? d.photos.length : 0,
+    });
+
+    const slug = await uniqueBlogSlug(d.title);
+    console.log("[POST /api/blogs] generated slug =", slug);
+
+    const photos = Array.isArray(d.photos) ? d.photos : [];
+    const coverRel = photos.length ? photos[0] : null;
+    const imagesRel = photos;
+
+    const publishedAt =
+        d.publishedAt && typeof d.publishedAt === "string"
+            ? new Date(d.publishedAt)
+            : null;
+
+    const blog = await prisma.blog.create({
+        data: {
+            slug,
+            title: d.title,
+            summary: d.summary || null,
+            content: d.content || null,
+            publishedAt:
+                publishedAt && !Number.isNaN(publishedAt.getTime())
+                    ? publishedAt
+                    : null,
+            cover: coverRel,
+            imageUrl: coverRel,
+            images: imagesRel,
+        },
+    });
+
+    console.log("[POST /api/blogs] created blog id =", blog.id);
+
+    const techNames = Array.isArray(d.techStack) ? d.techStack : [];
+    if (techNames.length) {
+        const techIds = await upsertStringList(techNames, "tech");
+        if (techIds.length) {
+            await prisma.blogTech.createMany({
+                data: techIds.map((id) => ({
+                    blogId: blog.id,
+                    techId: id,
+                })),
+                skipDuplicates: true,
+            });
+        }
+    }
+
+    const tagNames = Array.isArray(d.tags) ? d.tags : [];
+    if (tagNames.length) {
+        const tagIds = await upsertStringList(tagNames, "tag");
+        if (tagIds.length) {
+            await prisma.blogTag.createMany({
+                data: tagIds.map((id) => ({
+                    blogId: blog.id,
+                    tagId: id,
+                })),
+                skipDuplicates: true,
+            });
+        }
+    }
+
+    const creatorMemberId =
+        user && user.member && user.member.id ? user.member.id : null;
+    const authorSlugSet = new Set(
+        Array.isArray(d.authorSlugs)
+            ? d.authorSlugs
+                .map((s) => String(s || "").trim())
+                .filter(Boolean)
+            : [],
+    );
+
+    if (user && user.member && user.member.slug) {
+        authorSlugSet.add(user.member.slug);
+    }
+
+    if (authorSlugSet.size) {
+        const authorSlugs = Array.from(authorSlugSet);
+        const members = await prisma.member.findMany({
+            where: { slug: { in: authorSlugs } },
+            select: { id: true, slug: true },
+        });
+
+        if (members.length) {
+            for (const m of members) {
+                const role =
+                    creatorMemberId && m.id === creatorMemberId
+                        ? "CREATOR"
+                        : null;
+                try {
+                    await prisma.blogAuthor.upsert({
+                        where: {
+                            blogId_memberId: {
+                                blogId: blog.id,
+                                memberId: m.id,
+                            },
+                        },
+                        create: {
+                            blogId: blog.id,
+                            memberId: m.id,
+                            role,
+                        },
+                        update: {
+                            role,
+                        },
+                    });
+                } catch (err) {
+                    console.error(
+                        "[POST /api/blogs] failed to upsert blogAuthor for memberId",
+                        m.id,
+                        err,
+                    );
+                }
+            }
+        }
+    } else if (creatorMemberId) {
+        try {
+            await prisma.blogAuthor.upsert({
+                where: {
+                    blogId_memberId: {
+                        blogId: blog.id,
+                        memberId: creatorMemberId,
+                    },
+                },
+                create: {
+                    blogId: blog.id,
+                    memberId: creatorMemberId,
+                    role: "CREATOR",
+                },
+                update: {
+                    role: "CREATOR",
+                },
+            });
+        } catch (err) {
+            console.error(
+                "[POST /api/blogs] failed to upsert creator blogAuthor row",
+                err,
+            );
+        }
+    }
+
+    const projectSlugs = Array.isArray(d.projectSlugs)
+        ? d.projectSlugs
+        : [];
+    if (projectSlugs.length) {
+        const projects = await prisma.project.findMany({
+            where: { slug: { in: projectSlugs } },
+            select: { id: true, slug: true },
+        });
+
+        if (projects.length) {
+            await prisma.projectBlog.createMany({
+                data: projects.map((p) => ({
+                    projectId: p.id,
+                    blogId: blog.id,
+                })),
+                skipDuplicates: true,
+            });
+        }
+    }
+
+    console.log("========== [POST /api/blogs] END (success) ==========");
+    return res
+        .status(201)
+        .json({ ok: true, slug: blog.slug, id: blog.id });
+});
+
+app.put("/api/blogs/:slug", async (req, res) => {
+    console.log("========== [PUT /api/blogs/:slug] BEGIN ==========");
+    console.log("[PUT /api/blogs/:slug] slug =", req.params.slug);
+    console.log(
+        "[PUT /api/blogs/:slug] raw body =",
+        JSON.stringify(req.body),
+    );
+
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn(
+            "[PUT /api/blogs/:slug] blocked: unauthenticated",
+        );
+        console.log(
+            "========== [PUT /api/blogs/:slug] END (unauthenticated) ==========",
+        );
+        return;
+    }
+
+    const roles = (user.roles || []).map((r) => r.role);
+    console.log(
+        "[PUT /api/blogs/:slug] authenticated user id =",
+        user.id,
+        "roles =",
+        roles,
+    );
+
+    const blog = await prisma.blog.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+            authors: {
+                include: {
+                    member: { select: { id: true, slug: true } },
+                },
+            },
+        },
+    });
+
+    if (!blog) {
+        console.warn(
+            "[PUT /api/blogs/:slug] 404 for slug",
+            req.params.slug,
+        );
+        console.log(
+            "========== [PUT /api/blogs/:slug] END (not found) ==========",
+        );
+        return res
+            .status(404)
+            .json({ ok: false, error: "Not found" });
+    }
+
+    const isAdminOrModerator = roles.some((r) =>
+        ["ADMIN", "MODERATOR"].includes(r),
+    );
+
+    const authors = Array.isArray(blog.authors) ? blog.authors : [];
+    const hasAnyAuthor = authors.length > 0;
+
+    const userMemberId = user.member?.id || null;
+    const isAuthor =
+        !!userMemberId &&
+        authors.some((a) => a.memberId === userMemberId);
+
+    // 🟢 THIS IS THE IMPORTANT CHANGE:
+    // - Admin / moderator can edit any blog
+    // - Otherwise, ANY author of the blog can edit (not just "CREATOR")
+    let canEdit = isAdminOrModerator;
+
+    if (!canEdit) {
+        if (hasAnyAuthor) {
+            canEdit = isAuthor;
+        } else {
+            canEdit = false;
+        }
+    }
+
+    if (!canEdit) {
+        console.warn(
+            "[PUT /api/blogs/:slug] blocked: insufficient permissions for user",
+            user.id,
+        );
+        console.log(
+            "========== [PUT /api/blogs/:slug] END (forbidden) ==========",
+        );
+        return res
+            .status(403)
+            .json({ ok: false, error: "Insufficient permissions" });
+    }
+
+    const parsed = blogCreateSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[PUT /api/blogs/:slug] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [PUT /api/blogs/:slug] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+
+    const d = parsed.data;
+
+    const hasTechStack = Object.prototype.hasOwnProperty.call(
+        req.body || {},
+        "techStack",
+    );
+    const hasTags = Object.prototype.hasOwnProperty.call(
+        req.body || {},
+        "tags",
+    );
+    const hasAuthorSlugs = Object.prototype.hasOwnProperty.call(
+        req.body || {},
+        "authorSlugs",
+    );
+    const hasProjectSlugs = Object.prototype.hasOwnProperty.call(
+        req.body || {},
+        "projectSlugs",
+    );
+
+    console.log("[PUT /api/blogs/:slug] parsed data =", {
+        title: d.title,
+        hasSummary: !!d.summary,
+        hasContent: !!d.content,
+        publishedAt: d.publishedAt || null,
+        hasTechStack,
+        techStackCount: Array.isArray(d.techStack)
+            ? d.techStack.length
+            : 0,
+        hasTags,
+        tagsCount: Array.isArray(d.tags) ? d.tags.length : 0,
+        hasAuthorSlugs,
+        authorSlugsCount: Array.isArray(d.authorSlugs)
+            ? d.authorSlugs.length
+            : 0,
+        hasProjectSlugs,
+        projectSlugsCount: Array.isArray(d.projectSlugs)
+            ? d.projectSlugs.length
+            : 0,
+        photosCount: Array.isArray(d.photos) ? d.photos.length : 0,
+    });
+
+    const photos = Array.isArray(d.photos)
+        ? d.photos
+        : Array.isArray(blog.images)
+            ? blog.images
+            : [];
+    const coverRel = photos.length
+        ? photos[0]
+        : blog.cover || blog.imageUrl || null;
+    const imagesRel = photos;
+
+    const publishedAt =
+        d.publishedAt && typeof d.publishedAt === "string"
+            ? new Date(d.publishedAt)
+            : null;
+
+    const updated = await prisma.blog.update({
+        where: { id: blog.id },
+        data: {
+            title: d.title,
+            summary: d.summary || null,
+            content: d.content || null,
+            publishedAt:
+                publishedAt && !Number.isNaN(publishedAt.getTime())
+                    ? publishedAt
+                    : null,
+            cover: coverRel,
+            imageUrl: coverRel || blog.imageUrl,
+            images: imagesRel,
+        },
+    });
+
+    console.log("[PUT /api/blogs/:slug] updated blog id =", updated.id);
+
+    // --- tech stack ---
+    if (hasTechStack) {
+        const techNames = Array.isArray(d.techStack) ? d.techStack : [];
+        console.log(
+            "[PUT /api/blogs/:slug] updating techStack =",
+            techNames,
+        );
+        await prisma.blogTech.deleteMany({
+            where: { blogId: updated.id },
+        });
+        if (techNames.length) {
+            const techIds = await upsertStringList(techNames, "tech");
+            if (techIds.length) {
+                await prisma.blogTech.createMany({
+                    data: techIds.map((id) => ({
+                        blogId: updated.id,
+                        techId: id,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+    }
+
+    // --- tags ---
+    if (hasTags) {
+        const tagNames = Array.isArray(d.tags) ? d.tags : [];
+        console.log(
+            "[PUT /api/blogs/:slug] updating tags =",
+            tagNames,
+        );
+        await prisma.blogTag.deleteMany({
+            where: { blogId: updated.id },
+        });
+        if (tagNames.length) {
+            const tagIds = await upsertStringList(tagNames, "tag");
+            if (tagIds.length) {
+                await prisma.blogTag.createMany({
+                    data: tagIds.map((id) => ({
+                        blogId: updated.id,
+                        tagId: id,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+    }
+
+    // --- authors ---
+    if (hasAuthorSlugs) {
+        const existingAuthors = Array.isArray(blog.authors)
+            ? blog.authors
+            : [];
+        const creatorMemberIds = new Set(
+            existingAuthors
+                .filter(
+                    (a) =>
+                        a &&
+                        a.memberId &&
+                        typeof a.role === "string" &&
+                        a.role === "CREATOR",
+                )
+                .map((a) => a.memberId),
+        );
+        const creatorSlugs = new Set(
+            existingAuthors
+                .filter(
+                    (a) =>
+                        a &&
+                        a.member &&
+                        typeof a.role === "string" &&
+                        a.role === "CREATOR",
+                )
+                .map((a) => a.member.slug)
+                .filter(Boolean),
+        );
+
+        const incomingSlugSet = new Set(
+            Array.isArray(d.authorSlugs)
+                ? d.authorSlugs
+                    .map((s) => String(s || "").trim())
+                    .filter(Boolean)
+                : [],
+        );
+
+        // Always keep creators even if UI didn't send them
+        for (const slug of creatorSlugs) {
+            incomingSlugSet.add(slug);
+        }
+
+        const authorSlugs = Array.from(incomingSlugSet);
+        let members = [];
+        if (authorSlugs.length) {
+            members = await prisma.member.findMany({
+                where: { slug: { in: authorSlugs } },
+                select: { id: true, slug: true },
+            });
+        }
+
+        const memberIdsToKeep = members.map((m) => m.id);
+        if (memberIdsToKeep.length) {
+            await prisma.blogAuthor.deleteMany({
+                where: {
+                    blogId: updated.id,
+                    memberId: {
+                        notIn: memberIdsToKeep,
+                    },
+                },
+            });
+        } else {
+            if (creatorMemberIds.size) {
+                await prisma.blogAuthor.deleteMany({
+                    where: {
+                        blogId: updated.id,
+                        memberId: {
+                            notIn: Array.from(creatorMemberIds),
+                        },
+                    },
+                });
+            } else {
+                await prisma.blogAuthor.deleteMany({
+                    where: { blogId: updated.id },
+                });
+            }
+        }
+
+        for (const m of members) {
+            const role = creatorMemberIds.has(m.id)
+                ? "CREATOR"
+                : null;
+            try {
+                await prisma.blogAuthor.upsert({
+                    where: {
+                        blogId_memberId: {
+                            blogId: updated.id,
+                            memberId: m.id,
+                        },
+                    },
+                    create: {
+                        blogId: updated.id,
+                        memberId: m.id,
+                        role,
+                    },
+                    update: {
+                        role,
+                    },
+                });
+            } catch (err) {
+                console.error(
+                    "[PUT /api/blogs/:slug] failed to upsert blogAuthor for memberId",
+                    m.id,
+                    err,
+                );
+            }
+        }
+    }
+
+    // --- related projects ---
+    if (hasProjectSlugs) {
+        const projectSlugs = Array.isArray(d.projectSlugs)
+            ? d.projectSlugs
+            : [];
+        console.log(
+            "[PUT /api/blogs/:slug] updating related projects, slugs =",
+            projectSlugs,
+        );
+
+        await prisma.projectBlog.deleteMany({
+            where: { blogId: updated.id },
+        });
+
+        if (projectSlugs.length) {
+            const projects = await prisma.project.findMany({
+                where: { slug: { in: projectSlugs } },
+                select: { id: true, slug: true },
+            });
+            if (projects.length) {
+                await prisma.projectBlog.createMany({
+                    data: projects.map((p) => ({
+                        projectId: p.id,
+                        blogId: updated.id,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+    }
+
+    console.log("========== [PUT /api/blogs/:slug] END (success) ==========");
+    return res
+        .status(200)
+        .json({ ok: true, slug: updated.slug, id: updated.id });
+});
+
+app.delete("/api/blogs/:slug", async (req, res) => {
+    console.log("========== [DELETE /api/blogs/:slug] BEGIN ==========");
+    console.log("[DELETE /api/blogs/:slug] slug =", req.params.slug);
+
+    const user = await requireUser(req, res);
+    if (!user) {
+        console.warn(
+            "[DELETE /api/blogs/:slug] blocked: unauthenticated",
+        );
+        console.log(
+            "========== [DELETE /api/blogs/:slug] END (unauthenticated) ==========",
+        );
+        return;
+    }
+
+    const roles = (user.roles || []).map((r) => r.role);
+    console.log(
+        "[DELETE /api/blogs/:slug] authenticated user id =",
+        user.id,
+        "roles =",
+        roles,
+    );
+
+    const blog = await prisma.blog.findUnique({
+        where: { slug: req.params.slug },
+        include: {
+            authors: true,
+        },
+    });
+
+    if (!blog) {
+        console.warn(
+            "[DELETE /api/blogs/:slug] 404 for slug",
+            req.params.slug,
+        );
+        console.log(
+            "========== [DELETE /api/blogs/:slug] END (not found) ==========",
+        );
+        return res
+            .status(404)
+            .json({ ok: false, error: "Not found" });
+    }
+
+    const isAdminOrModerator = roles.some((r) =>
+        ["ADMIN", "MODERATOR"].includes(r),
+    );
+
+    let isCreator = false;
+    if (user.member && user.member.id) {
+        isCreator = (blog.authors || []).some(
+            (a) =>
+                a.memberId === user.member.id &&
+                typeof a.role === "string" &&
+                a.role === "CREATOR",
+        );
+    }
+
+    if (!isAdminOrModerator && !isCreator) {
+        console.warn(
+            "[DELETE /api/blogs/:slug] blocked: insufficient permissions for user",
+            user.id,
+        );
+        console.log(
+            "========== [DELETE /api/blogs/:slug] END (forbidden) ==========",
+        );
+        return res
+            .status(403)
+            .json({ ok: false, error: "Insufficient permissions" });
+    }
+
+    const parsed = deleteBySlugSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[DELETE /api/blogs/:slug] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [DELETE /api/blogs/:slug] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+
+    const { confirmSlug } = parsed.data;
+    if (confirmSlug !== blog.slug) {
+        console.warn(
+            "[DELETE /api/blogs/:slug] slug confirmation mismatch, got",
+            confirmSlug,
+            "expected",
+            blog.slug,
+        );
+        console.log(
+            "========== [DELETE /api/blogs/:slug] END (slug mismatch) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Slug confirmation does not match",
+        });
+    }
+
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.blogTech.deleteMany({
+                where: { blogId: blog.id },
+            });
+            await tx.blogTag.deleteMany({
+                where: { blogId: blog.id },
+            });
+            await tx.blogAuthor.deleteMany({
+                where: { blogId: blog.id },
+            });
+            await tx.projectBlog.deleteMany({
+                where: { blogId: blog.id },
+            });
+
+            await tx.blog.delete({
+                where: { id: blog.id },
+            });
+        });
+
+        console.log(
+            "========== [DELETE /api/blogs/:slug] END (success) ==========",
+        );
+        return res.status(200).json({ ok: true });
+    } catch (err) {
+        console.error(
+            "[DELETE /api/blogs/:slug] error during deletion",
+            err,
+        );
+        console.log(
+            "========== [DELETE /api/blogs/:slug] END (error) ==========",
+        );
+        return res.status(500).json({
+            ok: false,
+            error: "Failed to delete blog",
+        });
+    }
 });
 
 /* ------------------------------ Events (list + detail) ------------------------------ */
@@ -2939,7 +3876,7 @@ const attendeeSchema = z.object({
     memberSlug: z.string().optional(),
     name: z.string().optional().nullable(),
     email: z.string().optional().nullable(),
-    value: z.string().optional().nullable(), // for invite-only
+    value: z.string().optional().nullable(),
 });
 
 const eventCreateSchema = z.object({
@@ -2969,11 +3906,6 @@ async function uniqueEventSlug(base) {
     return slug;
 }
 
-/**
- * POST /api/events
- * Ensure creator is always an attendee with role "CREATOR"
- * and cannot later be removed.
- */
 app.post("/api/events", async (req, res) => {
     console.log("========== [POST /api/events] BEGIN ==========");
     console.log("[POST /api/events] raw body =", JSON.stringify(req.body));
@@ -3047,11 +3979,9 @@ app.post("/api/events", async (req, res) => {
             ? new Date(d.dateEnd)
             : null;
 
-    // who is the creator as a member
     const creatorMemberId =
         user && user.member && user.member.id ? user.member.id : null;
 
-    // Create event
     const event = await prisma.event.create({
         data: {
             slug,
@@ -3073,13 +4003,11 @@ app.post("/api/events", async (req, res) => {
                     : null,
             description: d.description || null,
             photos: imagesRel,
-            // optionally: imageUrl: coverRel, IF your Event model has `imageUrl`
         },
     });
 
     console.log("[POST /api/events] created event id =", event.id);
 
-    // Ensure creator is always an attendee with role "CREATOR"
     if (creatorMemberId) {
         try {
             await prisma.memberEvent.upsert({
@@ -3114,7 +4042,6 @@ app.post("/api/events", async (req, res) => {
         );
     }
 
-    // Attach projects
     const projectSlugs = Array.isArray(d.projectSlugs)
         ? d.projectSlugs
         : [];
@@ -3134,11 +4061,9 @@ app.post("/api/events", async (req, res) => {
         }
     }
 
-    // Attendees + email invites
     const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
     const attendees = Array.isArray(d.attendees) ? d.attendees : [];
 
-    // MemberEvent rows (other attendees; creator already ensured)
     for (const a of attendees) {
         if (a.type === "member" && a.memberId) {
             if (creatorMemberId && a.memberId === creatorMemberId) {
@@ -3164,10 +4089,8 @@ app.post("/api/events", async (req, res) => {
         }
     }
 
-    // Collect invite emails (from invite entries + memberIds -> users)
     const inviteMap = new Map();
 
-    // direct invite objects (type="invite")
     for (const a of attendees) {
         if (a.type !== "invite") continue;
         let addr = a.value || a.email || "";
@@ -3179,7 +4102,6 @@ app.post("/api/events", async (req, res) => {
         }
     }
 
-    // also auto-invite email addresses of member attendees
     const memberIds = attendees
         .filter((a) => a.type === "member" && a.memberId)
         .map((a) => a.memberId);
@@ -3254,12 +4176,6 @@ This invite was sent from ${MAIL_FROM}.
         .json({ ok: true, slug: event.slug, id: event.id });
 });
 
-/**
- * PUT /api/events/:slug
- * Used by the EditEventPage form.
- * IMPORTANT: event creators (role="CREATOR") are always kept as attendees,
- * even if they are missing from the incoming attendees payload.
- */
 app.put("/api/events/:slug", async (req, res) => {
     console.log("========== [PUT /api/events/:slug] BEGIN ==========");
     console.log("[PUT /api/events/:slug] slug =", req.params.slug);
@@ -3293,13 +4209,18 @@ app.put("/api/events/:slug", async (req, res) => {
             "[PUT /api/events/:slug] 404 for slug",
             req.params.slug,
         );
+    }
+    if (!event) {
+        console.warn(
+            "[PUT /api/events/:slug] 404 for slug",
+            req.params.slug,
+        );
         console.log(
             "========== [PUT /api/events/:slug] END (not found) ==========",
         );
         return res.status(404).json({ ok: false, error: "Not found" });
     }
 
-    // Permissions: admins + moderators can edit anything; attendees can edit their own events.
     const roles = (user.roles || []).map((r) => r.role);
     const isAdminOrModerator = roles.some((r) =>
         ["ADMIN", "MODERATOR"].includes(r),
@@ -3395,13 +4316,11 @@ app.put("/api/events/:slug", async (req, res) => {
                     : null,
             description: d.description || null,
             photos: imagesRel,
-            // optionally: imageUrl: coverRel, IF your Event model has `imageUrl`
         },
     });
 
     console.log("[PUT /api/events/:slug] updated event id =", updated.id);
 
-    // --- Related projects ---
     const projectSlugs = Array.isArray(d.projectSlugs)
         ? d.projectSlugs
         : [];
@@ -3424,7 +4343,6 @@ app.put("/api/events/:slug", async (req, res) => {
         }
     }
 
-    // --- Attendees + invites ---
     const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
     const attendees = Array.isArray(d.attendees) ? d.attendees : [];
     const existingInvites = new Set(
@@ -3437,7 +4355,6 @@ app.put("/api/events/:slug", async (req, res) => {
         ? event.attendees
         : [];
 
-    // Identify creator member IDs (role="CREATOR")
     const creatorMemberIdSet = new Set(
         existingAttendees
             .filter(
@@ -3450,8 +4367,6 @@ app.put("/api/events/:slug", async (req, res) => {
             .map((a) => a.memberId),
     );
 
-    // For legacy events that don't have a CREATOR yet, if the editing user
-    // is already an attendee, promote them to CREATOR so they can't remove themself.
     if (
         creatorMemberIdSet.size === 0 &&
         user &&
@@ -3486,7 +4401,6 @@ app.put("/api/events/:slug", async (req, res) => {
         }
     }
 
-    // Replace MemberEvent rows with current payload, but NEVER delete creators
     if (creatorMemberIdSet.size > 0) {
         await prisma.memberEvent.deleteMany({
             where: {
@@ -3497,13 +4411,11 @@ app.put("/api/events/:slug", async (req, res) => {
             },
         });
     } else {
-        // no explicit creators; fall back to old behavior
         await prisma.memberEvent.deleteMany({
             where: { eventId: updated.id },
         });
     }
 
-    // Recreate non-creator attendees from payload
     for (const a of attendees) {
         if (a.type === "member" && a.memberId) {
             if (creatorMemberIdSet.has(a.memberId)) {
@@ -3532,7 +4444,6 @@ app.put("/api/events/:slug", async (req, res) => {
 
     const inviteMap = new Map();
 
-    // direct email invites
     for (const a of attendees) {
         if (a.type !== "invite") continue;
         let addr = a.value || a.email || "";
@@ -3545,13 +4456,12 @@ app.put("/api/events/:slug", async (req, res) => {
         }
     }
 
-    // also optionally invite users of member attendees
-    const memberIds = attendees
+    const memberIds2 = attendees
         .filter((a) => a.type === "member" && a.memberId)
         .map((a) => a.memberId);
-    if (memberIds.length) {
+    if (memberIds2.length) {
         const users = await prisma.user.findMany({
-            where: { memberId: { in: memberIds } },
+            where: { memberId: { in: memberIds2 } },
             select: { email: true },
         });
         for (const u of users) {
@@ -3725,7 +4635,6 @@ app.delete("/api/events/:slug", async (req, res) => {
 
     try {
         await prisma.$transaction(async (tx) => {
-            // Detach this event from any projects that have a direct eventId FK
             await tx.project.updateMany({
                 where: { eventId: event.id },
                 data: { eventId: null },
@@ -3742,9 +4651,6 @@ app.delete("/api/events/:slug", async (req, res) => {
             await tx.eventInvite.deleteMany({
                 where: { eventId: event.id },
             });
-
-            // If new relations to eventId are added in the future,
-            // they should also be deleted here.
 
             await tx.event.delete({
                 where: { id: event.id },
@@ -3774,7 +4680,7 @@ app.delete("/api/events/:slug", async (req, res) => {
 
 const inviteConsumeSchema = z.object({
     token: z.string().min(10),
-    name: z.string().optional(), // used for new-user flow
+    name: z.string().optional(),
     password: z.string().optional(),
     passwordRepeat: z.string().optional(),
 });
@@ -3809,7 +4715,6 @@ app.post("/api/auth/invite/consume", async (req, res) => {
             .json({ ok: false, error: "Invite invalid or expired." });
     }
 
-    // Try project invite first
     let projectInvite = await prisma.projectInvite.findFirst({
         where: {
             tokenHash,
@@ -3825,7 +4730,6 @@ app.post("/api/auth/invite/consume", async (req, res) => {
         },
     });
 
-    // Then event invite
     let eventInvite = null;
     if (!projectInvite) {
         eventInvite = await prisma.eventInvite.findFirst({
@@ -3856,7 +4760,6 @@ app.post("/api/auth/invite/consume", async (req, res) => {
     const inviteObj = projectInvite || eventInvite;
     const emailLower = (inviteObj.email || "").toLowerCase();
 
-    // Look up user by email
     let user = await prisma.user.findUnique({
         where: { email: emailLower },
         include: { member: true, roles: true },
@@ -3865,7 +4768,6 @@ app.post("/api/auth/invite/consume", async (req, res) => {
     const isNewUser = !user;
 
     if (isNewUser) {
-        // New-user flow: require password + name
         if (!password || !passwordRepeat || password !== passwordRepeat) {
             console.warn(
                 "[invite/consume] new-user password mismatch/empty for",
@@ -3900,7 +4802,6 @@ app.post("/api/auth/invite/consume", async (req, res) => {
             type: argon2.argon2id,
         });
 
-        // Minimal member profile
         const baseSlug =
             slugify(name, { lower: true, strict: true }) ||
             emailLower.split("@")[0] ||
@@ -3943,7 +4844,6 @@ app.post("/api/auth/invite/consume", async (req, res) => {
         );
     }
 
-    // Ensure member profile exists
     let member = user.member;
     if (!member) {
         const baseName = user.email.split("@")[0] || "user";
@@ -3978,7 +4878,6 @@ app.post("/api/auth/invite/consume", async (req, res) => {
         const project = projectInvite.project;
         projectSlug = project.slug;
 
-        // Check if MemberProject row already exists
         const existingMemberProject =
             await prisma.memberProject.findUnique({
                 where: {
@@ -4001,7 +4900,6 @@ app.post("/api/auth/invite/consume", async (req, res) => {
             });
         }
 
-        // Mark invite as accepted
         await prisma.projectInvite.update({
             where: { id: projectInvite.id },
             data: {
@@ -4077,7 +4975,6 @@ app.use("/api/account", accountRouter);
 
 /* ------------------------------ Error handler ------------------------------ */
 app.use((err, req, res, _next) => {
-    // Unified, friendly JSON errors for CORS, uploads, validation, etc.
     console.error(
         "[error] during",
         req.method,
@@ -4086,14 +4983,34 @@ app.use((err, req, res, _next) => {
         err && err.stack ? err.stack : err,
     );
 
-    const msg =
-        err?.message?.includes("CORS")
-            ? "CORS: Origin not allowed"
-            : err?.message?.includes("Unsupported file type")
-                ? "Unsupported file type"
-                : err?.message || "Server error";
+    // Handle multer-specific errors clearly so non-upload requests
+    // don't accidentally show a file-type message
+    if (err instanceof multer.MulterError) {
+        let error = "Upload error";
+        if (err.code === "LIMIT_FILE_SIZE") {
+            error = "File too large";
+        } else if (err.code === "LIMIT_UNEXPECTED_FILE") {
+            error = "Unsupported file type";
+        }
+
+        if (!res.headersSent) {
+            return res.status(400).json({ ok: false, error });
+        }
+        return;
+    }
+
+    const message = err?.message || "Server error";
     if (res.headersSent) return;
-    res.status(400).json({ ok: false, error: msg });
+
+    // Default everything else to 500 unless you *know* it's a bad request
+    const status =
+        message.includes("Invalid input") ||
+        message.includes("validation") ||
+        message.includes("ZodError")
+            ? 400
+            : 500;
+
+    res.status(status).json({ ok: false, error: message });
 });
 
 /* ------------------------------ Start ------------------------------ */
