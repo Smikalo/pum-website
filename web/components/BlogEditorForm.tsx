@@ -16,7 +16,7 @@ type MemberOption = {
     name: string;
     avatarUrl?: string | null;
     headline?: string | null;
-    role?: string | null; // to detect CREATOR on initialBlog
+    role?: string | null;
 };
 
 type ProjectOption = {
@@ -71,11 +71,29 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
             ? new Date(initialBlog.publishedAt).toISOString().slice(0, 10)
             : "";
 
+    // Existing related project connections
+    const initialProjectSlugs: string[] = Array.isArray(
+        initialBlog?.projectSlugs,
+    )
+        ? (initialBlog.projectSlugs as any[])
+            .filter(
+                (s) => typeof s === "string" && s.trim().length > 0,
+            )
+            .map((s) => s.trim())
+        : Array.isArray(initialBlog?.projects)
+            ? (initialBlog.projects as any[])
+                .map((p) => p?.slug)
+                .filter(
+                    (s) => typeof s === "string" && s.trim().length > 0,
+                )
+                .map((s) => s.trim())
+            : [];
+
     const [content, setContent] = useState<string>(initialContent);
     const [members, setMembers] = useState<MemberOption[]>([]);
     const [projects, setProjects] = useState<ProjectOption[]>([]);
 
-    // People & projects selection (project-style)
+    // People & projects selection
     const [memberQ, setMemberQ] = useState("");
     const [selectedAuthors, setSelectedAuthors] = useState<MemberOption[]>(
         initialAuthors.map((a) => ({
@@ -89,7 +107,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
 
     const [projectQ, setProjectQ] = useState("");
     const [selectedProjectSlugs, setSelectedProjectSlugs] = useState<string[]>(
-        [],
+        initialProjectSlugs,
     );
 
     // Photos: existing (from backend) + new uploads + cover selection
@@ -101,7 +119,6 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
     const [headerExistingIndex, setHeaderExistingIndex] = useState<
         number | null
     >(() => {
-        // If backend exposes cover, prefer it
         const cover: string | null =
             initialBlog?.cover ?? initialBlog?.imageUrl ?? null;
         if (cover && initialImages.length) {
@@ -110,7 +127,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         }
         return initialImages.length ? 0 : null;
     });
-    const [headerNewIndex, setHeaderNewIndex] = useState<number | null>(null);
+    const [headerNewIndex, setHeaderNewIndex] = useState<number | null>(
+        null,
+    );
 
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -170,11 +189,11 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                         items.map((p) => ({
                             slug: p.slug,
                             title: p.title,
-                            cover:
-                                Array.isArray(p.photos) && p.photos.length
-                                    ? p.photos[0]
-                                    : p.cover || null,
-                            year: typeof p.year === "number" ? p.year : null,
+                            cover: p.cover || null,
+                            year:
+                                typeof p.year === "number"
+                                    ? p.year
+                                    : null,
                         })),
                     );
                 }
@@ -206,7 +225,6 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         if (!files || !files.length) return;
         const arr = Array.from(files);
 
-        // Filter by supported MIME types BEFORE we add them
         const unsupported = arr.filter((f) => !isAllowedImage(f));
         if (unsupported.length) {
             setPhotosError(
@@ -218,7 +236,6 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
 
         const allowed = arr.filter(isAllowedImage);
         if (!allowed.length && unsupported.length) {
-            // Nothing to add
             if (fileInputRef.current) fileInputRef.current.value = "";
             return;
         }
@@ -233,7 +250,6 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         setNewPhotos(combined);
         syncFileInput(combined);
 
-        // If no cover yet, and no existing cover, set first new as cover
         if (
             headerExistingIndex === null &&
             headerNewIndex === null &&
@@ -246,7 +262,6 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
     function removeExistingPhoto(idx: number) {
         setExistingPhotos((prev) => {
             const next = prev.filter((_, i) => i !== idx);
-            // adjust header index if needed
             if (headerExistingIndex !== null) {
                 if (headerExistingIndex === idx) {
                     setHeaderExistingIndex(null);
@@ -268,7 +283,6 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     setHeaderNewIndex(headerNewIndex - 1);
                 }
             }
-            // resync input
             syncFileInput(next);
             return next;
         });
@@ -437,7 +451,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                 </div>
             </div>
 
-            {/* Published date */}
+            {/* Published date + Authors */}
             <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                     <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
@@ -454,7 +468,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     </p>
                 </div>
 
-                {/* Authors selection (project-style) */}
+                {/* Authors selection */}
                 <div>
                     <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
                         Authors
@@ -540,9 +554,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                 </div>
             </div>
 
-            {/* Related projects + photos */}
+            {/* Related projects + Photos */}
             <div className="grid gap-4 sm:grid-cols-2">
-                {/* Related projects (project-style) */}
+                {/* Related projects */}
                 <div>
                     <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
                         Related projects
@@ -613,7 +627,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     </div>
                 </div>
 
-                {/* Photos UI (project-style) */}
+                {/* Photos UI */}
                 <div>
                     <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
                         Photos
@@ -631,7 +645,6 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                 type="file"
                                 name="photos"
                                 multiple
-                                // important: tighten accepted types to match backend
                                 accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
                                 className="hidden"
                                 onChange={(e) => handleNewPhotos(e.target.files)}
@@ -801,7 +814,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                 </div>
             </div>
 
-            {/* Hidden fields for authors and projects (CSV-style) */}
+            {/* Hidden fields for authors and projects */}
             <input
                 type="hidden"
                 name="authorSlugs"

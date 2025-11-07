@@ -1,5 +1,3 @@
-// app/blog/[slug]/page.tsx
-
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const dynamicParams = true;
@@ -33,6 +31,14 @@ type Blog = {
     tags?: string[];
     techStack?: string[];
     authors?: BlogAuthor[];
+    projectSlugs?: string[];
+};
+
+type ProjectCard = {
+    slug: string;
+    title: string;
+    cover?: string | null;
+    year?: number | null;
 };
 
 function normalizeAuthor(a: any): BlogAuthor {
@@ -54,12 +60,7 @@ function normalizeBlog(raw: any): Blog | null {
     const cover = b.cover ?? b.imageUrl ?? images[0] ?? null;
 
     const content =
-        b.content ??
-        b.body ??
-        b.markdown ??
-        b.html ??
-        b.text ??
-        undefined;
+        b.content ?? b.body ?? b.markdown ?? b.html ?? b.text ?? undefined;
 
     const normArr = (x: any): string[] =>
         Array.isArray(x)
@@ -90,6 +91,7 @@ function normalizeBlog(raw: any): Blog | null {
         tags: normArr(b.tags),
         techStack: normArr(b.techStack ?? b.tech),
         authors: authorsInput.map(normalizeAuthor),
+        projectSlugs: normArr(b.projectSlugs),
     };
 }
 
@@ -143,6 +145,53 @@ async function fetchRelatedBlogs(blog: Blog): Promise<Blog[]> {
     }
 }
 
+// 🔍 Fetch project metadata (title, cover, year) for the related project slugs
+async function fetchProjectsForSlugs(
+    slugs: string[],
+): Promise<ProjectCard[]> {
+    if (!slugs.length) return [];
+
+    try {
+        const url = new URL("/api/projects", API_BASE);
+        // Reuse the “list projects” endpoint and filter client-side
+        url.searchParams.set("size", "200");
+
+        const res = await fetch(url.toString(), {
+            cache: "no-store",
+        });
+        if (!res.ok) return [];
+
+        const json = await res.json();
+        const items: any[] = Array.isArray(json.items) ? json.items : [];
+
+        const slugSet = new Set(slugs);
+        const projects: ProjectCard[] = items
+            .filter((p) => p && slugSet.has(p.slug))
+            .map((p) => ({
+                slug: p.slug,
+                title: p.title ?? p.slug,
+                cover:
+                    Array.isArray(p.photos) && p.photos.length
+                        ? p.photos[0]
+                        : p.cover ?? null,
+                year:
+                    typeof p.year === "number"
+                        ? p.year
+                        : p.year
+                            ? Number(p.year)
+                            : null,
+            }));
+
+        // Keep the order from the original slugs array
+        const bySlug = new Map(projects.map((p) => [p.slug, p]));
+        return slugs
+            .map((slug) => bySlug.get(slug))
+            .filter((p): p is ProjectCard => !!p);
+    } catch {
+        return [];
+    }
+}
+
 export async function generateMetadata({
                                            params,
                                        }: {
@@ -187,6 +236,20 @@ export default async function BlogDetailPage({
     const images = b.images || [];
     const authorSlugs =
         b.authors?.map((a) => a.slug).filter(Boolean) ?? [];
+    const relatedProjectSlugs = b.projectSlugs ?? [];
+
+    // ✅ Load project metadata for nicer cards
+    const relatedProjects = await fetchProjectsForSlugs(
+        relatedProjectSlugs,
+    );
+
+    // Fallback: any slugs that didn't come back from the API
+    const slugsWithCards = new Set(
+        relatedProjects.map((p) => p.slug),
+    );
+    const fallbackProjectSlugs = relatedProjectSlugs.filter(
+        (slug) => !slugsWithCards.has(slug),
+    );
 
     return (
         <section className="section">
@@ -376,6 +439,78 @@ export default async function BlogDetailPage({
                             </p>
                         )}
                     </div>
+
+                    {/* ⭐ Related projects as cards */}
+                    {(relatedProjects.length > 0 ||
+                        fallbackProjectSlugs.length > 0) && (
+                        <div className="card p-5">
+                            <h2 className="text-lg font-semibold mb-2">
+                                Related projects
+                            </h2>
+                            <div className="grid gap-3">
+                                {relatedProjects.map((proj) => (
+                                    <Link
+                                        key={proj.slug}
+                                        href={`/projects/${proj.slug}`}
+                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 hover:border-white/20 transition"
+                                    >
+                                        {proj.cover && (
+                                            <div className="h-10 w-10 rounded-md overflow-hidden ring-1 ring-white/10 flex-shrink-0">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={proj.cover}
+                                                    alt={proj.title}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            </div>
+                                        )}
+                                        {!proj.cover && (
+                                            <div className="h-10 w-10 rounded-md bg-black/40 ring-1 ring-white/10 flex items-center justify-center text-[11px] text-white/60 flex-shrink-0">
+                                                PRJ
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <div className="text-xs font-medium truncate">
+                                                {proj.title}
+                                            </div>
+                                            <div className="text-[11px] text-white/60 truncate">
+                                                {proj.year
+                                                    ? `${proj.year} · ${proj.slug}`
+                                                    : proj.slug}
+                                            </div>
+                                        </div>
+                                        <span className="ml-auto text-[11px] text-white/60">
+                                            View →
+                                        </span>
+                                    </Link>
+                                ))}
+
+                                {/* Fallback cards for any slugs with no project data */}
+                                {fallbackProjectSlugs.map((slug) => (
+                                    <Link
+                                        key={slug}
+                                        href={`/projects/${slug}`}
+                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 hover:border-white/20 transition"
+                                    >
+                                        <div className="h-10 w-10 rounded-md bg-black/40 ring-1 ring-white/10 flex items-center justify-center text-[11px] text-white/60 flex-shrink-0">
+                                            PRJ
+                                        </div>
+                                        <div className="min-w-0">
+                                            <div className="text-xs font-medium truncate">
+                                                {slug}
+                                            </div>
+                                            <div className="text-[11px] text-white/60 truncate">
+                                                View project
+                                            </div>
+                                        </div>
+                                        <span className="ml-auto text-[11px] text-white/60">
+                                            View →
+                                        </span>
+                                    </Link>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </aside>
             </div>
 

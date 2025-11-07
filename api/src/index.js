@@ -2893,6 +2893,16 @@ app.get("/api/blogs", async (req, res) => {
                         },
                     },
                 },
+                // NEW: include related projects so we can surface projectSlugs
+                projects: {
+                    include: {
+                        project: {
+                            select: {
+                                slug: true,
+                            },
+                        },
+                    },
+                },
             },
             orderBy: [{ publishedAt: "desc" }, { title: "asc" }],
             skip: (page - 1) * size,
@@ -2921,6 +2931,13 @@ app.get("/api/blogs", async (req, res) => {
                         ? r.role.trim()
                         : null,
             })),
+            // NEW: expose projectSlugs on each blog
+            projectSlugs: Array.isArray(b.projects)
+                ? b.projects
+                    .map((pb) => pb.project)
+                    .filter(Boolean)
+                    .map((p) => p.slug)
+                : [],
         })),
         page,
         size,
@@ -2942,6 +2959,16 @@ app.get("/api/blogs/:slug", async (req, res) => {
                             name: true,
                             avatarUrl: true,
                             headline: true,
+                        },
+                    },
+                },
+            },
+            // NEW: include related projects so we can return projectSlugs
+            projects: {
+                include: {
+                    project: {
+                        select: {
+                            slug: true,
                         },
                     },
                 },
@@ -2976,6 +3003,13 @@ app.get("/api/blogs/:slug", async (req, res) => {
                     ? r.role.trim()
                     : null,
         })),
+        // NEW: projectSlugs for this blog – used by detail page and editor form
+        projectSlugs: Array.isArray(b.projects)
+            ? b.projects
+                .map((pb) => pb.project)
+                .filter(Boolean)
+                .map((p) => p.slug)
+            : [],
     });
 });
 

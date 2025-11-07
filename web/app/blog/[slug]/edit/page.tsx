@@ -1,5 +1,3 @@
-// app/blog/[slug]/edit/page.tsx
-
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const dynamicParams = true;
@@ -32,6 +30,7 @@ type Blog = {
         headline?: string | null;
         role?: string | null;
     }[];
+    projectSlugs?: string[];
 };
 
 function normArr(x: any): string[] {
@@ -71,7 +70,7 @@ function normalizeBlog(raw: any): Blog | null {
         };
     };
 
-    return {
+    const blog: Blog = {
         id: String(b.id ?? b.slug ?? ""),
         slug: String(b.slug ?? b.id ?? ""),
         title: String(b.title ?? b.name ?? "Untitled"),
@@ -84,7 +83,21 @@ function normalizeBlog(raw: any): Blog | null {
         tags: normArr(b.tags),
         techStack: normArr(b.techStack ?? b.tech),
         authors: authorsInput.map(normalizeAuthor),
+        projectSlugs: normArr(b.projectSlugs),
     };
+
+    console.log("[EditBlogPage] normalizeBlog result", {
+        input: b,
+        normalized: {
+            id: blog.id,
+            slug: blog.slug,
+            title: blog.title,
+            authors: blog.authors,
+            projectSlugs: blog.projectSlugs,
+        },
+    });
+
+    return blog;
 }
 
 async function fetchBlog(slug: string): Promise<Blog | null> {
@@ -110,6 +123,7 @@ async function fetchBlog(slug: string): Promise<Blog | null> {
         console.log("[EditBlogPage] fetchBlog success", {
             slug: blog?.slug,
             authorSlugs: (blog?.authors || []).map((a) => a.slug),
+            projectSlugs: blog?.projectSlugs,
         });
 
         return blog;
@@ -268,6 +282,7 @@ async function updateBlog(slug: string, formData: FormData) {
         tagCount: tags.length,
         techStackCount: techStack.length,
         authorSlugsCount: authorSlugs.length,
+        projectSlugsCount: projectSlugs.length,
     });
 
     const res = await fetch(`${API_BASE}/api/blogs/${slug}`, {
@@ -384,6 +399,7 @@ export default async function EditBlogPage({
     console.log("[EditBlogPage] blog loaded", {
         slug: blog.slug,
         authorSlugs: (blog.authors || []).map((a) => a.slug),
+        projectSlugs: blog.projectSlugs,
     });
 
     const cookieStore = cookies();
@@ -412,9 +428,13 @@ export default async function EditBlogPage({
 
         const meData: any = await fetchMe(token);
         const rawUser = meData?.user ?? null;
-        const rawRoles: string[] = Array.isArray(rawUser?.roles)
+        const rawUserRoles = Array.isArray(rawUser?.roles)
             ? rawUser.roles
             : [];
+        const rawRoles: string[] =
+            typeof rawUserRoles[0] === "string"
+                ? rawUserRoles
+                : rawUserRoles.map((r: any) => r.role ?? r);
 
         const upperRoles = rawRoles
             .filter(Boolean)
