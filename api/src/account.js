@@ -1,4 +1,3 @@
-// api/src/account.js
 const express = require("express");
 const z = require("zod");
 const jwt = require("jsonwebtoken");
@@ -9,6 +8,9 @@ const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
 const mime = require("mime-types");
+
+// --- NEW: default avatar + header helpers ---
+const { ensureMemberAvatar } = require("./imageDefaults");
 
 // --- NEW: pdf parsing (tiny, local) ---
 const pdfParse = require("pdf-parse"); // safe text extraction only
@@ -133,7 +135,14 @@ async function parsePdfForKeywords(filePath) {
 }
 
 async function ensureMemberForUser(user) {
-    if (user.memberId) return prisma.member.findUnique({ where: { id: user.memberId } });
+    if (user.memberId) {
+        const member = await prisma.member.findUnique({ where: { id: user.memberId } });
+        // Best-effort: ensure a default avatar if missing
+        if (member) {
+            await ensureMemberAvatar(member);
+        }
+        return member;
+    }
     const base = slugify(user.email.split("@")[0] || "user", { lower: true, strict: true }) || "user";
     let slug = base;
     let i = 0;
@@ -145,6 +154,7 @@ async function ensureMemberForUser(user) {
         data: { slug, name: user.email.split("@")[0], bio: "", links: {}, avatarUrl: null, focusArea: null },
     });
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
+    await ensureMemberAvatar(member);
     return member;
 }
 
@@ -314,28 +324,36 @@ router.post("/cv", uploadPdf.single("cv"), async (req, res) => {
     try {
         // Magic number verification (don't trust only MIME). Delete if not a PDF.
         if (!looksLikePdf(req.file.path)) {
-            try { fs.unlinkSync(req.file.path); } catch {}
+            try {
+                fs.unlinkSync(req.file.path);
+            } catch {}
             return res.status(400).json({ ok: false, error: "Invalid PDF file" });
         }
 
         const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
         if (!user || !user.memberId) {
-            try { fs.unlinkSync(req.file.path); } catch {}
+            try {
+                fs.unlinkSync(req.file.path);
+            } catch {}
             return res.status(401).json({ ok: false, error: "Unknown user" });
         }
 
         // Atomically set/overwrite a deterministic "latest" filename
         const latest = cvLatestPath(req.userId);
-        try { fs.renameSync(req.file.path, latest); } catch {
+        try {
+            fs.renameSync(req.file.path, latest);
+        } catch {
             // fallback to copy+unlink if cross-device
             fs.copyFileSync(req.file.path, latest);
-            try { fs.unlinkSync(req.file.path); } catch {}
+            try {
+                fs.unlinkSync(req.file.path);
+            } catch {}
         }
 
         // Optional: also expose as link in member.links["CV"] so it shows on the public page with zero extra UI changes
         const publicUrl = cvLatestUrl(req.userId);
         const member = user.member || (await ensureMemberForUser(user));
-        const links = { ...(member.links || {}) , CV: publicUrl };
+        const links = { ...(member.links || {}), CV: publicUrl };
         await prisma.member.update({ where: { id: member.id }, data: { links } });
 
         // Extract skills/technologies for suggestions
@@ -349,7 +367,9 @@ router.post("/cv", uploadPdf.single("cv"), async (req, res) => {
         });
     } catch (e) {
         // best-effort cleanup
-        try { if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); } catch {}
+        try {
+            if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        } catch {}
         return res.status(500).json({ ok: false, error: "CV upload failed" });
     }
 });

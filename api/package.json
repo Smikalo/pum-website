@@ -24,6 +24,7 @@
     "nanoid": "^5.0.7",
     "nodemailer": "^7.0.10",
     "pdf-parse": "^1.1.1",
+    "pureimage": "^0.4.9",
     "sanitize-html": "^2.17.0",
     "slugify": "^1.6.6",
     "uuid": "^9.0.1",

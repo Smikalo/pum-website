@@ -570,18 +570,26 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
     // Attendees:
     const attendees: Member[] =
         evDetail?.attendees && evDetail.attendees.length
-            ? evDetail.attendees.map((a) => ({
-                slug: a.slug ?? null,
-                name: a.name ?? null,
-                email: a.email ?? null,
-                avatarUrl: a.avatarUrl ?? null,
-                avatar: a.avatarUrl ?? null,
-                headline: a.headline ?? null,
-                pending: a.pending ?? false,
-            }))
+            ? evDetail.attendees.map((a, idx) => {
+                const slug = a.slug ?? null;
+                const fromMembers = slug ? memMap.get(slug) : undefined;
+
+                return {
+                    slug,
+                    // prefer full member data, fall back to what the event API has
+                    name: fromMembers?.name ?? a.name ?? null,
+                    email: fromMembers?.email ?? a.email ?? null,
+                    avatarUrl: fromMembers?.avatarUrl ?? fromMembers?.avatar ?? null,
+                    avatar: fromMembers?.avatar ?? fromMembers?.avatarUrl ?? null,
+                    headline: fromMembers?.headline ?? a.headline ?? null,
+                    pending: a.pending ?? false,
+                };
+            })
             : // Fallback to old behavior (seed-based) only if API has none:
             membersAll.filter((m) =>
-                (SEED_MEMBERS.find((s) => s.slug === m.slug)?.events || []).some((x) => x.slug === baseEvent.slug),
+                (SEED_MEMBERS.find((s) => s.slug === m.slug)?.events || []).some(
+                    (x) => x.slug === baseEvent.slug,
+                ),
             );
 
     // Projects at this event (many-to-many via API detail or fallback to seeds)

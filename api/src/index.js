@@ -18,6 +18,7 @@ const validator = require("validator");
 const { prisma } = require("./db");
 const { authRouter } = require("./auth");
 const { accountRouter } = require("./account");
+const { ensureMemberAvatar } = require("./imageDefaults");
 
 const app = express();
 
@@ -2807,7 +2808,7 @@ function sanitizePlainText(input, { maxLen = 1000 } = {}) {
     const str = (input ?? "").toString();
     // Strip HTML tags & scripts
     const noHtml = xss(str, {
-        whiteList: {},           // no tags allowed
+        whiteList: {}, // no tags allowed
         stripIgnoreTag: true,
         stripIgnoreTagBody: ["script", "style", "iframe", "object"],
     });
@@ -2819,7 +2820,10 @@ function sanitizeEmailInput(input) {
     const str = (input ?? "").toString().trim();
     if (!validator.isEmail(str)) return "";
     // Ensure canonical, lower-cased email
-    return validator.normalizeEmail(str, { gmail_remove_dots: false }) || str.toLowerCase();
+    return (
+        validator.normalizeEmail(str, { gmail_remove_dots: false }) ||
+        str.toLowerCase()
+    );
 }
 
 function sanitizeHeaderValue(input) {
@@ -2925,7 +2929,10 @@ function allowContactFromIp(ip) {
 
 function clientIp(req) {
     return (
-        (req.headers["x-forwarded-for"] || "").toString().split(",")[0].trim() ||
+        (req.headers["x-forwarded-for"] || "")
+            .toString()
+            .split(",")[0]
+            .trim() ||
         req.ip ||
         "unknown"
     );
@@ -2941,7 +2948,8 @@ app.post("/api/contact", async (req, res) => {
         console.warn("[POST /api/contact] rate-limit hit for IP", ip);
         return res.status(429).json({
             ok: false,
-            error: "Too many contact requests from this IP. Please try again later.",
+            error:
+                "Too many contact requests from this IP. Please try again later.",
         });
     }
 
@@ -2970,7 +2978,9 @@ app.post("/api/contact", async (req, res) => {
     const topic = sanitizePlainText(raw.topic, { maxLen: 100 });
     const message = sanitizePlainText(raw.message, { maxLen: 10_000 });
     const subscribe = !!raw.subscribe;
-    const source = raw.source ? sanitizePlainText(raw.source, { maxLen: 100 }) : null;
+    const source = raw.source
+        ? sanitizePlainText(raw.source, { maxLen: 100 })
+        : null;
 
     if (!email) {
         console.warn("[POST /api/contact] sanitized email invalid");
@@ -3168,11 +3178,18 @@ If you did not request this, you can safely ignore this email and you won't be s
 /* ------------------------------ Newsletter: subscribe / verify / unsubscribe ------------------------------ */
 
 app.post("/api/newsletter/subscribe", async (req, res) => {
-    console.log("========== [POST /api/newsletter/subscribe] BEGIN ==========");
-    console.log("[POST /api/newsletter/subscribe] raw body =", JSON.stringify(req.body));
+    console.log(
+        "========== [POST /api/newsletter/subscribe] BEGIN ==========",
+    );
+    console.log(
+        "[POST /api/newsletter/subscribe] raw body =",
+        JSON.stringify(req.body),
+    );
 
     if (!prisma.newsletterSubscriber) {
-        console.warn("[POST /api/newsletter/subscribe] NewsletterSubscriber model not available");
+        console.warn(
+            "[POST /api/newsletter/subscribe] NewsletterSubscriber model not available",
+        );
         return res.status(501).json({
             ok: false,
             error: "Newsletter feature not enabled on this server",
@@ -3182,10 +3199,14 @@ app.post("/api/newsletter/subscribe", async (req, res) => {
     // Additional per-IP rate limit to avoid abuse
     const ip = clientIp(req);
     if (!allowContactFromIp(ip)) {
-        console.warn("[POST /api/newsletter/subscribe] rate-limit hit for IP", ip);
+        console.warn(
+            "[POST /api/newsletter/subscribe] rate-limit hit for IP",
+            ip,
+        );
         return res.status(429).json({
             ok: false,
-            error: "Too many subscription requests from this IP. Please try again later.",
+            error:
+                "Too many subscription requests from this IP. Please try again later.",
         });
     }
 
@@ -3208,11 +3229,17 @@ app.post("/api/newsletter/subscribe", async (req, res) => {
     // Sanitize
     const raw = parsed.data;
     const email = sanitizeEmailInput(raw.email);
-    const name = raw.name ? sanitizePlainText(raw.name, { maxLen: 200 }) : null;
-    const source = raw.source ? sanitizePlainText(raw.source, { maxLen: 100 }) : null;
+    const name = raw.name
+        ? sanitizePlainText(raw.name, { maxLen: 200 })
+        : null;
+    const source = raw.source
+        ? sanitizePlainText(raw.source, { maxLen: 100 })
+        : null;
 
     if (!email) {
-        console.warn("[POST /api/newsletter/subscribe] sanitized email invalid");
+        console.warn(
+            "[POST /api/newsletter/subscribe] sanitized email invalid",
+        );
         return res.status(400).json({
             ok: false,
             error: "Invalid email address.",
@@ -3236,7 +3263,10 @@ app.post("/api/newsletter/subscribe", async (req, res) => {
                     verifiedAt: null,
                 },
             });
-            console.log("[POST /api/newsletter/subscribe] created subscriber id =", sub.id);
+            console.log(
+                "[POST /api/newsletter/subscribe] created subscriber id =",
+                sub.id,
+            );
         } else {
             // If unsubscribed, *do not* auto-resub; require manual flow if you want that.
             if (sub.unsubscribedAt) {
@@ -3249,10 +3279,14 @@ app.post("/api/newsletter/subscribe", async (req, res) => {
                     where: { email: emailLower },
                     data: {
                         name: name || sub.name,
-                        lastSource: source || sub.lastSource || "newsletter-form",
+                        lastSource:
+                            source || sub.lastSource || "newsletter-form",
                     },
                 });
-                console.log("[POST /api/newsletter/subscribe] updated subscriber id =", sub.id);
+                console.log(
+                    "[POST /api/newsletter/subscribe] updated subscriber id =",
+                    sub.id,
+                );
             }
         }
 
@@ -3303,11 +3337,15 @@ If you did not request this, you can safely ignore this email and you won't be s
             );
         }
 
-        console.log("========== [POST /api/newsletter/subscribe] END (success) ==========");
+        console.log(
+            "========== [POST /api/newsletter/subscribe] END (success) ==========",
+        );
         return res.json({
             ok: true,
             email: sub.email,
-            status: sub.verifiedAt ? "already-verified" : "pending-verification",
+            status: sub.verifiedAt
+                ? "already-verified"
+                : "pending-verification",
         });
     } catch (err) {
         console.error(
@@ -3325,11 +3363,18 @@ If you did not request this, you can safely ignore this email and you won't be s
 });
 
 app.post("/api/newsletter/verify", async (req, res) => {
-    console.log("========== [POST /api/newsletter/verify] BEGIN ==========");
-    console.log("[POST /api/newsletter/verify] raw body =", JSON.stringify(req.body));
+    console.log(
+        "========== [POST /api/newsletter/verify] BEGIN ==========",
+    );
+    console.log(
+        "[POST /api/newsletter/verify] raw body =",
+        JSON.stringify(req.body),
+    );
 
     if (!prisma.newsletterSubscriber) {
-        console.warn("[POST /api/newsletter/verify] NewsletterSubscriber model not available");
+        console.warn(
+            "[POST /api/newsletter/verify] NewsletterSubscriber model not available",
+        );
         return res.status(501).json({
             ok: false,
             error: "Newsletter feature not enabled on this server",
@@ -3412,7 +3457,8 @@ app.post("/api/newsletter/verify", async (req, res) => {
             );
             return res.status(400).json({
                 ok: false,
-                error: "We couldn’t find a matching subscription for this link.",
+                error:
+                    "We couldn’t find a matching subscription for this link.",
                 code: "NOT_FOUND",
             });
         }
@@ -3427,7 +3473,8 @@ app.post("/api/newsletter/verify", async (req, res) => {
             );
             return res.status(400).json({
                 ok: false,
-                error: "This verification link does not match this subscription.",
+                error:
+                    "This verification link does not match this subscription.",
                 code: "EMAIL_MISMATCH",
             });
         }
@@ -3456,7 +3503,8 @@ app.post("/api/newsletter/verify", async (req, res) => {
             );
             return res.status(400).json({
                 ok: false,
-                error: "This subscription was cancelled and cannot be verified.",
+                error:
+                    "This subscription was cancelled and cannot be verified.",
                 code: "UNSUBSCRIBED",
             });
         }
@@ -3492,18 +3540,26 @@ app.post("/api/newsletter/verify", async (req, res) => {
         );
         return res.status(500).json({
             ok: false,
-            error: "Failed to verify subscription. Please try again later.",
+            error:
+                "Failed to verify subscription. Please try again later.",
             code: "SERVER_ERROR",
         });
     }
 });
 
 app.post("/api/newsletter/unsubscribe", async (req, res) => {
-    console.log("========== [POST /api/newsletter/unsubscribe] BEGIN ==========");
-    console.log("[POST /api/newsletter/unsubscribe] raw body =", JSON.stringify(req.body));
+    console.log(
+        "========== [POST /api/newsletter/unsubscribe] BEGIN ==========",
+    );
+    console.log(
+        "[POST /api/newsletter/unsubscribe] raw body =",
+        JSON.stringify(req.body),
+    );
 
     if (!prisma.newsletterSubscriber) {
-        console.warn("[POST /api/newsletter/unsubscribe] NewsletterSubscriber model not available");
+        console.warn(
+            "[POST /api/newsletter/unsubscribe] NewsletterSubscriber model not available",
+        );
         return res.status(501).json({
             ok: false,
             error: "Newsletter feature not enabled on this server",
@@ -3563,7 +3619,8 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
         );
         return res.status(400).json({
             ok: false,
-            error: "This unsubscribe link is not valid for newsletter settings.",
+            error:
+                "This unsubscribe link is not valid for newsletter settings.",
             code: "BAD_SCOPE",
         });
     }
@@ -3586,7 +3643,8 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
             );
             return res.status(400).json({
                 ok: false,
-                error: "We couldn’t find a matching subscription for this link.",
+                error:
+                    "We couldn’t find a matching subscription for this link.",
                 code: "NOT_FOUND",
             });
         }
@@ -3601,7 +3659,8 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
             );
             return res.status(400).json({
                 ok: false,
-                error: "This unsubscribe link does not match this subscription.",
+                error:
+                    "This unsubscribe link does not match this subscription.",
                 code: "EMAIL_MISMATCH",
             });
         }
@@ -3652,7 +3711,8 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
         );
         return res.status(500).json({
             ok: false,
-            error: "Failed to update subscription. Please try again later.",
+            error:
+                "Failed to update subscription. Please try again later.",
             code: "SERVER_ERROR",
         });
     }
@@ -5864,8 +5924,13 @@ const inviteConsumeSchema = z.object({
 });
 
 app.post("/api/auth/invite/consume", async (req, res) => {
-    console.log("========== [POST /api/auth/invite/consume] BEGIN ==========");
-    console.log("[invite/consume] raw body =", JSON.stringify(req.body));
+    console.log(
+        "========== [POST /api/auth/invite/consume] BEGIN ==========",
+    );
+    console.log(
+        "[invite/consume] raw body =",
+        JSON.stringify(req.body),
+    );
 
     const parsed = inviteConsumeSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -6002,6 +6067,8 @@ app.post("/api/auth/invite/consume", async (req, res) => {
             },
         });
 
+        await ensureMemberAvatar(member);
+
         user = await prisma.user.create({
             data: {
                 email: emailLower,
@@ -6026,7 +6093,8 @@ app.post("/api/auth/invite/consume", async (req, res) => {
     if (!member) {
         const baseName = user.email.split("@")[0] || "user";
         const slugBase =
-            slugify(baseName, { lower: true, strict: true }) || "user";
+            slugify(baseName, { lower: true, strict: true }) ||
+            "user";
         let slug = slugBase;
         let i = 0;
         while (await prisma.member.findUnique({ where: { slug } })) {
@@ -6043,6 +6111,9 @@ app.post("/api/auth/invite/consume", async (req, res) => {
                 focusArea: null,
             },
         });
+
+        member = await ensureMemberAvatar(member);
+
         await prisma.user.update({
             where: { id: user.id },
             data: { memberId: member.id },
@@ -6137,7 +6208,9 @@ app.post("/api/auth/invite/consume", async (req, res) => {
         );
     }
 
-    console.log("========== [POST /api/auth/invite/consume] END (success) ==========");
+    console.log(
+        "========== [POST /api/auth/invite/consume] END (success) ==========",
+    );
     return res.json({
         ok: true,
         newUser: isNewUser,

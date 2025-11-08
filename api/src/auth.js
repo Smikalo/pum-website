@@ -1,4 +1,3 @@
-// api/src/auth.js
 const express = require("express");
 const z = require("zod");
 const argon2 = require("argon2");
@@ -7,6 +6,7 @@ const { prisma } = require("./db");
 const crypto = require("crypto");
 const cookie = require("cookie");
 const slugify = require("slugify"); // NEW: for member slug from name/email
+const { ensureMemberAvatar } = require("./imageDefaults"); // NEW: default avatars on member creation
 
 const router = express.Router();
 
@@ -275,6 +275,9 @@ router.post("/invite/consume", ensureCsrf, async (req, res) => {
             },
         });
 
+        // Ensure a default avatar is generated and persisted
+        await ensureMemberAvatar(member);
+
         user = await prisma.user.create({
             data: {
                 email,
@@ -315,6 +318,9 @@ router.post("/invite/consume", ensureCsrf, async (req, res) => {
                     name: localPart,
                 },
             });
+
+            // Ensure a default avatar is generated and persisted
+            await ensureMemberAvatar(member);
 
             await prisma.user.update({
                 where: { id: user.id },
