@@ -12,6 +12,8 @@ const multer = require("multer");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 const argon2 = require("argon2");
+const xss = require("xss");
+const validator = require("validator");
 
 const { prisma } = require("./db");
 const { authRouter } = require("./auth");
@@ -95,6 +97,8 @@ fs.mkdirSync(blogsDir, { recursive: true });
 const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || null;
 const JWT_ACCESS_SECRET =
     process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
+const NEWSLETTER_SECRET =
+    process.env.NEWSLETTER_SECRET || "dev-only-newsletter-secret";
 
 console.log("[config] PUBLIC_API_BASE =", PUBLIC_API_BASE || "(not set)");
 
@@ -2797,6 +2801,863 @@ app.post("/api/uploads/blog-photo", async (req, res) => {
     });
 });
 
+/* ------------------------------ Contacts ------------------------------ */
+
+function sanitizePlainText(input, { maxLen = 1000 } = {}) {
+    const str = (input ?? "").toString();
+    // Strip HTML tags & scripts
+    const noHtml = xss(str, {
+        whiteList: {},           // no tags allowed
+        stripIgnoreTag: true,
+        stripIgnoreTagBody: ["script", "style", "iframe", "object"],
+    });
+    // Trim and clamp length
+    return noHtml.trim().slice(0, maxLen);
+}
+
+function sanitizeEmailInput(input) {
+    const str = (input ?? "").toString().trim();
+    if (!validator.isEmail(str)) return "";
+    // Ensure canonical, lower-cased email
+    return validator.normalizeEmail(str, { gmail_remove_dots: false }) || str.toLowerCase();
+}
+
+function sanitizeHeaderValue(input) {
+    // Prevent header injection (\r, \n, etc.)
+    return (input ?? "")
+        .toString()
+        .replace(/(\r|\n)/g, " ")
+        .slice(0, 255)
+        .trim();
+}
+
+/**
+ * Anti-abuse: don't send mail "from" arbitrary user addresses.
+ * We always send FROM our domain, and use Reply-To with the user email.
+ */
+function safeReplyTo(email) {
+    const trimmed = (email || "").trim();
+    const valid = validator.isEmail(trimmed);
+    return valid ? trimmed : undefined;
+}
+
+const contactSchema = z.object({
+    name: z.string().min(1).max(200),
+    email: z.string().email(),
+    role: z.string().min(1).max(100),
+    topic: z.string().min(1).max(100),
+    message: z.string().min(10).max(10_000),
+    subscribe: z.boolean().optional().default(false),
+    source: z.string().max(100).optional().nullable(),
+    // NOTE: honeypot will be accepted from frontend but ignored here;
+    // rate limiting & server-side protection happens below.
+});
+
+const newsletterSubscribeSchema = z.object({
+    email: z.string().email(),
+    name: z.string().max(200).optional().nullable(),
+    source: z.string().max(100).optional().nullable(),
+});
+
+const newsletterVerifySchema = z.object({
+    token: z.string().min(10),
+});
+
+const newsletterUnsubscribeSchema = z.object({
+    token: z.string().min(10),
+});
+
+function signNewsletterVerifyToken(subscriber) {
+    // subscriber: { id, email }
+    return jwt.sign(
+        {
+            sub: subscriber.id,
+            email: subscriber.email,
+            scope: "newsletter-verify",
+        },
+        NEWSLETTER_SECRET,
+        {
+            algorithm: "HS256",
+            expiresIn: "7d",
+        },
+    );
+}
+
+function signNewsletterUnsubToken(subscriber) {
+    // subscriber: { id, email }
+    return jwt.sign(
+        {
+            sub: subscriber.id,
+            email: subscriber.email,
+            scope: "newsletter-unsub",
+        },
+        NEWSLETTER_SECRET,
+        {
+            algorithm: "HS256",
+            expiresIn: "180d",
+        },
+    );
+}
+
+/**
+ * Lightweight per-IP rate limiting for contact + newsletter endpoints
+ * to prevent mailbox floods / abuse. This is in addition to the global
+ * express-rate-limit you already have.
+ */
+const CONTACT_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
+const CONTACT_MAX_PER_IP = 3;
+
+const contactIpBuckets = new Map();
+/**
+ * Returns true if this IP is allowed, false if blocked.
+ */
+function allowContactFromIp(ip) {
+    const now = Date.now();
+    const bucket = contactIpBuckets.get(ip) || [];
+    const recent = bucket.filter((t) => now - t < CONTACT_WINDOW_MS);
+    if (recent.length >= CONTACT_MAX_PER_IP) {
+        return false;
+    }
+    recent.push(now);
+    contactIpBuckets.set(ip, recent);
+    return true;
+}
+
+function clientIp(req) {
+    return (
+        (req.headers["x-forwarded-for"] || "").toString().split(",")[0].trim() ||
+        req.ip ||
+        "unknown"
+    );
+}
+
+app.post("/api/contact", async (req, res) => {
+    console.log("========== [POST /api/contact] BEGIN ==========");
+    console.log("[POST /api/contact] raw body =", JSON.stringify(req.body));
+
+    // Per-IP rate limit to protect mailbox / DB
+    const ip = clientIp(req);
+    if (!allowContactFromIp(ip)) {
+        console.warn("[POST /api/contact] rate-limit hit for IP", ip);
+        return res.status(429).json({
+            ok: false,
+            error: "Too many contact requests from this IP. Please try again later.",
+        });
+    }
+
+    // 1) Validate input
+    const parsed = contactSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[POST /api/contact] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [POST /api/contact] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+
+    // 2) Sanitize user-controlled fields before using them anywhere (mail, DB, logs)
+    const raw = parsed.data;
+    const name = sanitizePlainText(raw.name, { maxLen: 200 });
+    const email = sanitizeEmailInput(raw.email);
+    const role = sanitizePlainText(raw.role, { maxLen: 100 });
+    const topic = sanitizePlainText(raw.topic, { maxLen: 100 });
+    const message = sanitizePlainText(raw.message, { maxLen: 10_000 });
+    const subscribe = !!raw.subscribe;
+    const source = raw.source ? sanitizePlainText(raw.source, { maxLen: 100 }) : null;
+
+    if (!email) {
+        console.warn("[POST /api/contact] sanitized email invalid");
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid email address.",
+        });
+    }
+
+    // 3) Send email to your team (FROM your domain, Reply-To user)
+    try {
+        const toAddress = MAIL_FROM || "contact@the-pum.com";
+
+        const subject = sanitizeHeaderValue(
+            `[PUM contact] ${topic} — ${name} (${role})`,
+        );
+
+        const text = `New contact form submission:
+
+Name: ${name}
+Email: ${email}
+Role: ${role}
+Topic: ${topic}
+Subscribe to newsletter: ${subscribe ? "YES" : "no"}
+Source: ${source || "n/a"}
+IP: ${ip}
+
+Message:
+${message}
+`;
+
+        if (!mailTransporter) {
+            console.log(
+                "[POST /api/contact] (no SMTP configured) Would send mail from",
+                MAIL_FROM,
+                "to",
+                toAddress,
+                ":\nSubject:",
+                subject,
+                "\n\n",
+                text,
+            );
+        } else {
+            console.log("[POST /api/contact] sending mail to", toAddress);
+            await mailTransporter.sendMail({
+                from: MAIL_FROM,
+                to: toAddress,
+                replyTo: safeReplyTo(email), // key: avoid spoofing FROM user email
+                subject,
+                text, // text-only, sanitized
+            });
+            console.log("[POST /api/contact] mail sent OK");
+        }
+    } catch (err) {
+        console.error("[POST /api/contact] mail send error", err);
+        // Don't fail the whole request – just log.
+    }
+
+    // 4) Optionally store the contact message in DB
+    try {
+        if (prisma.contactMessage) {
+            await prisma.contactMessage.create({
+                data: {
+                    name,
+                    email,
+                    role,
+                    topic,
+                    message,
+                    source: source || null,
+                    subscribeRequested: !!subscribe,
+                    ipAddress: ip,
+                },
+            });
+        }
+    } catch (err) {
+        console.error(
+            "[POST /api/contact] failed to store contactMessage in DB",
+            err,
+        );
+    }
+
+    // 5) Newsletter subscription (if requested)
+    try {
+        if (subscribe && prisma.newsletterSubscriber) {
+            const emailLower = email.toLowerCase();
+
+            // Upsert subscriber but DO NOT auto-verify;
+            // keep verifiedAt as-is or null.
+            const existing = await prisma.newsletterSubscriber.findUnique({
+                where: { email: emailLower },
+            });
+
+            let sub;
+            if (!existing) {
+                sub = await prisma.newsletterSubscriber.create({
+                    data: {
+                        email: emailLower,
+                        name,
+                        lastSource: source || "contact-form",
+                        unsubscribedAt: null,
+                        verifiedAt: null,
+                    },
+                });
+                console.log(
+                    "[POST /api/contact] created new newsletterSubscriber",
+                    sub.id,
+                );
+            } else {
+                // If previously unsubscribed, DO NOT silently re-subscribe
+                if (existing.unsubscribedAt) {
+                    console.log(
+                        "[POST /api/contact] email previously unsubscribed; not auto-resubscribing",
+                        emailLower,
+                    );
+                    sub = existing;
+                } else {
+                    sub = await prisma.newsletterSubscriber.update({
+                        where: { email: emailLower },
+                        data: {
+                            name,
+                            lastSource: source || "contact-form",
+                        },
+                    });
+                    console.log(
+                        "[POST /api/contact] updated existing newsletterSubscriber",
+                        sub.id,
+                    );
+                }
+            }
+
+            // Only send verification email if:
+            // - They are not yet verified
+            // - They are not unsubscribed
+            if (!sub.unsubscribedAt && !sub.verifiedAt && mailTransporter) {
+                const webBase = WEB_ORIGIN.replace(/\/$/, "");
+                const verifyToken = signNewsletterVerifyToken({
+                    id: sub.id,
+                    email: sub.email,
+                });
+                const verifyUrl = `${webBase}/newsletter/verify?token=${encodeURIComponent(
+                    verifyToken,
+                )}`;
+
+                const subject = sanitizeHeaderValue(
+                    "Please confirm your subscription to PUM updates",
+                );
+                const text = `Hi${sub.name ? " " + sub.name : ""},
+
+Thanks for staying in touch with PUM!
+
+Please confirm your subscription by clicking the link below:
+${verifyUrl}
+
+If you did not request this, you can safely ignore this email and you won't be subscribed.
+`;
+
+                try {
+                    await mailTransporter.sendMail({
+                        from: MAIL_FROM,
+                        to: sub.email,
+                        subject,
+                        text,
+                    });
+                    console.log(
+                        "[POST /api/contact] sent newsletter verification email to",
+                        sub.email,
+                    );
+                } catch (err) {
+                    console.error(
+                        "[POST /api/contact] failed to send newsletter verification email",
+                        err,
+                    );
+                }
+            } else {
+                console.log(
+                    "[POST /api/contact] subscriber already verified or unsubscribed; no verify email sent",
+                    emailLower,
+                );
+            }
+        }
+    } catch (err) {
+        console.error(
+            "[POST /api/contact] failed to upsert/send newsletterSubscriber",
+            err,
+        );
+    }
+
+    console.log("========== [POST /api/contact] END (success) ==========");
+    return res.json({
+        ok: true,
+        message: "Thanks! We’ll be in touch soon.",
+    });
+});
+
+/* ------------------------------ Newsletter: subscribe / verify / unsubscribe ------------------------------ */
+
+app.post("/api/newsletter/subscribe", async (req, res) => {
+    console.log("========== [POST /api/newsletter/subscribe] BEGIN ==========");
+    console.log("[POST /api/newsletter/subscribe] raw body =", JSON.stringify(req.body));
+
+    if (!prisma.newsletterSubscriber) {
+        console.warn("[POST /api/newsletter/subscribe] NewsletterSubscriber model not available");
+        return res.status(501).json({
+            ok: false,
+            error: "Newsletter feature not enabled on this server",
+        });
+    }
+
+    // Additional per-IP rate limit to avoid abuse
+    const ip = clientIp(req);
+    if (!allowContactFromIp(ip)) {
+        console.warn("[POST /api/newsletter/subscribe] rate-limit hit for IP", ip);
+        return res.status(429).json({
+            ok: false,
+            error: "Too many subscription requests from this IP. Please try again later.",
+        });
+    }
+
+    const parsed = newsletterSubscribeSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[POST /api/newsletter/subscribe] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [POST /api/newsletter/subscribe] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid input",
+            details: parsed.error.flatten(),
+        });
+    }
+
+    // Sanitize
+    const raw = parsed.data;
+    const email = sanitizeEmailInput(raw.email);
+    const name = raw.name ? sanitizePlainText(raw.name, { maxLen: 200 }) : null;
+    const source = raw.source ? sanitizePlainText(raw.source, { maxLen: 100 }) : null;
+
+    if (!email) {
+        console.warn("[POST /api/newsletter/subscribe] sanitized email invalid");
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid email address.",
+        });
+    }
+
+    const emailLower = email.toLowerCase();
+
+    try {
+        let sub = await prisma.newsletterSubscriber.findUnique({
+            where: { email: emailLower },
+        });
+
+        if (!sub) {
+            sub = await prisma.newsletterSubscriber.create({
+                data: {
+                    email: emailLower,
+                    name: name || null,
+                    lastSource: source || "newsletter-form",
+                    unsubscribedAt: null,
+                    verifiedAt: null,
+                },
+            });
+            console.log("[POST /api/newsletter/subscribe] created subscriber id =", sub.id);
+        } else {
+            // If unsubscribed, *do not* auto-resub; require manual flow if you want that.
+            if (sub.unsubscribedAt) {
+                console.log(
+                    "[POST /api/newsletter/subscribe] email previously unsubscribed; not auto-resubscribing",
+                    emailLower,
+                );
+            } else {
+                sub = await prisma.newsletterSubscriber.update({
+                    where: { email: emailLower },
+                    data: {
+                        name: name || sub.name,
+                        lastSource: source || sub.lastSource || "newsletter-form",
+                    },
+                });
+                console.log("[POST /api/newsletter/subscribe] updated subscriber id =", sub.id);
+            }
+        }
+
+        // Send verification email only if not yet verified and not unsubscribed
+        if (!sub.unsubscribedAt && !sub.verifiedAt && mailTransporter) {
+            const webBase = WEB_ORIGIN.replace(/\/$/, "");
+            const verifyToken = signNewsletterVerifyToken({
+                id: sub.id,
+                email: sub.email,
+            });
+            const verifyUrl = `${webBase}/newsletter/verify?token=${encodeURIComponent(
+                verifyToken,
+            )}`;
+
+            const subject = sanitizeHeaderValue(
+                "Please confirm your subscription to PUM updates",
+            );
+            const text = `Hi${sub.name ? " " + sub.name : ""},
+
+Thanks for staying in touch with PUM!
+
+Please confirm your subscription by clicking the link below:
+${verifyUrl}
+
+If you did not request this, you can safely ignore this email and you won't be subscribed.
+`;
+
+            try {
+                await mailTransporter.sendMail({
+                    from: MAIL_FROM,
+                    to: sub.email,
+                    subject,
+                    text,
+                });
+                console.log(
+                    "[POST /api/newsletter/subscribe] sent verification email to",
+                    sub.email,
+                );
+            } catch (err) {
+                console.error(
+                    "[POST /api/newsletter/subscribe] failed to send verification email",
+                    err,
+                );
+            }
+        } else {
+            console.log(
+                "[POST /api/newsletter/subscribe] subscriber already verified or unsubscribed; no verify email sent",
+            );
+        }
+
+        console.log("========== [POST /api/newsletter/subscribe] END (success) ==========");
+        return res.json({
+            ok: true,
+            email: sub.email,
+            status: sub.verifiedAt ? "already-verified" : "pending-verification",
+        });
+    } catch (err) {
+        console.error(
+            "[POST /api/newsletter/subscribe] DB error during upsert",
+            err,
+        );
+        console.log(
+            "========== [POST /api/newsletter/subscribe] END (error) ==========",
+        );
+        return res.status(500).json({
+            ok: false,
+            error: "Failed to subscribe. Please try again later.",
+        });
+    }
+});
+
+app.post("/api/newsletter/verify", async (req, res) => {
+    console.log("========== [POST /api/newsletter/verify] BEGIN ==========");
+    console.log("[POST /api/newsletter/verify] raw body =", JSON.stringify(req.body));
+
+    if (!prisma.newsletterSubscriber) {
+        console.warn("[POST /api/newsletter/verify] NewsletterSubscriber model not available");
+        return res.status(501).json({
+            ok: false,
+            error: "Newsletter feature not enabled on this server",
+        });
+    }
+
+    const parsed = newsletterVerifySchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[POST /api/newsletter/verify] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [POST /api/newsletter/verify] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid verification token.",
+            code: "INVALID_INPUT",
+        });
+    }
+
+    const { token } = parsed.data;
+
+    let decoded;
+    try {
+        decoded = jwt.verify(token, NEWSLETTER_SECRET, {
+            algorithms: ["HS256"],
+        });
+    } catch (err) {
+        console.warn(
+            "[POST /api/newsletter/verify] token verify failed",
+            err?.name,
+            err?.message,
+        );
+
+        const isExpired = err && err.name === "TokenExpiredError";
+        console.log(
+            "========== [POST /api/newsletter/verify] END (invalid token) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: isExpired
+                ? "This verification link has expired."
+                : "This verification link is invalid.",
+            code: isExpired ? "TOKEN_EXPIRED" : "TOKEN_INVALID",
+        });
+    }
+
+    if (!decoded || decoded.scope !== "newsletter-verify") {
+        console.warn(
+            "[POST /api/newsletter/verify] token missing/invalid scope",
+            decoded,
+        );
+        console.log(
+            "========== [POST /api/newsletter/verify] END (bad scope) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "This link is not valid for newsletter verification.",
+            code: "BAD_SCOPE",
+        });
+    }
+
+    const subscriberId = decoded.sub;
+    const tokenEmail = (decoded.email || "").toLowerCase();
+
+    try {
+        const subscriber = await prisma.newsletterSubscriber.findUnique({
+            where: { id: subscriberId },
+        });
+
+        if (!subscriber) {
+            console.warn(
+                "[POST /api/newsletter/verify] subscriber not found for id",
+                subscriberId,
+            );
+            console.log(
+                "========== [POST /api/newsletter/verify] END (no subscriber) ==========",
+            );
+            return res.status(400).json({
+                ok: false,
+                error: "We couldn’t find a matching subscription for this link.",
+                code: "NOT_FOUND",
+            });
+        }
+
+        const subEmailLower = (subscriber.email || "").toLowerCase();
+        if (tokenEmail && tokenEmail !== subEmailLower) {
+            console.warn(
+                "[POST /api/newsletter/verify] token email mismatch",
+                tokenEmail,
+                "!=",
+                subEmailLower,
+            );
+            return res.status(400).json({
+                ok: false,
+                error: "This verification link does not match this subscription.",
+                code: "EMAIL_MISMATCH",
+            });
+        }
+
+        // Idempotent: if already verified, just acknowledge.
+        if (subscriber.verifiedAt) {
+            console.log(
+                "[POST /api/newsletter/verify] already verified for email",
+                subscriber.email,
+            );
+            console.log(
+                "========== [POST /api/newsletter/verify] END (already verified) ==========",
+            );
+            return res.json({
+                ok: true,
+                status: "already-verified",
+                email: subscriber.email,
+            });
+        }
+
+        // If unsubscribed, don't verify – treat as invalid.
+        if (subscriber.unsubscribedAt) {
+            console.log(
+                "[POST /api/newsletter/verify] subscriber is unsubscribed; refusing verification",
+                subscriber.email,
+            );
+            return res.status(400).json({
+                ok: false,
+                error: "This subscription was cancelled and cannot be verified.",
+                code: "UNSUBSCRIBED",
+            });
+        }
+
+        const updated = await prisma.newsletterSubscriber.update({
+            where: { id: subscriber.id },
+            data: {
+                verifiedAt: new Date(),
+                lastSource: "newsletter-verify-link",
+            },
+        });
+
+        console.log(
+            "[POST /api/newsletter/verify] verified email",
+            updated.email,
+        );
+        console.log(
+            "========== [POST /api/newsletter/verify] END (success) ==========",
+        );
+
+        return res.json({
+            ok: true,
+            status: "verified",
+            email: updated.email,
+        });
+    } catch (err) {
+        console.error(
+            "[POST /api/newsletter/verify] error during verification",
+            err,
+        );
+        console.log(
+            "========== [POST /api/newsletter/verify] END (error) ==========",
+        );
+        return res.status(500).json({
+            ok: false,
+            error: "Failed to verify subscription. Please try again later.",
+            code: "SERVER_ERROR",
+        });
+    }
+});
+
+app.post("/api/newsletter/unsubscribe", async (req, res) => {
+    console.log("========== [POST /api/newsletter/unsubscribe] BEGIN ==========");
+    console.log("[POST /api/newsletter/unsubscribe] raw body =", JSON.stringify(req.body));
+
+    if (!prisma.newsletterSubscriber) {
+        console.warn("[POST /api/newsletter/unsubscribe] NewsletterSubscriber model not available");
+        return res.status(501).json({
+            ok: false,
+            error: "Newsletter feature not enabled on this server",
+        });
+    }
+
+    const parsed = newsletterUnsubscribeSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+        console.warn(
+            "[POST /api/newsletter/unsubscribe] validation error",
+            parsed.error.flatten(),
+        );
+        console.log(
+            "========== [POST /api/newsletter/unsubscribe] END (validation error) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "Invalid unsubscribe token.",
+            code: "INVALID_INPUT",
+        });
+    }
+
+    const { token } = parsed.data;
+
+    let decoded;
+    try {
+        decoded = jwt.verify(token, NEWSLETTER_SECRET, {
+            algorithms: ["HS256"],
+        });
+    } catch (err) {
+        console.warn(
+            "[POST /api/newsletter/unsubscribe] token verify failed",
+            err?.name,
+            err?.message,
+        );
+
+        const isExpired = err && err.name === "TokenExpiredError";
+        console.log(
+            "========== [POST /api/newsletter/unsubscribe] END (invalid token) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: isExpired
+                ? "This unsubscribe link has expired."
+                : "This unsubscribe link is invalid.",
+            code: isExpired ? "TOKEN_EXPIRED" : "TOKEN_INVALID",
+        });
+    }
+
+    if (!decoded || decoded.scope !== "newsletter-unsub") {
+        console.warn(
+            "[POST /api/newsletter/unsubscribe] token missing/invalid scope",
+            decoded,
+        );
+        console.log(
+            "========== [POST /api/newsletter/unsubscribe] END (bad scope) ==========",
+        );
+        return res.status(400).json({
+            ok: false,
+            error: "This unsubscribe link is not valid for newsletter settings.",
+            code: "BAD_SCOPE",
+        });
+    }
+
+    const subscriberId = decoded.sub;
+    const tokenEmail = (decoded.email || "").toLowerCase();
+
+    try {
+        const subscriber = await prisma.newsletterSubscriber.findUnique({
+            where: { id: subscriberId },
+        });
+
+        if (!subscriber) {
+            console.warn(
+                "[POST /api/newsletter/unsubscribe] subscriber not found for id",
+                subscriberId,
+            );
+            console.log(
+                "========== [POST /api/newsletter/unsubscribe] END (no subscriber) ==========",
+            );
+            return res.status(400).json({
+                ok: false,
+                error: "We couldn’t find a matching subscription for this link.",
+                code: "NOT_FOUND",
+            });
+        }
+
+        const subEmailLower = (subscriber.email || "").toLowerCase();
+        if (tokenEmail && tokenEmail !== subEmailLower) {
+            console.warn(
+                "[POST /api/newsletter/unsubscribe] token email mismatch",
+                tokenEmail,
+                "!=",
+                subEmailLower,
+            );
+            return res.status(400).json({
+                ok: false,
+                error: "This unsubscribe link does not match this subscription.",
+                code: "EMAIL_MISMATCH",
+            });
+        }
+
+        if (subscriber.unsubscribedAt) {
+            console.log(
+                "[POST /api/newsletter/unsubscribe] already unsubscribed for email",
+                subscriber.email,
+            );
+            console.log(
+                "========== [POST /api/newsletter/unsubscribe] END (already unsubscribed) ==========",
+            );
+            return res.json({
+                ok: true,
+                status: "already-unsubscribed",
+                email: subscriber.email,
+            });
+        }
+
+        const updated = await prisma.newsletterSubscriber.update({
+            where: { id: subscriber.id },
+            data: {
+                unsubscribedAt: new Date(),
+                lastSource: "unsubscribe-link",
+            },
+        });
+
+        console.log(
+            "[POST /api/newsletter/unsubscribe] unsubscribed email",
+            updated.email,
+        );
+        console.log(
+            "========== [POST /api/newsletter/unsubscribe] END (success) ==========",
+        );
+
+        return res.json({
+            ok: true,
+            status: "unsubscribed",
+            email: updated.email,
+        });
+    } catch (err) {
+        console.error(
+            "[POST /api/newsletter/unsubscribe] error during unsubscribe",
+            err,
+        );
+        console.log(
+            "========== [POST /api/newsletter/unsubscribe] END (error) ==========",
+        );
+        return res.status(500).json({
+            ok: false,
+            error: "Failed to update subscription. Please try again later.",
+            code: "SERVER_ERROR",
+        });
+    }
+});
+
 /* ------------------------------ Blogs ------------------------------ */
 
 const blogCreateSchema = z.object({
@@ -3297,6 +4158,77 @@ app.post("/api/blogs", async (req, res) => {
                 skipDuplicates: true,
             });
         }
+    }
+
+    // -------------- Newsletter sending with secure unsubscribe token --------------
+    try {
+        if (prisma.newsletterSubscriber && mailTransporter) {
+            const subscribers = await prisma.newsletterSubscriber.findMany({
+                where: {
+                    unsubscribedAt: null,
+                    verifiedAt: { not: null },
+                },
+            });
+
+            if (subscribers.length) {
+                const webBase = WEB_ORIGIN.replace(/\/$/, "");
+                const blogUrl = `${webBase}/blogs/${blog.slug}`;
+
+                for (const sub of subscribers) {
+                    const to = sub.email;
+                    if (!to) continue;
+
+                    const unsubToken = signNewsletterUnsubToken({
+                        id: sub.id,
+                        email: sub.email,
+                    });
+
+                    const unsubscribeUrl = `${webBase}/newsletter/unsubscribe?token=${encodeURIComponent(
+                        unsubToken,
+                    )}`;
+
+                    const subject = `New blog post on PUM: ${blog.title}`;
+                    const text = `Hi${sub.name ? " " + sub.name : ""}!
+
+We've just published a new blog post on PUM:
+
+Title: ${blog.title}
+${blog.summary ? `\n${blog.summary}\n` : "\n"}
+
+Read it here:
+${blogUrl}
+
+You're receiving this because you subscribed to updates from PUM.
+If you no longer wish to receive these, you can unsubscribe here:
+${unsubscribeUrl}
+`;
+
+                    await mailTransporter.sendMail({
+                        from: MAIL_FROM,
+                        to,
+                        subject,
+                        text,
+                    });
+                    console.log(
+                        "[POST /api/blogs] newsletter mail sent to subscriber",
+                        to,
+                    );
+                }
+            } else {
+                console.log(
+                    "[POST /api/blogs] no newsletterSubscriber rows; skipping newsletter send",
+                );
+            }
+        } else {
+            console.log(
+                "[POST /api/blogs] newsletter feature disabled (no newsletterSubscriber model or no SMTP)",
+            );
+        }
+    } catch (err) {
+        console.error(
+            "[POST /api/blogs] failed to send newsletter emails",
+            err,
+        );
     }
 
     console.log("========== [POST /api/blogs] END (success) ==========");

@@ -62,11 +62,11 @@ model Project {
   year          Int?
   status        String?
   demoUrl       String?
-  repoUrl       String?          // NEW: source code URL
+  repoUrl       String?          // source code URL
   imageUrl      String?
   cover         String?
   images        Json?
-  links         Json?            // NEW: additional links (label -> URL map)
+  links         Json?            // additional links (label -> URL map)
   eventId       String?
   event         Event?           @relation(fields: [eventId], references: [id])
   members       MemberProject[]
@@ -301,4 +301,27 @@ model ProjectInvite {
   project Project @relation(fields: [projectId], references: [id])
 
   @@index([projectId, email])
+}
+
+model NewsletterSubscriber {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  verifiedAt     DateTime?
+  lastSource     String?
+  unsubscribedAt DateTime?
+}
+
+model ContactMessage {
+  id                 String   @id @default(cuid())
+  createdAt          DateTime @default(now())
+  name               String
+  email              String
+  role               String
+  topic              String
+  message            String
+  source             String?
+  subscribeRequested Boolean  @default(false)
 }

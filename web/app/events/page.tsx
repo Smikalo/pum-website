@@ -45,7 +45,7 @@ function highlight(text: string | undefined, q: string) {
             </mark>
         ) : (
             <span key={i}>{p}</span>
-        )
+        ),
     );
 }
 
@@ -73,8 +73,8 @@ function normalizeEvent(e: any): Event {
         dateStart: e.dateStart ?? undefined,
         dateEnd: e.dateEnd ?? undefined,
         locationName: e.locationName ?? undefined,
-        lat: typeof e.lat === "number" ? e.lat : (typeof e.lat === "string" ? Number(e.lat) : undefined),
-        lng: typeof e.lng === "number" ? e.lng : (typeof e.lng === "string" ? Number(e.lng) : undefined),
+        lat: typeof e.lat === "number" ? e.lat : typeof e.lat === "string" ? Number(e.lat) : undefined,
+        lng: typeof e.lng === "number" ? e.lng : typeof e.lng === "string" ? Number(e.lng) : undefined,
         description: e.description ?? undefined,
         photos: Array.isArray(e.photos) ? e.photos : undefined,
         tags: Array.isArray(e.tags) ? e.tags : undefined,
@@ -120,7 +120,9 @@ async function fetchAllEventsFromApi(): Promise<Event[]> {
 
 export default async function EventsPage({
                                              searchParams,
-                                         }: { searchParams?: { q?: string; year?: string } }) {
+                                         }: {
+    searchParams?: { q?: string; year?: string };
+}) {
     const q = searchParams?.q || "";
     const year = searchParams?.year || "";
 
@@ -131,7 +133,7 @@ export default async function EventsPage({
 
     // Year chips
     const years = Array.from(
-        new Set(allEvents.map((e) => (e.dateStart ? String(e.dateStart).slice(0, 4) : "")).filter(Boolean))
+        new Set(allEvents.map((e) => (e.dateStart ? String(e.dateStart).slice(0, 4) : "")).filter(Boolean)),
     ).sort((a, b) => Number(b) - Number(a));
 
     // Filter
@@ -176,7 +178,12 @@ export default async function EventsPage({
             {/* List */}
             <div className="mb-3 text-sm text-white/60">
                 {filtered.length} event{filtered.length === 1 ? "" : "s"} found
-                {year ? <> in <span className="font-semibold">{year}</span></> : null}
+                {year ? (
+                    <>
+                        {" "}
+                        in <span className="font-semibold">{year}</span>
+                    </>
+                ) : null}
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filtered.map((e) => (
@@ -202,6 +209,28 @@ export default async function EventsPage({
                         ) : null}
                     </Link>
                 ))}
+            </div>
+
+            {/* CTA to contact page */}
+            <div className="mt-10">
+                <div className="card p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                        <h2 className="text-lg font-semibold">Want to run something with us?</h2>
+                        <p className="text-sm text-white/70 max-w-xl">
+                            If you’re planning a hackathon, meetup, or conference and want PUM to co-host, speak, or mentor,
+                            reach out and we’ll explore it together.
+                        </p>
+                    </div>
+                    <Link
+                        href="/contact"
+                        className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition"
+                    >
+                        Contact the team
+                        <span aria-hidden className="ml-1">
+              →
+            </span>
+                    </Link>
+                </div>
             </div>
         </section>
     );

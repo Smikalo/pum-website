@@ -3,8 +3,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
     title: "Imprint – PUM",
-    description:
-        "Legal notice (Impressum) with provider identification and contact details.",
+    description: "Legal notice (Impressum) with provider identification and contact details.",
 };
 
 export default function ImprintPage() {
@@ -13,8 +12,7 @@ export default function ImprintPage() {
             <p className="kicker">LEGAL</p>
             <h1 className="display">Imprint (Impressum)</h1>
             <p className="mt-3 text-white/70 max-w-2xl">
-                Provider identification and mandatory information in accordance with
-                applicable German law (e.g. TMG).
+                Provider identification and mandatory information in accordance with applicable German law (e.g. TMG).
             </p>
 
             <div className="mt-8 grid gap-6 max-w-3xl">
@@ -35,9 +33,9 @@ export default function ImprintPage() {
                 <div className="card p-5">
                     <h2 className="text-lg font-semibold mb-2">Contact</h2>
                     <p className="text-white/80">
-                        Email: contact@pum.example
+                        Email: contact@the-pum.de
                         <br />
-                        Web: https://pum.example
+                        Web: https://the-pum.de
                     </p>
                 </div>
 
@@ -51,15 +49,12 @@ export default function ImprintPage() {
                 </div>
 
                 <div className="card p-5">
-                    <h2 className="text-lg font-semibold mb-2">
-                        Register / VAT (if applicable)
-                    </h2>
+                    <h2 className="text-lg font-semibold mb-2">Register / VAT (if applicable)</h2>
                     <p className="text-white/80">
                         Register court &amp; number: —{" "}
                         <span className="text-white/60">(if applicable)</span>
                         <br />
-                        VAT ID: DE&nbsp;000000000{" "}
-                        <span className="text-white/60">(if applicable)</span>
+                        VAT ID: DE&nbsp;000000000 <span className="text-white/60">(if applicable)</span>
                     </p>
                 </div>
 
@@ -75,20 +70,17 @@ export default function ImprintPage() {
                 <div className="card p-5">
                     <h2 className="text-lg font-semibold mb-2">Liability</h2>
                     <p className="text-white/80">
-                        We carefully check external links. Nevertheless, we assume no
-                        liability for the content of external websites; the respective
-                        providers are responsible for their content. All information on this
-                        website is provided without guarantee for completeness, correctness
-                        and up-to-dateness.
+                        We carefully check external links. Nevertheless, we assume no liability for the content of external
+                        websites; the respective providers are responsible for their content. All information on this website is
+                        provided without guarantee for completeness, correctness and up-to-dateness.
                     </p>
                 </div>
 
                 <div className="card p-5">
                     <h2 className="text-lg font-semibold mb-2">Copyright</h2>
                     <p className="text-white/80">
-                        Texts, photos and graphics are protected by copyright. Please obtain
-                        permission before reusing any materials. Where third-party content
-                        is used, it is credited accordingly.
+                        Texts, photos and graphics are protected by copyright. Please obtain permission before reusing any
+                        materials. Where third-party content is used, it is credited accordingly.
                     </p>
                 </div>
             </div>

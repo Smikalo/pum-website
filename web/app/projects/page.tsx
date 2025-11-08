@@ -223,11 +223,24 @@ export default async function ProjectsPage({
                 ))}
             </div>
 
-            <div className="mt-8 text-sm text-white/60">
-                Can’t find your idea?{" "}
-                <Link href="/contact" className="underline underline-offset-4">
-                    Pitch us →
-                </Link>
+            {/* CTA to contact page (aligned with /members) */}
+            <div className="mt-10">
+                <div className="card p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                        <h2 className="text-lg font-semibold">Have a project or idea in mind?</h2>
+                        <p className="text-sm text-white/70 max-w-xl">
+                            Whether it’s a hackathon concept, an MVP you want to ship, or a product you’d like us to co-build,
+                            we’d love to talk.
+                        </p>
+                    </div>
+                    <Link
+                        href="/contact"
+                        className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition"
+                    >
+                        Contact the team
+                        <span aria-hidden className="ml-1">→</span>
+                    </Link>
+                </div>
             </div>
         </section>
     );

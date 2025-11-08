@@ -34,10 +34,10 @@ type UiMember = {
     slug: string;
     name: string;
     shortBio?: string;
-    skills: string[];     // informational only; DOES NOT drive category/color
+    skills: string[]; // informational only; DOES NOT drive category/color
     techStack: string[];
-    avatarUrl?: string;   // normalized, never null
-    focusArea?: string;   // <- drives category + graph color
+    avatarUrl?: string; // normalized, never null
+    focusArea?: string; // <- drives category + graph color
 };
 
 type ApiProject = any;
@@ -53,7 +53,10 @@ function uniq<T>(arr: T[]): T[] {
 }
 function parseMulti(param?: string): string[] {
     if (!param) return [];
-    return param.split(",").map((x) => x.trim()).filter(Boolean);
+    return param
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
 }
 function includesAll(haystack: string[] | undefined, needles: string[]): boolean {
     if (!needles.length) return true;
@@ -226,11 +229,11 @@ export default async function MembersPage({
             name: m.name,
             skills: skillsForGraph,
             techStack: m.techStack,
-            avatarUrl: m.avatarUrl,                // expected by current MembersGraph
+            avatarUrl: m.avatarUrl, // expected by current MembersGraph
             // --- image fallbacks for card UIs that read different keys ---
-            avatar: m.avatarUrl,                   // some UIs read `avatar`
-            imageUrl: m.avatarUrl,                 // some UIs read `imageUrl`
-            photoUrl: m.avatarUrl,                 // belt & suspenders
+            avatar: m.avatarUrl, // some UIs read `avatar`
+            imageUrl: m.avatarUrl, // some UIs read `imageUrl`
+            photoUrl: m.avatarUrl, // belt & suspenders
         };
         return node as MembersGraphProps["members"][number];
     });
@@ -320,6 +323,28 @@ export default async function MembersPage({
             ) : (
                 <ListView members={filteredMembers} total={total} q={q} />
             )}
+
+            {/* CTA to contact page */}
+            <div className="mt-10">
+                <div className="card p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                        <h2 className="text-lg font-semibold">Want to join these minds?</h2>
+                        <p className="text-sm text-white/70 max-w-xl">
+                            If you don’t see yourself on this page yet but would like to collaborate, mentor, or become a member,
+                            we’d love to hear from you.
+                        </p>
+                    </div>
+                    <Link
+                        href="/contact"
+                        className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition"
+                    >
+                        Talk to us
+                        <span aria-hidden className="ml-1">
+              →
+            </span>
+                    </Link>
+                </div>
+            </div>
         </section>
     );
 }
@@ -407,7 +432,9 @@ function Avatar({ name, src, size = 40 }: { name: string; src?: string; size?: n
 function ListView({ members, total, q }: { members: UiMember[]; total: number; q: string }) {
     return (
         <>
-            <div className="mb-3 text-sm text-white/60">{total} member{total === 1 ? "" : "s"} found</div>
+            <div className="mb-3 text-sm text-white/60">
+                {total} member{total === 1 ? "" : "s"} found
+            </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {members.map((m) => (
                     <Link
@@ -421,10 +448,14 @@ function ListView({ members, total, q }: { members: UiMember[]; total: number; q
                                 <div className="font-semibold text-lg">{highlight(m.name, q)}</div>
                                 {m.focusArea && (
                                     <div className="mt-1">
-                                        <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">{m.focusArea}</span>
+                    <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
+                      {m.focusArea}
+                    </span>
                                     </div>
                                 )}
-                                {m.shortBio ? <div className="text-sm text-white/70 mt-1 line-clamp-3">{highlight(m.shortBio, q)}</div> : null}
+                                {m.shortBio ? (
+                                    <div className="text-sm text-white/70 mt-1 line-clamp-3">{highlight(m.shortBio, q)}</div>
+                                ) : null}
                                 <div className="mt-3 text-xs text-white/50 truncate">
                                     {(m.techStack || []).map((t, i) => (
                                         <span key={t}>

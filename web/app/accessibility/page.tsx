@@ -58,9 +58,9 @@ export default function AccessibilityPage() {
                             Email:{" "}
                             <a
                                 className="underline underline-offset-4"
-                                href="mailto:accessibility@pum.example"
+                                href="mailto:contact@the-pum.com"
                             >
-                                accessibility@pum.example
+                                contact@the-pum.com
                             </a>
                         </li>
                         <li>
