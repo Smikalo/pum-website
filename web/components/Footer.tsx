@@ -29,7 +29,7 @@ export default function Footer() {
                         <div className="mt-4 flex items-center gap-4">
                             <a
                                 aria-label="PUM on GitHub"
-                                href="https://github.com/"
+                                href="https://github.com/the-pum"
                                 target="_blank"
                                 rel="noreferrer"
                                 className="group inline-flex items-center gap-2"
@@ -42,7 +42,7 @@ export default function Footer() {
 
                             <a
                                 aria-label="PUM on LinkedIn"
-                                href="https://www.linkedin.com/"
+                                href="https://www.linkedin.com/company/project-of-united-minds"
                                 target="_blank"
                                 rel="noreferrer"
                                 className="group inline-flex items-center gap-2"
