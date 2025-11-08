@@ -608,7 +608,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
         projectsForEvent = allProjects.filter((p) => (p.events || []).some((e) => e.slug === baseEvent.slug));
     }
 
-    // Blog posts about this event (prefer API detail, fallback to filter endpoint)
+    // Blog posts about this event — only use blogs directly connected via the event detail API.
     let blogsForEvent: BlogCard[] = [];
     if (evDetail?.blogs && evDetail.blogs.length) {
         const seen = new Set<string>();
@@ -631,8 +631,6 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                 seen.add(b.slug);
                 return true;
             });
-    } else {
-        blogsForEvent = await fetchBlogsForEventSlug(baseEvent.slug);
     }
 
     const photos = baseEvent.photos || [];
