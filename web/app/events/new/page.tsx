@@ -8,21 +8,26 @@ import { useAuth } from "@/context/AuthProvider";
 import * as api from "@/lib/api";
 import EventsMap from "@/components/EventsMap";
 
-// --- tiny markdown previewer (headings, bold/italic, code, links, lists) ---
+/* ---------------- Tiny markdown previewer ---------------- */
+
 function MarkdownPreview({ markdown }: { markdown: string }) {
     const src = (markdown || "").replace(/\r\n/g, "\n");
 
-    function splitFenced(input: string): Array<{ type: "text" | "code"; content: string; lang?: string }> {
+    function splitFenced(
+        input: string,
+    ): Array<{ type: "text" | "code"; content: string; lang?: string }> {
         const out: Array<{ type: "text" | "code"; content: string; lang?: string }> = [];
         const fence = /```(\w+)?\n([\s\S]*?)```/g;
         let lastIndex = 0;
         let m: RegExpExecArray | null;
         while ((m = fence.exec(input))) {
-            if (m.index > lastIndex) out.push({ type: "text", content: input.slice(lastIndex, m.index) });
+            if (m.index > lastIndex)
+                out.push({ type: "text", content: input.slice(lastIndex, m.index) });
             out.push({ type: "code", content: m[2].replace(/\n$/, ""), lang: m[1] });
             lastIndex = fence.lastIndex;
         }
-        if (lastIndex < input.length) out.push({ type: "text", content: input.slice(lastIndex) });
+        if (lastIndex < input.length)
+            out.push({ type: "text", content: input.slice(lastIndex) });
         return out;
     }
 
@@ -40,7 +45,9 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
         return out;
     }
 
-    function splitLinks(text: string): Array<string | { label: string; href: string }> {
+    function splitLinks(
+        text: string,
+    ): Array<string | { label: string; href: string }> {
         const out: Array<string | { label: string; href: string }> = [];
         const re = /\[([^\]]+)\]\(([^)]+)\)/g;
         let last = 0;
@@ -65,12 +72,14 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
         return segments.flatMap((seg, idx) => {
             if (typeof seg !== "string") {
                 return (
-                    <code key={`code-${idx}`} className="px-1 rounded bg-white/10 text-white/90">
+                    <code
+                        key={`code-${idx}`}
+                        className="px-1 rounded bg-white/10 text-white/90"
+                    >
                         {seg.code}
                     </code>
                 );
             }
-            // links
             const withLinks = splitLinks(seg).flatMap((s, j) => {
                 if (typeof s !== "string") {
                     const href = normalizeHref(s.href);
@@ -88,7 +97,6 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                 }
                 return s;
             });
-            // bold
             const bolded = withLinks.flatMap((s, j) => {
                 if (typeof s !== "string") return s;
                 const parts = splitInline(s, /\*\*([^*]+)\*\*/);
@@ -96,13 +104,15 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                     typeof p === "string" ? (
                         p
                     ) : (
-                        <strong key={`b-${idx}-${j}-${k}`} className="text-white">
+                        <strong
+                            key={`b-${idx}-${j}-${k}`}
+                            className="text-white"
+                        >
                             {p.code}
                         </strong>
                     ),
                 );
             });
-            // italic
             const italicized = bolded.flatMap((s, j) => {
                 if (typeof s !== "string") return s;
                 const parts = splitInline(s, /\*([^*]+)\*/);
@@ -110,7 +120,10 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                     typeof p === "string" ? (
                         p
                     ) : (
-                        <em key={`i-${idx}-${j}-${k}`} className="italic">
+                        <em
+                            key={`i-${idx}-${j}-${k}`}
+                            className="italic"
+                        >
                             {p.code}
                         </em>
                     ),
@@ -136,15 +149,24 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                 const content = h[2];
                 blocks.push(
                     level === 1 ? (
-                        <h3 key={`h-${i}`} className="text-2xl font-bold text-white mt-3">
+                        <h3
+                            key={`h-${i}`}
+                            className="text-2xl font-bold text-white mt-3"
+                        >
                             {inline(content)}
                         </h3>
                     ) : level === 2 ? (
-                        <h4 key={`h-${i}`} className="text-xl font-semibold text-white mt-2">
+                        <h4
+                            key={`h-${i}`}
+                            className="text-xl font-semibold text-white mt-2"
+                        >
                             {inline(content)}
                         </h4>
                     ) : (
-                        <h5 key={`h-${i}`} className="text-lg font-semibold text-white mt-2">
+                        <h5
+                            key={`h-${i}`}
+                            className="text-lg font-semibold text-white mt-2"
+                        >
                             {inline(content)}
                         </h5>
                     ),
@@ -157,14 +179,20 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                 while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
                     const item = lines[i].replace(/^\s*\d+\.\s+/, "");
                     items.push(
-                        <li key={`ol-${i}`} className="ml-4">
+                        <li
+                            key={`ol-${i}`}
+                            className="ml-4"
+                        >
                             {inline(item)}
                         </li>,
                     );
                     i++;
                 }
                 blocks.push(
-                    <ol key={`ol-block-${i}`} className="list-decimal pl-5 space-y-1">
+                    <ol
+                        key={`ol-block-${i}`}
+                        className="list-decimal pl-5 space-y-1"
+                    >
                         {items}
                     </ol>,
                 );
@@ -175,14 +203,20 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                 while (i < lines.length && /^\s*([-*+])\s+/.test(lines[i])) {
                     const item = lines[i].replace(/^\s*([-*+])\s+/, "");
                     items.push(
-                        <li key={`ul-${i}`} className="ml-4">
+                        <li
+                            key={`ul-${i}`}
+                            className="ml-4"
+                        >
                             {inline(item)}
                         </li>,
                     );
                     i++;
                 }
                 blocks.push(
-                    <ul key={`ul-block-${i}`} className="list-disc pl-5 space-y-1">
+                    <ul
+                        key={`ul-block-${i}`}
+                        className="list-disc pl-5 space-y-1"
+                    >
                         {items}
                     </ul>,
                 );
@@ -201,7 +235,10 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
             }
             const paraText = paras.join(" ");
             blocks.push(
-                <p key={`p-${i}`} className="text-white/85">
+                <p
+                    key={`p-${i}`}
+                    className="text-white/85"
+                >
                     {inline(paraText)}
                 </p>,
             );
@@ -222,23 +259,29 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                         <code>{seg.content}</code>
                     </pre>
                 ) : (
-                    <BlockText key={`txt-${i}`} text={seg.content} />
+                    <BlockText
+                        key={`txt-${i}`}
+                        text={seg.content}
+                    />
                 ),
             )}
         </div>
     );
 }
 
-// --- OpenStreetMap Nominatim search (no key) ---
+/* ------------------- OpenStreetMap Nominatim search ------------------- */
+
 type SearchHit = { display_name: string; lat: string; lon: string };
 
-async function geocode(q: string, signal?: AbortSignal): Promise<SearchHit[]> {
+async function geocode(
+    q: string,
+    signal?: AbortSignal,
+): Promise<SearchHit[]> {
     if (!q.trim()) return [];
     const url = new URL("https://nominatim.openstreetmap.org/search");
     url.searchParams.set("q", q);
     url.searchParams.set("format", "jsonv2");
     url.searchParams.set("limit", "5");
-    // identify app politely per their usage policy
     url.searchParams.set("email", "noreply@pum.local");
     const res = await fetch(url.toString(), {
         headers: { Accept: "application/json" },
@@ -247,6 +290,8 @@ async function geocode(q: string, signal?: AbortSignal): Promise<SearchHit[]> {
     if (!res.ok) return [];
     return (await res.json()) as SearchHit[];
 }
+
+/* --------------------------- Form & domain types --------------------------- */
 
 type FormState = {
     name: string;
@@ -260,7 +305,6 @@ type FormState = {
 
 type Errors = Partial<Record<keyof FormState | "photos", string>>;
 
-// Members + attendees
 type Member = {
     id: string;
     slug: string;
@@ -274,7 +318,6 @@ type Attendee =
     | { kind: "member"; member: Member }
     | { kind: "invite"; value: string };
 
-// Projects
 type ProjectRef = {
     id: string;
     slug: string;
@@ -284,7 +327,16 @@ type ProjectRef = {
     summary?: string | null;
 };
 
-// --- Map preview using the same neon EventsMap as event detail page ---
+type BlogRef = {
+    slug: string;
+    title: string;
+    cover?: string | null;
+    summary?: string | null;
+    publishedAt?: string | null;
+};
+
+/* ----------------------------- Map preview ----------------------------- */
+
 function MapPreview({
                         name,
                         locationName,
@@ -321,8 +373,8 @@ function MapPreview({
         lat: latNum,
         lng: lngNum,
         description: undefined,
-        photos: [],
-        tags: [],
+        photos: [] as string[],
+        tags: [] as string[],
     };
 
     return (
@@ -331,6 +383,8 @@ function MapPreview({
         </div>
     );
 }
+
+/* --------------------------------- Page --------------------------------- */
 
 export default function NewEventPage() {
     const { user, accessToken } = useAuth();
@@ -368,12 +422,19 @@ export default function NewEventPage() {
     const [selectedProjectSlugs, setSelectedProjectSlugs] = React.useState<string[]>([]);
     const [projectQ, setProjectQ] = React.useState("");
 
+    // Blogs
+    const [blogs, setBlogs] = React.useState<BlogRef[]>([]);
+    const [blogsLoading, setBlogsLoading] = React.useState(true);
+    const [selectedBlogSlugs, setSelectedBlogSlugs] = React.useState<string[]>([]);
+    const [blogQ, setBlogQ] = React.useState("");
+
     const [submitting, setSubmitting] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
     const [hint, setHint] = React.useState<string | null>(null);
     const [errors, setErrors] = React.useState<Errors>({});
 
-    // live map search (debounced) whenever user types in the search box
+    /* ------------------ live map search (debounced) ------------------ */
+
     React.useEffect(() => {
         if (!searchQ.trim()) {
             setHits([]);
@@ -402,7 +463,8 @@ export default function NewEventPage() {
         };
     }, [searchQ]);
 
-    // load members for attendee picker
+    /* ------------------ load members for attendee picker ------------------ */
+
     React.useEffect(() => {
         let cancelled = false;
         async function loadMembers() {
@@ -439,7 +501,8 @@ export default function NewEventPage() {
         };
     }, []);
 
-    // load projects for project picker
+    /* ------------------ load projects for project picker ------------------ */
+
     React.useEffect(() => {
         let cancelled = false;
 
@@ -478,7 +541,57 @@ export default function NewEventPage() {
         };
     }, []);
 
-    // If not logged in, show friendly gate (API still enforces auth)
+    /* ------------------ load blogs for blog picker ------------------ */
+
+    React.useEffect(() => {
+        let cancelled = false;
+
+        async function loadBlogs() {
+            try {
+                const res = await fetch("/api/blogs?size=999");
+                if (!res.ok) throw new Error("Failed to load blogs");
+                const json = await res.json();
+                const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+                const mapped: BlogRef[] = items
+                    .map((b) => {
+                        const images: string[] = Array.isArray(b.images)
+                            ? b.images
+                            : Array.isArray(b.photos)
+                                ? b.photos
+                                : [];
+                        const cover = b.cover ?? b.imageUrl ?? images[0] ?? null;
+                        return {
+                            slug: String(b.slug ?? b.id ?? ""),
+                            title: String(b.title ?? b.name ?? "Untitled"),
+                            cover,
+                            summary: b.summary ?? null,
+                            publishedAt:
+                                b.publishedAt ?? b.date ?? b.createdAt ?? null,
+                        } as BlogRef;
+                    })
+                    .filter((b) => !!b.slug && !!b.title);
+                if (!cancelled) {
+                    setBlogs(mapped);
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    // eslint-disable-next-line no-console
+                    console.error("[NewEvent] blogs load error", err);
+                    // blogs are optional; do not set a red error
+                }
+            } finally {
+                if (!cancelled) setBlogsLoading(false);
+            }
+        }
+
+        loadBlogs();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    /* ------------------ auth gate ------------------ */
+
     if (!user) {
         return (
             <section className="section">
@@ -497,6 +610,8 @@ export default function NewEventPage() {
             </section>
         );
     }
+
+    /* ------------------ helpers ------------------ */
 
     function set<K extends keyof FormState>(k: K, v: FormState[K]) {
         setState((s) => ({ ...s, [k]: v }));
@@ -561,7 +676,6 @@ export default function NewEventPage() {
         setAttendees((prev) => prev.filter((_, i) => i !== index));
     }
 
-    // Projects helpers
     function addProject(p: ProjectRef) {
         setSelectedProjectSlugs((prev) =>
             prev.includes(p.slug) ? prev : [...prev, p.slug],
@@ -571,6 +685,17 @@ export default function NewEventPage() {
 
     function removeProject(slug: string) {
         setSelectedProjectSlugs((prev) => prev.filter((s) => s !== slug));
+    }
+
+    function addBlog(b: BlogRef) {
+        setSelectedBlogSlugs((prev) =>
+            prev.includes(b.slug) ? prev : [...prev, b.slug],
+        );
+        setBlogQ("");
+    }
+
+    function removeBlog(slug: string) {
+        setSelectedBlogSlugs((prev) => prev.filter((s) => s !== slug));
     }
 
     const normalizedAttendeeQ = attendeeQ.trim().toLowerCase();
@@ -622,6 +747,30 @@ export default function NewEventPage() {
         [selectedProjectSlugs, projects],
     );
 
+    const normalizedBlogQ = blogQ.trim().toLowerCase();
+    const blogSuggestions = React.useMemo(() => {
+        const already = new Set(selectedBlogSlugs);
+        return blogs
+            .filter((b) => {
+                if (already.has(b.slug)) return false;
+                if (!normalizedBlogQ) return true;
+                const summary = b.summary || "";
+                return (
+                    b.title.toLowerCase().includes(normalizedBlogQ) ||
+                    summary.toLowerCase().includes(normalizedBlogQ)
+                );
+            })
+            .slice(0, 20);
+    }, [blogs, selectedBlogSlugs, normalizedBlogQ]);
+
+    const selectedBlogs = React.useMemo(
+        () =>
+            selectedBlogSlugs
+                .map((slug) => blogs.find((b) => b.slug === slug))
+                .filter((b): b is BlogRef => !!b),
+        [selectedBlogSlugs, blogs],
+    );
+
     // Photo helpers
     function adjustHeaderAfterRemoval(
         current: number | null,
@@ -636,14 +785,12 @@ export default function NewEventPage() {
         return current;
     }
 
-    // ✅ FIXED: append new selection instead of replacing previous files
     function handlePhotosChange(files: FileList | null) {
         const incoming = Array.from(files || []);
         if (incoming.length === 0) return;
 
         setPhotos((prev) => {
             const next = [...prev, ...incoming];
-            // keep header if still valid; otherwise default to the first photo
             if (next.length === 0) {
                 setHeaderIndex(null);
             } else if (headerIndex == null || headerIndex >= next.length) {
@@ -720,18 +867,19 @@ export default function NewEventPage() {
                 attendees: attendees.map((a) =>
                     a.kind === "member"
                         ? {
-                            type: "member",
+                            type: "member" as const,
                             memberId: a.member.id,
                             memberSlug: a.member.slug,
                             name: a.member.name,
                             email: a.member.email || null,
                         }
                         : {
-                            type: "invite",
+                            type: "invite" as const,
                             value: a.value,
                         },
                 ),
                 projectSlugs: selectedProjectSlugs,
+                blogSlugs: selectedBlogSlugs,
             };
 
             const res = await api.createEvent(accessToken, body);
@@ -756,9 +904,10 @@ export default function NewEventPage() {
                 : "ring-white/10 focus:ring-white/30"
         }`;
 
-    // dark-themed search input
     const searchInputCls =
         "w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:ring-white/30";
+
+    /* --------------------------------- render --------------------------------- */
 
     return (
         <section className="section">
@@ -766,7 +915,7 @@ export default function NewEventPage() {
                 <p className="kicker">EVENTS</p>
                 <h1 className="display">Create a new event</h1>
                 <p className="mt-2 text-white/70 max-w-2xl">
-                    Add dates, location, details, attendees, photos, and related projects.
+                    Add dates, location, details, attendees, photos, related projects, and related blog posts.
                 </p>
             </header>
 
@@ -820,7 +969,7 @@ export default function NewEventPage() {
                                     value={state.description}
                                     onChange={(e) => set("description", e.target.value)}
                                     className={inputCls("description")}
-                                    placeholder="Describe the event. **Markdown** supported. Use lists, code, links, etc."
+                                    placeholder="Describe the event. **Markdown** supported."
                                 />
                             </div>
                             <div>
@@ -878,7 +1027,7 @@ export default function NewEventPage() {
                     </div>
 
                     <div className="card p-5 space-y-3">
-                        {/* Photos (real files) */}
+                        {/* Photos */}
                         <div>
                             <label className="block text-sm text-white/70 mb-1">Photos</label>
                             <input
@@ -961,7 +1110,6 @@ export default function NewEventPage() {
                             />
                         </div>
 
-                        {/* Map search (live search as you type) */}
                         <div className="space-y-2">
                             <div className="relative">
                                 <input
@@ -992,14 +1140,18 @@ export default function NewEventPage() {
                                                 }
                                             }}
                                         >
-                                            {h.display_name}
+                                            <div className="font-medium text-white">
+                                                {h.display_name}
+                                            </div>
+                                            <div className="text-xs text-white/60 mt-0.5">
+                                                lat {h.lat}, lon {h.lon}
+                                            </div>
                                         </li>
                                     ))}
                                 </ul>
                             )}
                         </div>
 
-                        {/* Map preview using EventsMap (dark neon) */}
                         <MapPreview
                             name={state.name}
                             locationName={state.locationName}
@@ -1170,7 +1322,6 @@ export default function NewEventPage() {
                         </div>
                         <p className="text-xs text-white/60">
                             Link projects that are showcased or launched during this event.
-                            They will appear as project cards on the event page and vice versa.
                         </p>
 
                         <div className="space-y-2">
@@ -1237,6 +1388,102 @@ export default function NewEventPage() {
                                         )}
                                         <span className="text-xs text-white">
                                             {p.title}
+                                        </span>
+                                        <span className="text-[11px] text-white/60 group-hover:text-red-300">
+                                            ✕
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Related blog posts */}
+                    <div className="card p-5 space-y-3">
+                        <div className="flex items-baseline justify-between">
+                            <h2 className="text-sm font-semibold text-white">
+                                Related blog posts
+                            </h2>
+                            {blogsLoading && (
+                                <span className="text-[11px] text-white/50">
+                                    Loading blog posts…
+                                </span>
+                            )}
+                        </div>
+                        <p className="text-xs text-white/60">
+                            Link write-ups or recaps that are specifically about this event.
+                        </p>
+
+                        <div className="space-y-2">
+                            <input
+                                value={blogQ}
+                                onChange={(e) => setBlogQ(e.target.value)}
+                                placeholder="Search posts by title or summary"
+                                className={searchInputCls}
+                            />
+                            {!!blogSuggestions.length && (
+                                <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
+                                    {blogSuggestions.map((b) => (
+                                        <li
+                                            key={b.slug}
+                                            className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                            onClick={() => addBlog(b)}
+                                        >
+                                            {b.cover ? (
+                                                <img
+                                                    src={b.cover}
+                                                    alt={b.title}
+                                                    className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
+                                                />
+                                            ) : (
+                                                <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                    {b.title.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-medium text-white truncate">
+                                                    {b.title}
+                                                </div>
+                                                {b.publishedAt && (
+                                                    <div className="text-[11px] text-white/60">
+                                                        {new Date(b.publishedAt).toLocaleDateString()}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                            {!blogsLoading && blogs.length === 0 && (
+                                <p className="text-[11px] text-white/50">
+                                    No blog posts found, or blog API is unavailable.
+                                    You can still create the event and link posts later.
+                                </p>
+                            )}
+                        </div>
+
+                        {selectedBlogs.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {selectedBlogs.map((b) => (
+                                    <button
+                                        key={b.slug}
+                                        type="button"
+                                        onClick={() => removeBlog(b.slug)}
+                                        className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
+                                    >
+                                        {b.cover ? (
+                                            <img
+                                                src={b.cover}
+                                                alt={b.title}
+                                                className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
+                                            />
+                                        ) : (
+                                            <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                {b.title.charAt(0).toUpperCase()}
+                                            </div>
+                                        )}
+                                        <span className="text-xs text-white">
+                                            {b.title}
                                         </span>
                                         <span className="text-[11px] text-white/60 group-hover:text-red-300">
                                             ✕

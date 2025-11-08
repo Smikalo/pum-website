@@ -1,3 +1,7 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const dynamicParams = true;
+
 // app/blog/new/page.tsx
 
 import React from "react";
@@ -53,6 +57,7 @@ async function createBlog(formData: FormData) {
     const tags = parseCsv(formData, "tags");
     const techStack = parseCsv(formData, "techStack");
     const projectSlugs = parseCsv(formData, "projectSlugs");
+    const eventSlugs = parseCsv(formData, "eventSlugs"); // ✅ NEW
     const authorSlugs = parseCsv(formData, "authorSlugs");
     const publishedAtRaw = (formData.get("publishedAt") || "")
         .toString()
@@ -66,9 +71,7 @@ async function createBlog(formData: FormData) {
     const headerNewIndexRaw = (formData.get("headerNewIndex") || "")
         .toString()
         .trim();
-    const headerNewIndex = headerNewIndexRaw
-        ? Number(headerNewIndexRaw)
-        : null;
+    const headerNewIndex = headerNewIndexRaw ? Number(headerNewIndexRaw) : null;
 
     // Upload non-empty photo files to /api/uploads/blog-photo via server action
     const uploadedPhotoUrls: string[] = [];
@@ -101,10 +104,7 @@ async function createBlog(formData: FormData) {
         headerNewIndex < uploadedPhotoUrls.length
     ) {
         const cover = uploadedPhotoUrls[headerNewIndex];
-        photos = [
-            cover,
-            ...uploadedPhotoUrls.filter((u, i) => i !== headerNewIndex),
-        ];
+        photos = [cover, ...uploadedPhotoUrls.filter((u, i) => i !== headerNewIndex)];
     }
 
     const body: any = {
@@ -115,6 +115,7 @@ async function createBlog(formData: FormData) {
         techStack,
         photos,
         projectSlugs,
+        eventSlugs, // ✅ NEW
         authorSlugs,
     };
 
@@ -162,12 +163,9 @@ export default function NewBlogPage() {
             <header className="mb-6 flex items-center justify-between gap-3">
                 <div>
                     <p className="kicker">BLOG</p>
-                    <h1 className="display text-2xl sm:text-3xl">
-                        New blog post
-                    </h1>
+                    <h1 className="display text-2xl sm:text-3xl">New blog post</h1>
                     <p className="mt-2 text-white/70 text-sm max-w-xl">
-                        Draft a new story with full metadata. You can always
-                        refine it later.
+                        Draft a new story with full metadata. You can always refine it later.
                     </p>
                 </div>
                 <Link
@@ -182,7 +180,3 @@ export default function NewBlogPage() {
         </section>
     );
 }
-
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const dynamicParams = true;

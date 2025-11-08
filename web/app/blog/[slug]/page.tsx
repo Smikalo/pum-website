@@ -32,6 +32,7 @@ type Blog = {
     techStack?: string[];
     authors?: BlogAuthor[];
     projectSlugs?: string[];
+    eventSlugs?: string[]; // ✅ NEW
 };
 
 type ProjectCard = {
@@ -39,6 +40,13 @@ type ProjectCard = {
     title: string;
     cover?: string | null;
     year?: number | null;
+};
+
+type EventCard = {
+    slug: string;
+    title: string;
+    cover?: string | null;
+    date?: string | null;
 };
 
 function normalizeAuthor(a: any): BlogAuthor {
@@ -56,7 +64,12 @@ function normalizeBlog(raw: any): Blog | null {
     if (!raw) return null;
     const b = raw.item ?? raw.data ?? raw;
 
-    const images: string[] = Array.isArray(b.images) ? b.images : [];
+    // Accept either images[] or photos[] from the backend
+    const images: string[] = Array.isArray(b.images)
+        ? b.images
+        : Array.isArray(b.photos)
+            ? b.photos
+            : [];
     const cover = b.cover ?? b.imageUrl ?? images[0] ?? null;
 
     const content =
@@ -78,6 +91,15 @@ function normalizeBlog(raw: any): Blog | null {
             ? b.author
             : [];
 
+    // 🔗 events
+    let eventSlugs: string[] = normArr(b.eventSlugs);
+    if (!eventSlugs.length && Array.isArray(b.events)) {
+        eventSlugs = (b.events as any[])
+            .map((e) => e?.slug)
+            .filter((s): s is string => ((typeof s) === "string") && (s.trim().length>0))
+            .map((s) => s.trim());
+    }
+
     return {
         id: String(b.id ?? b.slug ?? ""),
         slug: String(b.slug ?? b.id ?? ""),
@@ -92,6 +114,7 @@ function normalizeBlog(raw: any): Blog | null {
         techStack: normArr(b.techStack ?? b.tech),
         authors: authorsInput.map(normalizeAuthor),
         projectSlugs: normArr(b.projectSlugs),
+        eventSlugs, // ✅
     };
 }
 
@@ -118,10 +141,7 @@ async function fetchRelatedBlogs(blog: Blog): Promise<Blog[]> {
         } else if (blog.authors && blog.authors.length > 0) {
             url.searchParams.set(
                 "author",
-                blog.authors
-                    .map((a) => a.slug)
-                    .filter(Boolean)
-                    .join(","),
+                blog.authors.map((a) => a.slug).filter(Boolean).join(","),
             );
         } else {
             return [];
@@ -145,15 +165,12 @@ async function fetchRelatedBlogs(blog: Blog): Promise<Blog[]> {
     }
 }
 
-// 🔍 Fetch project metadata (title, cover, year) for the related project slugs
-async function fetchProjectsForSlugs(
-    slugs: string[],
-): Promise<ProjectCard[]> {
+// 🔍 Fetch project cards for related projects
+async function fetchProjectsForSlugs(slugs: string[]): Promise<ProjectCard[]> {
     if (!slugs.length) return [];
 
     try {
         const url = new URL("/api/projects", API_BASE);
-        // Reuse the “list projects” endpoint and filter client-side
         url.searchParams.set("size", "200");
 
         const res = await fetch(url.toString(), {
@@ -182,11 +199,50 @@ async function fetchProjectsForSlugs(
                             : null,
             }));
 
-        // Keep the order from the original slugs array
         const bySlug = new Map(projects.map((p) => [p.slug, p]));
         return slugs
             .map((slug) => bySlug.get(slug))
             .filter((p): p is ProjectCard => !!p);
+    } catch {
+        return [];
+    }
+}
+
+// 🔍 Fetch event cards for related events
+async function fetchEventsForSlugs(slugs: string[]): Promise<EventCard[]> {
+    if (!slugs.length) return [];
+
+    try {
+        const url = new URL("/api/events", API_BASE);
+        url.searchParams.set("size", "200");
+
+        const res = await fetch(url.toString(), { cache: "no-store" });
+        if (!res.ok) return [];
+
+        const json = await res.json();
+        const items: any[] = Array.isArray(json.items) ? json.items : [];
+
+        const slugSet = new Set(slugs);
+        const events: EventCard[] = items
+            .filter((e) => e && slugSet.has(e.slug))
+            .map((e) => ({
+                slug: e.slug,
+                title: e.title ?? e.name ?? e.slug,
+                cover:
+                    Array.isArray(e.photos) && e.photos.length
+                        ? e.photos[0]
+                        : e.cover ?? null,
+                date:
+                    e.date ??
+                    e.startsAt ??
+                    e.publishedAt ??
+                    (typeof e.createdAt === "string" ? e.createdAt : null),
+            }));
+
+        const bySlug = new Map(events.map((ev) => [ev.slug, ev]));
+        return slugs
+            .map((slug) => bySlug.get(slug))
+            .filter((ev): ev is EventCard => !!ev);
     } catch {
         return [];
     }
@@ -202,9 +258,7 @@ export async function generateMetadata({
         title: b ? `${b.title} – PUM Blog` : "Blog – PUM",
         description:
             b?.summary ||
-            (b?.content
-                ? String(b.content).slice(0, 140)
-                : "PUM blog post"),
+            (b?.content ? String(b.content).slice(0, 140) : "PUM blog post"),
     };
 }
 
@@ -220,10 +274,7 @@ export default async function BlogDetailPage({
             <section className="section">
                 <h1 className="display">Post not found</h1>
                 <p className="mt-4">
-                    <Link
-                        href="/blog"
-                        className="underline underline-offset-4"
-                    >
+                    <Link href="/blog" className="underline underline-offset-4">
                         Back to blog
                     </Link>
                 </p>
@@ -234,21 +285,24 @@ export default async function BlogDetailPage({
     const relatedPosts = await fetchRelatedBlogs(b);
     const cover = b.cover || b.imageUrl;
     const images = b.images || [];
-    const authorSlugs =
-        b.authors?.map((a) => a.slug).filter(Boolean) ?? [];
+    const authorSlugs = b.authors?.map((a) => a.slug).filter(Boolean) ?? [];
     const relatedProjectSlugs = b.projectSlugs ?? [];
+    const relatedEventSlugs = b.eventSlugs ?? [];
 
-    // ✅ Load project metadata for nicer cards
-    const relatedProjects = await fetchProjectsForSlugs(
-        relatedProjectSlugs,
-    );
+    // ✅ Load related projects & events metadata
+    const [relatedProjects, relatedEvents] = await Promise.all([
+        fetchProjectsForSlugs(relatedProjectSlugs),
+        fetchEventsForSlugs(relatedEventSlugs),
+    ]);
 
-    // Fallback: any slugs that didn't come back from the API
-    const slugsWithCards = new Set(
-        relatedProjects.map((p) => p.slug),
-    );
+    // Fallback slugs with no card data returned
+    const slugsWithProjectCards = new Set(relatedProjects.map((p) => p.slug));
+    const slugsWithEventCards = new Set(relatedEvents.map((e) => e.slug));
     const fallbackProjectSlugs = relatedProjectSlugs.filter(
-        (slug) => !slugsWithCards.has(slug),
+        (slug) => !slugsWithProjectCards.has(slug),
+    );
+    const fallbackEventSlugs = relatedEventSlugs.filter(
+        (slug) => !slugsWithEventCards.has(slug),
     );
 
     return (
@@ -258,23 +312,19 @@ export default async function BlogDetailPage({
                 <h1 className="display">{b.title}</h1>
                 <div className="mt-2 text-white/70 text-sm flex flex-wrap gap-3 items-center">
                     {b.publishedAt && (
-                        <span>
-                            {new Date(
-                                b.publishedAt,
-                            ).toLocaleDateString()}
-                        </span>
+                        <span>{new Date(b.publishedAt).toLocaleDateString()}</span>
                     )}
                     {b.tags && b.tags.length > 0 && (
                         <span className="flex flex-wrap gap-1">
-                            {b.tags.map((t) => (
-                                <span
-                                    key={t}
-                                    className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
-                                >
-                                    {t}
-                                </span>
-                            ))}
-                        </span>
+              {b.tags.map((t) => (
+                  <span
+                      key={t}
+                      className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                  >
+                  {t}
+                </span>
+              ))}
+            </span>
                     )}
                 </div>
 
@@ -288,23 +338,14 @@ export default async function BlogDetailPage({
                             >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                    src={
-                                        m.avatarUrl ||
-                                        "/avatars/default.png"
-                                    }
+                                    src={m.avatarUrl || "/avatars/default.png"}
                                     alt={m.name}
                                     className="w-7 h-7 rounded-full object-cover ring-1 ring-white/10"
                                 />
                                 <div className="min-w-0">
-                                    <div className="text-xs font-medium">
-                                        {m.name}
-                                    </div>
+                                    <div className="text-xs font-medium">{m.name}</div>
                                     <div className="text-[11px] text-white/60 truncate">
-                                        {m.role === "CREATOR"
-                                            ? "Creator"
-                                            : m.headline ||
-                                            m.role ||
-                                            ""}
+                                        {m.role === "CREATOR" ? "Creator" : m.headline || m.role || ""}
                                     </div>
                                 </div>
                             </Link>
@@ -328,23 +369,17 @@ export default async function BlogDetailPage({
                 <article className="lg:col-span-3 space-y-6">
                     <div className="card p-5">
                         {b.summary && (
-                            <p className="text-white/80 text-sm mb-4">
-                                {b.summary}
-                            </p>
+                            <p className="text-white/80 text-sm mb-4">{b.summary}</p>
                         )}
 
                         {b.content ? (
                             <div className="prose prose-invert max-w-none">
-                                <ReactMarkdown
-                                    remarkPlugins={[remarkGfm]}
-                                >
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                     {b.content}
                                 </ReactMarkdown>
                             </div>
                         ) : (
-                            <p className="text-white/60">
-                                No content yet.
-                            </p>
+                            <p className="text-white/60">No content yet.</p>
                         )}
 
                         {b.techStack && b.techStack.length > 0 && (
@@ -358,8 +393,8 @@ export default async function BlogDetailPage({
                                             key={t}
                                             className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
                                         >
-                                            {t}
-                                        </span>
+                      {t}
+                    </span>
                                     ))}
                                 </div>
                             </div>
@@ -368,18 +403,14 @@ export default async function BlogDetailPage({
 
                     {images.length > 1 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">
-                                Gallery
-                            </h2>
+                            <h2 className="text-lg font-semibold mb-3">Gallery</h2>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 {images.map((src, i) => (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img
                                         key={i}
                                         src={src}
-                                        alt={`${b.title} photo ${
-                                            i + 1
-                                        }`}
+                                        alt={`${b.title} photo ${i + 1}`}
                                         className="w-full h-32 object-cover rounded-md ring-1 ring-white/10"
                                     />
                                 ))}
@@ -390,22 +421,14 @@ export default async function BlogDetailPage({
 
                 <aside className="lg:col-span-2 space-y-6">
                     <div className="card p-5">
-                        <h2 className="text-lg font-semibold mb-2">
-                            Authors
-                        </h2>
+                        <h2 className="text-lg font-semibold mb-2">Authors</h2>
                         {b.authors && b.authors.length ? (
                             <ul className="space-y-3">
                                 {b.authors.map((m, i) => (
-                                    <li
-                                        key={`${m.slug}-${i}`}
-                                        className="flex items-center gap-3"
-                                    >
+                                    <li key={`${m.slug}-${i}`} className="flex items-center gap-3">
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img
-                                            src={
-                                                m.avatarUrl ||
-                                                "/avatars/default.png"
-                                            }
+                                            src={m.avatarUrl || "/avatars/default.png"}
                                             alt={m.name}
                                             className="w-10 h-10 rounded-full object-cover ring-1 ring-white/10"
                                         />
@@ -418,10 +441,7 @@ export default async function BlogDetailPage({
                                             </Link>
                                             {m.role && (
                                                 <div className="text-xs text-white/60">
-                                                    {m.role ===
-                                                    "CREATOR"
-                                                        ? "Creator"
-                                                        : m.role}
+                                                    {m.role === "CREATOR" ? "Creator" : m.role}
                                                 </div>
                                             )}
                                             {m.headline && (
@@ -434,19 +454,14 @@ export default async function BlogDetailPage({
                                 ))}
                             </ul>
                         ) : (
-                            <p className="text-white/60">
-                                No authors listed.
-                            </p>
+                            <p className="text-white/60">No authors listed.</p>
                         )}
                     </div>
 
-                    {/* ⭐ Related projects as cards */}
-                    {(relatedProjects.length > 0 ||
-                        fallbackProjectSlugs.length > 0) && (
+                    {/* ⭐ Related projects */}
+                    {(relatedProjects.length > 0 || fallbackProjectSlugs.length > 0) && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-2">
-                                Related projects
-                            </h2>
+                            <h2 className="text-lg font-semibold mb-2">Related projects</h2>
                             <div className="grid gap-3">
                                 {relatedProjects.map((proj) => (
                                     <Link
@@ -454,7 +469,7 @@ export default async function BlogDetailPage({
                                         href={`/projects/${proj.slug}`}
                                         className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 hover:border-white/20 transition"
                                     >
-                                        {proj.cover && (
+                                        {proj.cover ? (
                                             <div className="h-10 w-10 rounded-md overflow-hidden ring-1 ring-white/10 flex-shrink-0">
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                                 <img
@@ -463,8 +478,7 @@ export default async function BlogDetailPage({
                                                     className="w-full h-full object-cover"
                                                 />
                                             </div>
-                                        )}
-                                        {!proj.cover && (
+                                        ) : (
                                             <div className="h-10 w-10 rounded-md bg-black/40 ring-1 ring-white/10 flex items-center justify-center text-[11px] text-white/60 flex-shrink-0">
                                                 PRJ
                                             </div>
@@ -474,18 +488,15 @@ export default async function BlogDetailPage({
                                                 {proj.title}
                                             </div>
                                             <div className="text-[11px] text-white/60 truncate">
-                                                {proj.year
-                                                    ? `${proj.year} · ${proj.slug}`
-                                                    : proj.slug}
+                                                {proj.year ? `${proj.year} · ${proj.slug}` : proj.slug}
                                             </div>
                                         </div>
                                         <span className="ml-auto text-[11px] text-white/60">
-                                            View →
-                                        </span>
+                      View →
+                    </span>
                                     </Link>
                                 ))}
 
-                                {/* Fallback cards for any slugs with no project data */}
                                 {fallbackProjectSlugs.map((slug) => (
                                     <Link
                                         key={slug}
@@ -496,16 +507,77 @@ export default async function BlogDetailPage({
                                             PRJ
                                         </div>
                                         <div className="min-w-0">
-                                            <div className="text-xs font-medium truncate">
-                                                {slug}
-                                            </div>
+                                            <div className="text-xs font-medium truncate">{slug}</div>
                                             <div className="text-[11px] text-white/60 truncate">
                                                 View project
                                             </div>
                                         </div>
                                         <span className="ml-auto text-[11px] text-white/60">
-                                            View →
-                                        </span>
+                      View →
+                    </span>
+                                    </Link>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 🗓️ Related events */}
+                    {(relatedEvents.length > 0 || fallbackEventSlugs.length > 0) && (
+                        <div className="card p-5">
+                            <h2 className="text-lg font-semibold mb-2">Related events</h2>
+                            <div className="grid gap-3">
+                                {relatedEvents.map((ev) => (
+                                    <Link
+                                        key={ev.slug}
+                                        href={`/events/${ev.slug}`}
+                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 hover:border-white/20 transition"
+                                    >
+                                        {ev.cover ? (
+                                            <div className="h-10 w-10 rounded-md overflow-hidden ring-1 ring-white/10 flex-shrink-0">
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={ev.cover}
+                                                    alt={ev.title}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="h-10 w-10 rounded-md bg-black/40 ring-1 ring-white/10 flex items-center justify-center text-[11px] text-white/60 flex-shrink-0">
+                                                EVT
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <div className="text-xs font-medium truncate">
+                                                {ev.title}
+                                            </div>
+                                            <div className="text-[11px] text-white/60 truncate">
+                                                {ev.date ? new Date(ev.date).toLocaleDateString() : ev.slug}
+                                            </div>
+                                        </div>
+                                        <span className="ml-auto text-[11px] text-white/60">
+                      View →
+                    </span>
+                                    </Link>
+                                ))}
+
+                                {fallbackEventSlugs.map((slug) => (
+                                    <Link
+                                        key={slug}
+                                        href={`/events/${slug}`}
+                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 hover:border-white/20 transition"
+                                    >
+                                        <div className="h-10 w-10 rounded-md bg-black/40 ring-1 ring-white/10 flex items-center justify-center text-[11px] text-white/60 flex-shrink-0">
+                                            EVT
+                                        </div>
+                                        <div className="min-w-0">
+                                            <div className="text-xs font-medium truncate">{slug}</div>
+                                            <div className="text-[11px] text-white/60 truncate">
+                                                View event
+                                            </div>
+                                        </div>
+                                        <span className="ml-auto text-[11px] text-white/60">
+                      View →
+                    </span>
                                     </Link>
                                 ))}
                             </div>
@@ -516,9 +588,7 @@ export default async function BlogDetailPage({
 
             {relatedPosts.length > 0 && (
                 <section className="mt-10 border-t border-white/10 pt-6">
-                    <h2 className="text-lg font-semibold mb-4">
-                        More like this
-                    </h2>
+                    <h2 className="text-lg font-semibold mb-4">More like this</h2>
                     <div className="grid gap-4 md:grid-cols-3">
                         {relatedPosts.map((post) => (
                             <Link
@@ -534,31 +604,24 @@ export default async function BlogDetailPage({
                                         className="w-full h-28 object-cover rounded-md mb-3 ring-1 ring-white/10"
                                     />
                                 )}
-                                <h3 className="text-sm font-semibold mb-1">
-                                    {post.title}
-                                </h3>
+                                <h3 className="text-sm font-semibold mb-1">{post.title}</h3>
                                 {post.publishedAt && (
                                     <p className="text-[11px] text-white/60">
-                                        {new Date(
-                                            post.publishedAt,
-                                        ).toLocaleDateString()}
+                                        {new Date(post.publishedAt).toLocaleDateString()}
                                     </p>
                                 )}
-                                {post.tags &&
-                                    post.tags.length > 0 && (
-                                        <div className="flex flex-wrap gap-1 mt-2">
-                                            {post.tags
-                                                .slice(0, 3)
-                                                .map((t) => (
-                                                    <span
-                                                        key={t}
-                                                        className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
-                                                    >
-                                                        {t}
-                                                    </span>
-                                                ))}
-                                        </div>
-                                    )}
+                                {post.tags && post.tags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                        {post.tags.slice(0, 3).map((t) => (
+                                            <span
+                                                key={t}
+                                                className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
+                                            >
+                        {t}
+                      </span>
+                                        ))}
+                                    </div>
+                                )}
                             </Link>
                         ))}
                     </div>
@@ -566,10 +629,7 @@ export default async function BlogDetailPage({
             )}
 
             <div className="mt-8 flex justify-between items-center">
-                <Link
-                    href="/blog"
-                    className="underline underline-offset-4"
-                >
+                <Link href="/blog" className="underline underline-offset-4">
                     ← Back to all posts
                 </Link>
 

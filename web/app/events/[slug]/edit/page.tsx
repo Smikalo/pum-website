@@ -351,6 +351,14 @@ type ProjectRef = {
     summary?: string | null;
 };
 
+type BlogRef = {
+    slug: string;
+    title: string;
+    cover?: string | null;
+    summary?: string | null;
+    publishedAt?: string | null;
+};
+
 /* ---------------------------- Map preview ---------------------------- */
 
 function MapPreview({
@@ -441,10 +449,14 @@ export default function EditEventPage({ params }: Props) {
     const [projects, setProjects] = React.useState<ProjectRef[]>([]);
     const [projectsLoading, setProjectsLoading] = React.useState(true);
     const [projectsError, setProjectsError] = React.useState<string | null>(null);
-    const [selectedProjectSlugs, setSelectedProjectSlugs] = React.useState<
-        string[]
-    >([]);
+    const [selectedProjectSlugs, setSelectedProjectSlugs] = React.useState<string[]>([]);
     const [projectQ, setProjectQ] = React.useState("");
+
+    const [blogs, setBlogs] = React.useState<BlogRef[]>([]);
+    const [blogsLoading, setBlogsLoading] = React.useState(true);
+    // blogs are optional, we intentionally do NOT show a red error if this fails
+    const [selectedBlogSlugs, setSelectedBlogSlugs] = React.useState<string[]>([]);
+    const [blogQ, setBlogQ] = React.useState("");
 
     const [errors, setErrors] = React.useState<Errors>({});
     const [submitting, setSubmitting] = React.useState(false);
@@ -574,6 +586,55 @@ export default function EditEventPage({ params }: Props) {
         };
     }, []);
 
+    /* -------------------- load blogs for blog picker -------------------- */
+
+    React.useEffect(() => {
+        let cancelled = false;
+
+        async function loadBlogs() {
+            try {
+                const res = await fetch("/api/blogs?size=999");
+                if (!res.ok) throw new Error("Failed to load blogs");
+                const json = await res.json();
+                const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+                const mapped: BlogRef[] = items
+                    .map((b) => {
+                        const images: string[] = Array.isArray(b.images)
+                            ? b.images
+                            : Array.isArray(b.photos)
+                                ? b.photos
+                                : [];
+                        const cover = b.cover ?? b.imageUrl ?? images[0] ?? null;
+                        return {
+                            slug: String(b.slug ?? b.id ?? ""),
+                            title: String(b.title ?? b.name ?? "Untitled"),
+                            cover,
+                            summary: b.summary ?? null,
+                            publishedAt:
+                                b.publishedAt ?? b.date ?? b.createdAt ?? null,
+                        } as BlogRef;
+                    })
+                    .filter((b) => !!b.slug && !!b.title);
+                if (!cancelled) {
+                    setBlogs(mapped);
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    // eslint-disable-next-line no-console
+                    console.error("[EditEvent] blogs load error", err);
+                    // blogs are optional; we do NOT surface a red error
+                }
+            } finally {
+                if (!cancelled) setBlogsLoading(false);
+            }
+        }
+
+        loadBlogs();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     /* ------------------------- load existing event ------------------------- */
 
     React.useEffect(() => {
@@ -656,30 +717,53 @@ export default function EditEventPage({ params }: Props) {
                 const pendingInvites = attendeesFromApi.filter(
                     (a) => a && a.pending && a.email,
                 );
-                if (pendingInvites.length) {
-                    setAttendees(
-                        pendingInvites.map((a) => ({
-                            kind: "invite" as const,
-                            value: String(a.email),
-                        })),
-                    );
-                }
+                const memberAttendees = attendeesFromApi.filter(
+                    (a) => a && !a.pending && (a.slug || a.memberSlug || a.memberId),
+                );
+
+                setAttendees([
+                    ...memberAttendees.map((a) => ({
+                        kind: "member" as const,
+                        member: {
+                            id: a.memberId ?? a.id ?? a.slug,
+                            slug: a.slug ?? a.memberSlug ?? a.id,
+                            name: a.name ?? a.displayName ?? "Unknown",
+                            avatarUrl:
+                                a.avatarUrl ??
+                                a.avatar ??
+                                a.photo ??
+                                undefined,
+                            headline: a.headline ?? a.title ?? undefined,
+                            email: a.email ?? undefined,
+                        } as Member,
+                    })),
+                    ...pendingInvites.map((a) => ({
+                        kind: "invite" as const,
+                        value: String(a.email),
+                    })),
+                ]);
 
                 const creator = attendeesFromApi.find(
-                    (a) => a && a.role === "CREATOR" && a.slug,
+                    (a) => a && a.role === "CREATOR" && (a.slug || a.memberSlug),
                 );
-                setCreatorSlug(creator?.slug ?? null);
+                setCreatorSlug(
+                    creator?.slug ?? creator?.memberSlug ?? null,
+                );
 
                 // preselect related projects
                 if (Array.isArray(ev.projects)) {
                     const slugs = ev.projects
                         .map((p: any) => p?.slug)
-                        .filter(
-                            (s: any) => typeof s === "string",
-                        );
-                    setSelectedProjectSlugs(
-                        Array.from(new Set(slugs)),
-                    );
+                        .filter((s: any) => typeof s === "string");
+                    setSelectedProjectSlugs(Array.from(new Set(slugs)));
+                }
+
+                // preselect related blogs, if API returns them
+                if (Array.isArray(ev.blogs)) {
+                    const slugs = ev.blogs
+                        .map((b: any) => b?.slug)
+                        .filter((s: any) => typeof s === "string");
+                    setSelectedBlogSlugs(Array.from(new Set(slugs)));
                 }
             } catch (err) {
                 // eslint-disable-next-line no-console
@@ -760,6 +844,31 @@ export default function EditEventPage({ params }: Props) {
                         !!p,
                 ),
         [selectedProjectSlugs, projects],
+    );
+
+    // Blogs helpers
+    const normalizedBlogQ = blogQ.trim().toLowerCase();
+    const blogSuggestions = React.useMemo(() => {
+        const already = new Set(selectedBlogSlugs);
+        return blogs
+            .filter((b) => {
+                if (already.has(b.slug)) return false;
+                if (!normalizedBlogQ) return true;
+                const summary = b.summary || "";
+                return (
+                    b.title.toLowerCase().includes(normalizedBlogQ) ||
+                    summary.toLowerCase().includes(normalizedBlogQ)
+                );
+            })
+            .slice(0, 20);
+    }, [blogs, selectedBlogSlugs, normalizedBlogQ]);
+
+    const selectedBlogs = React.useMemo(
+        () =>
+            selectedBlogSlugs
+                .map((slug) => blogs.find((b) => b.slug === slug))
+                .filter((b): b is BlogRef => !!b),
+        [selectedBlogSlugs, blogs],
     );
 
     /* ------------------------------ gating ------------------------------ */
@@ -954,7 +1063,7 @@ export default function EditEventPage({ params }: Props) {
                 prev.some(
                     (a) =>
                         a.kind === "invite" &&
-                        a.value === v,
+                        a.value.toLowerCase() === v.toLowerCase(),
                 )
             ) {
                 return prev;
@@ -983,6 +1092,17 @@ export default function EditEventPage({ params }: Props) {
         );
     }
 
+    function addBlog(b: BlogRef) {
+        setSelectedBlogSlugs((prev) =>
+            prev.includes(b.slug) ? prev : [...prev, b.slug],
+        );
+        setBlogQ("");
+    }
+
+    function removeBlog(slug: string) {
+        setSelectedBlogSlugs((prev) => prev.filter((s) => s !== slug));
+    }
+
     // photo helpers
     function adjustIndexAfterRemoval(
         current: number | null,
@@ -997,7 +1117,7 @@ export default function EditEventPage({ params }: Props) {
         return current;
     }
 
-    // ✅ append new files instead of replacing the previous selection
+    // append new files instead of replacing the previous selection
     function handleNewPhotos(files: FileList | null) {
         const incoming = Array.from(files || []);
         if (incoming.length === 0) {
@@ -1216,6 +1336,7 @@ export default function EditEventPage({ params }: Props) {
                         },
                 ),
                 projectSlugs: selectedProjectSlugs,
+                blogSlugs: selectedBlogSlugs,
             };
 
             await api.updateEvent(
@@ -1315,10 +1436,10 @@ export default function EditEventPage({ params }: Props) {
                 <h1 className="display">Edit event</h1>
                 <p className="mt-2 text-white/70 max-w-2xl">
                     Update dates, location, details,
-                    attendees, photos, and related
-                    projects. Existing invites
-                    won&apos;t be resent when you
-                    save changes.
+                    attendees, photos, related
+                    projects, and related blog posts.
+                    Existing invites won&apos;t be
+                    resent when you save changes.
                 </p>
             </header>
 
@@ -1552,11 +1673,11 @@ export default function EditEventPage({ params }: Props) {
                                                                     className="w-full h-24 object-cover rounded"
                                                                 />
                                                                 <div className="mt-1 flex items-center justify-between gap-1">
-                                                                <span className="text-[11px] text-white/70 truncate">
-                                                                    Existing #
-                                                                    {i +
-                                                                        1}
-                                                                </span>
+                                                                    <span className="text-[11px] text-white/70 truncate">
+                                                                        Existing #
+                                                                        {i +
+                                                                            1}
+                                                                    </span>
                                                                     <button
                                                                         type="button"
                                                                         onClick={() =>
@@ -2134,7 +2255,149 @@ export default function EditEventPage({ params }: Props) {
                         )}
                     </div>
 
-                    {/* Actions (styled like create page) */}
+                    {/* Related blog posts */}
+                    <div className="card p-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-sm font-semibold text-white">
+                                Related blog posts
+                            </h2>
+                            {blogsLoading && (
+                                <span className="text-[11px] text-white/50">
+                                    Loading blog posts…
+                                </span>
+                            )}
+                        </div>
+                        <p className="text-xs text-white/60">
+                            Link write-ups or recaps that are specifically
+                            about this event. They will show up on the
+                            event page under “Blog posts about this event”.
+                        </p>
+
+                        <div className="space-y-2">
+                            <input
+                                value={blogQ}
+                                onChange={(e) =>
+                                    setBlogQ(
+                                        e.target.value,
+                                    )
+                                }
+                                placeholder="Search posts by title or summary"
+                                className={searchInputCls}
+                            />
+                            {!!blogSuggestions.length && (
+                                <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
+                                    {blogSuggestions.map(
+                                        (b) => (
+                                            <li
+                                                key={
+                                                    b.slug
+                                                }
+                                                className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                                onClick={() =>
+                                                    addBlog(
+                                                        b,
+                                                    )
+                                                }
+                                            >
+                                                {b.cover ? (
+                                                    <img
+                                                        src={
+                                                            b.cover
+                                                        }
+                                                        alt={
+                                                            b.title
+                                                        }
+                                                        className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
+                                                    />
+                                                ) : (
+                                                    <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                        {b.title
+                                                            .charAt(
+                                                                0,
+                                                            )
+                                                            .toUpperCase()}
+                                                    </div>
+                                                )}
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-medium text-white truncate">
+                                                        {
+                                                            b.title
+                                                        }
+                                                    </div>
+                                                    {b.publishedAt && (
+                                                        <div className="text-[11px] text-white/60">
+                                                            {new Date(
+                                                                b.publishedAt,
+                                                            ).toLocaleDateString()}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </li>
+                                        ),
+                                    )}
+                                </ul>
+                            )}
+                            {!blogsLoading &&
+                                blogs.length === 0 && (
+                                    <p className="text-[11px] text-white/50">
+                                        No blog posts found, or blog API is unavailable.
+                                        You can still update the event and link posts
+                                        later.
+                                    </p>
+                                )}
+                        </div>
+
+                        {selectedBlogs.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {selectedBlogs.map(
+                                    (b) => (
+                                        <button
+                                            key={
+                                                b.slug
+                                            }
+                                            type="button"
+                                            onClick={() =>
+                                                removeBlog(
+                                                    b.slug,
+                                                )
+                                            }
+                                            className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
+                                        >
+                                            {b.cover ? (
+                                                <img
+                                                    src={
+                                                        b.cover
+                                                    }
+                                                    alt={
+                                                        b.title
+                                                    }
+                                                    className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
+                                                />
+                                            ) : (
+                                                <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                    {b.title
+                                                        .charAt(
+                                                            0,
+                                                        )
+                                                        .toUpperCase()}
+                                                </div>
+                                            )}
+                                            <span className="text-xs text-white">
+                                                {
+                                                    b.title
+                                                }
+                                            </span>
+                                            <span className="text-[11px] text-white/60 group-hover:text-red-300">
+                                                ✕
+                                            </span>
+                                        </button>
+                                    ),
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Actions */}
                     <div className="card p-5">
                         <button
                             type="submit"

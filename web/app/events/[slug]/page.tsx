@@ -276,6 +276,15 @@ type Project = {
     gallery?: string[];
 };
 
+type BlogCard = {
+    slug: string;
+    title: string;
+    cover?: string | null;
+    summary?: string | null;
+    publishedAt?: string | null;
+    tags?: string[];
+};
+
 // Pre-generate known seed slugs to keep links stable, still fetch dynamic at runtime too.
 export async function generateStaticParams() {
     return (SEED_EVENTS || []).map((e) => ({ slug: e.slug }));
@@ -362,7 +371,9 @@ async function fetchApiEvents(): Promise<Event[]> {
     }
 }
 
-async function fetchApiEventDetail(slug: string): Promise<{
+async function fetchApiEventDetail(
+    slug: string,
+): Promise<{
     id: string;
     slug: string;
     name: string;
@@ -393,6 +404,15 @@ async function fetchApiEventDetail(slug: string): Promise<{
         techStack?: string[] | null;
         tech?: string[] | null;
         members?: { memberSlug?: string; memberId?: string }[];
+    }[];
+    blogs?: {
+        slug: string;
+        title: string;
+        cover?: string | null;
+        imageUrl?: string | null;
+        summary?: string | null;
+        publishedAt?: string | null;
+        tags?: string[] | null;
     }[];
 } | null> {
     try {
@@ -434,6 +454,54 @@ async function fetchApiProjects(): Promise<Project[]> {
     } catch {
         return [];
     }
+}
+
+async function fetchBlogsForEventSlug(eventSlug: string): Promise<BlogCard[]> {
+    if (!eventSlug) return [];
+
+    const tryParam = async (paramName: "eventSlug" | "event") => {
+        try {
+            const url = new URL("/api/blogs", API_BASE);
+            url.searchParams.set(paramName, eventSlug);
+            url.searchParams.set("size", "6");
+            const res = await fetch(url.toString(), { cache: "no-store" });
+            if (!res.ok) return [];
+            const json = await res.json();
+            const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+            return items
+                .map((b) => {
+                    const images: string[] = Array.isArray(b.images)
+                        ? b.images
+                        : Array.isArray(b.photos)
+                            ? b.photos
+                            : [];
+                    const cover = b.cover ?? b.imageUrl ?? images[0] ?? null;
+                    return {
+                        slug: String(b.slug ?? b.id ?? ""),
+                        title: String(b.title ?? b.name ?? "Untitled"),
+                        cover,
+                        summary: b.summary ?? null,
+                        publishedAt: b.publishedAt ?? b.date ?? b.createdAt ?? null,
+                        tags: Array.isArray(b.tags)
+                            ? b.tags
+                            : typeof b.tags === "string"
+                                ? b.tags
+                                    .split(",")
+                                    .map((s: string) => s.trim())
+                                    .filter(Boolean)
+                                : [],
+                    } as BlogCard;
+                })
+                .filter((b) => !!b.slug && !!b.title);
+        } catch {
+            return [];
+        }
+    };
+
+    const viaEventSlug = await tryParam("eventSlug");
+    if (viaEventSlug.length) return viaEventSlug;
+    const viaEvent = await tryParam("event");
+    return viaEvent;
 }
 
 function mergeEvent(seed?: Event, api?: Partial<Event> | null): Event | null {
@@ -479,7 +547,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
         );
     }
 
-    // Prefer attendees/projects directly from the API detail:
+    // Prefer attendees/projects/blogs directly from the API detail:
     const evDetail = await fetchApiEventDetail(params.slug);
 
     const creatorSlug =
@@ -540,6 +608,33 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
         projectsForEvent = allProjects.filter((p) => (p.events || []).some((e) => e.slug === baseEvent.slug));
     }
 
+    // Blog posts about this event (prefer API detail, fallback to filter endpoint)
+    let blogsForEvent: BlogCard[] = [];
+    if (evDetail?.blogs && evDetail.blogs.length) {
+        const seen = new Set<string>();
+        blogsForEvent = evDetail.blogs
+            .map((b) => {
+                const images: string[] = [];
+                const cover = b.cover ?? b.imageUrl ?? images[0] ?? null;
+                return {
+                    slug: b.slug,
+                    title: b.title,
+                    cover,
+                    summary: b.summary ?? null,
+                    publishedAt: b.publishedAt ?? null,
+                    tags: Array.isArray(b.tags) ? b.tags : [],
+                } as BlogCard;
+            })
+            .filter((b) => {
+                if (!b.slug) return false;
+                if (seen.has(b.slug)) return false;
+                seen.add(b.slug);
+                return true;
+            });
+    } else {
+        blogsForEvent = await fetchBlogsForEventSlug(baseEvent.slug);
+    }
+
     const photos = baseEvent.photos || [];
     const cover = photos[0];
 
@@ -592,7 +687,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                         )}
                     </div>
 
-                    {/* reuse the same MapLibre component with a single event to keep styling consistent */}
+                    {/* Map */}
                     {typeof baseEvent.lng === "number" && typeof baseEvent.lat === "number" && (
                         <div className="card p-0 overflow-hidden">
                             <EventsMap events={[baseEvent]} />
@@ -658,6 +753,57 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                                             {p.techStack && p.techStack.length > 0 && (
                                                 <div className="mt-2 flex flex-wrap gap-1.5">
                                                     {p.techStack.slice(0, 6).map((t) => (
+                                                        <span
+                                                            key={t}
+                                                            className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
+                                                        >
+                                                            {t}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </Link>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Blog posts about this event */}
+                    {blogsForEvent.length > 0 && (
+                        <div className="card p-5">
+                            <h2 className="text-lg font-semibold mb-3">Blog posts about this event</h2>
+                            <div className="grid sm:grid-cols-2 gap-4">
+                                {blogsForEvent.map((post) => (
+                                    <Link
+                                        key={post.slug}
+                                        href={`/blog/${post.slug}`}
+                                        className="flex gap-3 p-2 rounded-lg hover:bg-white/5 transition"
+                                    >
+                                        {post.cover && (
+                                            <img
+                                                src={post.cover}
+                                                alt={post.title}
+                                                className="w-28 h-24 object-cover rounded-md ring-1 ring-white/10 flex-shrink-0"
+                                            />
+                                        )}
+                                        <div className="min-w-0">
+                                            <div className="font-semibold leading-tight hover:underline">
+                                                {post.title}
+                                            </div>
+                                            {post.publishedAt && (
+                                                <div className="text-xs text-white/60 mt-0.5">
+                                                    {new Date(post.publishedAt).toLocaleDateString()}
+                                                </div>
+                                            )}
+                                            {post.summary && (
+                                                <div className="text-sm text-white/70 mt-1 line-clamp-3">
+                                                    {post.summary}
+                                                </div>
+                                            )}
+                                            {post.tags && post.tags.length > 0 && (
+                                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                                    {post.tags.slice(0, 4).map((t) => (
                                                         <span
                                                             key={t}
                                                             className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"

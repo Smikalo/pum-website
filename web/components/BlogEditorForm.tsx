@@ -26,6 +26,13 @@ type ProjectOption = {
     year?: number | null;
 };
 
+type EventOption = {
+    slug: string;
+    name: string;
+    cover?: string | null;
+    dateStart?: string | null;
+};
+
 const emptyArr: any[] = [];
 
 function searchInputCls() {
@@ -76,24 +83,33 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         initialBlog?.projectSlugs,
     )
         ? (initialBlog.projectSlugs as any[])
-            .filter(
-                (s) => typeof s === "string" && s.trim().length > 0,
-            )
+            .filter((s) => typeof s === "string" && s.trim().length > 0)
             .map((s) => s.trim())
         : Array.isArray(initialBlog?.projects)
             ? (initialBlog.projects as any[])
                 .map((p) => p?.slug)
-                .filter(
-                    (s) => typeof s === "string" && s.trim().length > 0,
-                )
+                .filter((s) => typeof s === "string" && s.trim().length > 0)
+                .map((s) => s.trim())
+            : [];
+
+    // Existing related event connections
+    const initialEventSlugs: string[] = Array.isArray(initialBlog?.eventSlugs)
+        ? (initialBlog.eventSlugs as any[])
+            .filter((s) => typeof s === "string" && s.trim().length > 0)
+            .map((s) => s.trim())
+        : Array.isArray(initialBlog?.events)
+            ? (initialBlog.events as any[])
+                .map((e) => e?.slug)
+                .filter((s) => typeof s === "string" && s.trim().length > 0)
                 .map((s) => s.trim())
             : [];
 
     const [content, setContent] = useState<string>(initialContent);
     const [members, setMembers] = useState<MemberOption[]>([]);
     const [projects, setProjects] = useState<ProjectOption[]>([]);
+    const [events, setEvents] = useState<EventOption[]>([]);
 
-    // People & projects selection
+    // People, projects & events selection
     const [memberQ, setMemberQ] = useState("");
     const [selectedAuthors, setSelectedAuthors] = useState<MemberOption[]>(
         initialAuthors.map((a) => ({
@@ -110,26 +126,29 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         initialProjectSlugs,
     );
 
+    const [eventQ, setEventQ] = useState("");
+    const [selectedEventSlugs, setSelectedEventSlugs] = useState<string[]>(
+        initialEventSlugs,
+    );
+
     // Photos: existing (from backend) + new uploads + cover selection
     const [existingPhotos, setExistingPhotos] =
         useState<string[]>(initialImages);
     const [newPhotos, setNewPhotos] = useState<File[]>([]);
     const [photosError, setPhotosError] = useState<string | null>(null);
 
-    const [headerExistingIndex, setHeaderExistingIndex] = useState<
-        number | null
-    >(() => {
-        const cover: string | null =
-            initialBlog?.cover ?? initialBlog?.imageUrl ?? null;
-        if (cover && initialImages.length) {
-            const idx = initialImages.indexOf(cover);
-            if (idx >= 0) return idx;
-        }
-        return initialImages.length ? 0 : null;
-    });
-    const [headerNewIndex, setHeaderNewIndex] = useState<number | null>(
-        null,
+    const [headerExistingIndex, setHeaderExistingIndex] = useState<number | null>(
+        () => {
+            const cover: string | null =
+                initialBlog?.cover ?? initialBlog?.imageUrl ?? null;
+            if (cover && initialImages.length) {
+                const idx = initialImages.indexOf(cover);
+                if (idx >= 0) return idx;
+            }
+            return initialImages.length ? 0 : null;
+        },
     );
+    const [headerNewIndex, setHeaderNewIndex] = useState<number | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -160,10 +179,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     );
                 }
             } catch (err) {
-                console.error(
-                    "[BlogEditorForm] failed to load members",
-                    err,
-                );
+                console.error("[BlogEditorForm] failed to load members", err);
             }
         })();
         return () => {
@@ -190,18 +206,44 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                             slug: p.slug,
                             title: p.title,
                             cover: p.cover || null,
-                            year:
-                                typeof p.year === "number"
-                                    ? p.year
-                                    : null,
+                            year: typeof p.year === "number" ? p.year : null,
                         })),
                     );
                 }
             } catch (err) {
-                console.error(
-                    "[BlogEditorForm] failed to load projects",
-                    err,
-                );
+                console.error("[BlogEditorForm] failed to load projects", err);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    // Load events list
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`${API_BASE}/api/events?size=200`, {
+                    credentials: "include",
+                });
+                if (!res.ok) return;
+                const json = await res.json();
+                if (!cancelled) {
+                    const items: any[] = Array.isArray(json.items)
+                        ? json.items
+                        : [];
+                    setEvents(
+                        items.map((e) => ({
+                            slug: e.slug,
+                            name: e.name,
+                            cover: e.cover || null,
+                            dateStart: e.dateStart || null,
+                        })),
+                    );
+                }
+            } catch (err) {
+                console.error("[BlogEditorForm] failed to load events", err);
             }
         })();
         return () => {
@@ -298,7 +340,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         setHeaderExistingIndex(null);
     }
 
-    /* ------------------------- People / project logic ------------------------- */
+    /* ------------------------- People / project / event logic ------------------------- */
 
     const memberQuery = memberQ.trim().toLowerCase();
     const memberSuggestions = members
@@ -324,6 +366,18 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         })
         .slice(0, 8);
 
+    const eventQuery = eventQ.trim().toLowerCase();
+    const eventSuggestions = events
+        .filter((e) => !selectedEventSlugs.includes(e.slug))
+        .filter((e) => {
+            if (!eventQuery) return true;
+            return (
+                (e.name || "").toLowerCase().includes(eventQuery) ||
+                e.slug.toLowerCase().includes(eventQuery)
+            );
+        })
+        .slice(0, 8);
+
     function addAuthor(m: MemberOption) {
         if (selectedAuthors.some((a) => a.slug === m.slug)) return;
         setSelectedAuthors((prev) => [...prev, m]);
@@ -342,10 +396,19 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         );
     }
 
+    function toggleEvent(slug: string) {
+        setSelectedEventSlugs((prev) =>
+            prev.includes(slug)
+                ? prev.filter((s) => s !== slug)
+                : [...prev, slug],
+        );
+    }
+
     /* -------------------------------- Render -------------------------------- */
 
     const authorSlugs = selectedAuthors.map((a) => a.slug);
     const projectSlugs = selectedProjectSlugs;
+    const eventSlugs = selectedEventSlugs;
 
     return (
         <form
@@ -491,10 +554,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                 >
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                        src={
-                                            m.avatarUrl ||
-                                            "/avatars/default.png"
-                                        }
+                                        src={m.avatarUrl || "/avatars/default.png"}
                                         alt={m.name}
                                         className="w-6 h-6 rounded-full object-cover ring-1 ring-white/10"
                                     />
@@ -525,10 +585,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                 >
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                        src={
-                                            a.avatarUrl ||
-                                            "/avatars/default.png"
-                                        }
+                                        src={a.avatarUrl || "/avatars/default.png"}
                                         alt={a.name}
                                         className="w-6 h-6 rounded-full object-cover ring-1 ring-white/10"
                                     />
@@ -554,76 +611,154 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                 </div>
             </div>
 
-            {/* Related projects + Photos */}
+            {/* Related projects & events + Photos */}
             <div className="grid gap-4 sm:grid-cols-2">
-                {/* Related projects */}
-                <div>
-                    <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                        Related projects
-                    </label>
-                    <input
-                        type="text"
-                        value={projectQ}
-                        onChange={(e) => setProjectQ(e.target.value)}
-                        placeholder="Search projects by title or slug…"
-                        className={searchInputCls()}
-                    />
-                    {projectSuggestions.length > 0 && projectQ.trim() && (
-                        <div className="mt-1 rounded-md bg-black/80 border border-white/15 max-h-52 overflow-y-auto text-sm">
-                            {projectSuggestions.map((p) => (
-                                <button
-                                    key={p.slug}
-                                    type="button"
-                                    onClick={() => toggleProject(p.slug)}
-                                    className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-white/5 text-left"
-                                >
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    {p.cover && (
-                                        <img
-                                            src={p.cover}
-                                            alt={p.title}
-                                            className="w-8 h-8 rounded-md object-cover ring-1 ring-white/10"
-                                        />
-                                    )}
-                                    <div className="min-w-0">
-                                        <div className="text-xs font-medium truncate">
-                                            {p.title}
-                                        </div>
-                                        <div className="text-[11px] text-white/50">
-                                            {p.year ? p.year : p.slug}
-                                        </div>
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                        {selectedProjectSlugs.length === 0 ? (
-                            <p className="text-xs text-white/50">
-                                No projects linked yet. Optional.
-                            </p>
-                        ) : (
-                            selectedProjectSlugs.map((slug) => {
-                                const proj = projects.find(
-                                    (p) => p.slug === slug,
-                                );
-                                const label = proj ? proj.title : slug;
-                                return (
+                {/* Related projects & events */}
+                <div className="space-y-4">
+                    {/* Related projects */}
+                    <div>
+                        <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
+                            Related projects
+                        </label>
+                        <input
+                            type="text"
+                            value={projectQ}
+                            onChange={(e) => setProjectQ(e.target.value)}
+                            placeholder="Search projects by title or slug…"
+                            className={searchInputCls()}
+                        />
+                        {projectSuggestions.length > 0 && projectQ.trim() && (
+                            <div className="mt-1 rounded-md bg-black/80 border border-white/15 max-h-52 overflow-y-auto text-sm">
+                                {projectSuggestions.map((p) => (
                                     <button
-                                        key={slug}
+                                        key={p.slug}
                                         type="button"
-                                        onClick={() => toggleProject(slug)}
-                                        className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10"
+                                        onClick={() => toggleProject(p.slug)}
+                                        className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-white/5 text-left"
                                     >
-                                        <span>{label}</span>
-                                        <span className="text-xs text-white/60">
-                                            ×
-                                        </span>
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        {p.cover && (
+                                            <img
+                                                src={p.cover}
+                                                alt={p.title}
+                                                className="w-8 h-8 rounded-md object-cover ring-1 ring-white/10"
+                                            />
+                                        )}
+                                        <div className="min-w-0">
+                                            <div className="text-xs font-medium truncate">
+                                                {p.title}
+                                            </div>
+                                            <div className="text-[11px] text-white/50">
+                                                {p.year ? p.year : p.slug}
+                                            </div>
+                                        </div>
                                     </button>
-                                );
-                            })
+                                ))}
+                            </div>
                         )}
+
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                            {selectedProjectSlugs.length === 0 ? (
+                                <p className="text-xs text-white/50">
+                                    No projects linked yet. Optional.
+                                </p>
+                            ) : (
+                                selectedProjectSlugs.map((slug) => {
+                                    const proj = projects.find(
+                                        (p) => p.slug === slug,
+                                    );
+                                    const label = proj ? proj.title : slug;
+                                    return (
+                                        <button
+                                            key={slug}
+                                            type="button"
+                                            onClick={() => toggleProject(slug)}
+                                            className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10"
+                                        >
+                                            <span>{label}</span>
+                                            <span className="text-xs text-white/60">
+                                                ×
+                                            </span>
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Related events */}
+                    <div>
+                        <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
+                            Related events
+                        </label>
+                        <input
+                            type="text"
+                            value={eventQ}
+                            onChange={(e) => setEventQ(e.target.value)}
+                            placeholder="Search events by name or slug…"
+                            className={searchInputCls()}
+                        />
+                        {eventSuggestions.length > 0 && eventQ.trim() && (
+                            <div className="mt-1 rounded-md bg-black/80 border border-white/15 max-h-52 overflow-y-auto text-sm">
+                                {eventSuggestions.map((ev) => (
+                                    <button
+                                        key={ev.slug}
+                                        type="button"
+                                        onClick={() => toggleEvent(ev.slug)}
+                                        className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-white/5 text-left"
+                                    >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        {ev.cover && (
+                                            <img
+                                                src={ev.cover}
+                                                alt={ev.name}
+                                                className="w-8 h-8 rounded-md object-cover ring-1 ring-white/10"
+                                            />
+                                        )}
+                                        <div className="min-w-0">
+                                            <div className="text-xs font-medium truncate">
+                                                {ev.name}
+                                            </div>
+                                            <div className="text-[11px] text-white/50">
+                                                {ev.dateStart
+                                                    ? new Date(
+                                                        ev.dateStart,
+                                                    ).toLocaleDateString()
+                                                    : ev.slug}
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                            {selectedEventSlugs.length === 0 ? (
+                                <p className="text-xs text-white/50">
+                                    No events linked yet. Optional.
+                                </p>
+                            ) : (
+                                selectedEventSlugs.map((slug) => {
+                                    const ev = events.find(
+                                        (e) => e.slug === slug,
+                                    );
+                                    const label = ev ? ev.name : slug;
+                                    return (
+                                        <button
+                                            key={slug}
+                                            type="button"
+                                            onClick={() => toggleEvent(slug)}
+                                            className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10"
+                                        >
+                                            <span>{label}</span>
+                                            <span className="text-xs text-white/60">
+                                                ×
+                                            </span>
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -682,9 +817,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                                 <img
                                                     src={src}
-                                                    alt={`Existing image ${
-                                                        idx + 1
-                                                    }`}
+                                                    alt={`Existing image ${idx + 1}`}
                                                     className="w-full h-20 object-cover"
                                                 />
                                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex flex-col justify-between p-1 text-[10px]">
@@ -728,8 +861,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     {newPhotos.map((file, idx) => {
-                                        const url =
-                                            URL.createObjectURL(file);
+                                        const url = URL.createObjectURL(file);
                                         const isHeader =
                                             headerNewIndex === idx &&
                                             headerExistingIndex === null;
@@ -814,7 +946,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                 </div>
             </div>
 
-            {/* Hidden fields for authors and projects */}
+            {/* Hidden fields for authors, projects and events */}
             <input
                 type="hidden"
                 name="authorSlugs"
@@ -824,6 +956,11 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                 type="hidden"
                 name="projectSlugs"
                 value={projectSlugs.join(",")}
+            />
+            <input
+                type="hidden"
+                name="eventSlugs"
+                value={eventSlugs.join(",")}
             />
 
             <div className="pt-2 border-t border-white/10 mt-4 flex items-center justify-end gap-3">

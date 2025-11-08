@@ -31,6 +31,7 @@ type Blog = {
         role?: string | null;
     }[];
     projectSlugs?: string[];
+    eventSlugs?: string[]; // ✅ NEW
 };
 
 function normArr(x: any): string[] {
@@ -48,8 +49,14 @@ function normalizeBlog(raw: any): Blog | null {
     if (!raw) return null;
     const b = raw.item ?? raw.data ?? raw;
 
-    const images: string[] = Array.isArray(b.images) ? b.images : [];
+    // Accept either images[] or photos[] from the backend
+    const images: string[] = Array.isArray(b.images)
+        ? b.images
+        : Array.isArray(b.photos)
+            ? b.photos
+            : [];
     const cover = b.cover ?? b.imageUrl ?? images[0] ?? null;
+
     const content =
         b.content ?? b.body ?? b.markdown ?? b.html ?? b.text ?? null;
 
@@ -70,6 +77,15 @@ function normalizeBlog(raw: any): Blog | null {
         };
     };
 
+    // 🔗 events
+    let eventSlugs: string[] = normArr(b.eventSlugs);
+    if (!eventSlugs.length && Array.isArray(b.events)) {
+        eventSlugs = (b.events as any[])
+            .map((e) => e?.slug)
+            .filter((s): s is string => ((typeof s) === "string") && (s.trim().length>0))
+            .map((s) => s.trim());
+    }
+
     const blog: Blog = {
         id: String(b.id ?? b.slug ?? ""),
         slug: String(b.slug ?? b.id ?? ""),
@@ -84,6 +100,7 @@ function normalizeBlog(raw: any): Blog | null {
         techStack: normArr(b.techStack ?? b.tech),
         authors: authorsInput.map(normalizeAuthor),
         projectSlugs: normArr(b.projectSlugs),
+        eventSlugs, // ✅
     };
 
     console.log("[EditBlogPage] normalizeBlog result", {
@@ -94,6 +111,7 @@ function normalizeBlog(raw: any): Blog | null {
             title: blog.title,
             authors: blog.authors,
             projectSlugs: blog.projectSlugs,
+            eventSlugs: blog.eventSlugs,
         },
     });
 
@@ -124,6 +142,7 @@ async function fetchBlog(slug: string): Promise<Blog | null> {
             slug: blog?.slug,
             authorSlugs: (blog?.authors || []).map((a) => a.slug),
             projectSlugs: blog?.projectSlugs,
+            eventSlugs: blog?.eventSlugs,
         });
 
         return blog;
@@ -184,6 +203,7 @@ async function updateBlog(slug: string, formData: FormData) {
     const tags = parseCsv(formData, "tags");
     const techStack = parseCsv(formData, "techStack");
     const projectSlugs = parseCsv(formData, "projectSlugs");
+    const eventSlugs = parseCsv(formData, "eventSlugs"); // ✅ NEW
     const authorSlugs = parseCsv(formData, "authorSlugs");
     const publishedAtRaw = (formData.get("publishedAt") || "")
         .toString()
@@ -264,8 +284,9 @@ async function updateBlog(slug: string, formData: FormData) {
         content: content || null,
         tags,
         techStack,
-        photos: allPhotos,
+        photos: allPhotos, // server accepts photos/images array
         projectSlugs,
+        eventSlugs, // ✅ NEW
         authorSlugs,
     };
 
@@ -283,6 +304,7 @@ async function updateBlog(slug: string, formData: FormData) {
         techStackCount: techStack.length,
         authorSlugsCount: authorSlugs.length,
         projectSlugsCount: projectSlugs.length,
+        eventSlugsCount: eventSlugs.length, // ✅
     });
 
     const res = await fetch(`${API_BASE}/api/blogs/${slug}`, {
@@ -400,6 +422,7 @@ export default async function EditBlogPage({
         slug: blog.slug,
         authorSlugs: (blog.authors || []).map((a) => a.slug),
         projectSlugs: blog.projectSlugs,
+        eventSlugs: blog.eventSlugs, // ✅
     });
 
     const cookieStore = cookies();

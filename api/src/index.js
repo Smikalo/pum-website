@@ -1,3 +1,4 @@
+// index.js
 const express = require("express");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
@@ -2449,6 +2450,12 @@ app.delete("/api/projects/:slug", async (req, res) => {
             "[DELETE /api/projects/:slug] 404 for slug",
             req.params.slug,
         );
+    }
+    if (!project) {
+        console.warn(
+            "[DELETE /api/projects/:slug] 404 for slug",
+            req.params.slug,
+        );
         console.log(
             "========== [DELETE /api/projects/:slug] END (not found) ==========",
         );
@@ -2808,6 +2815,7 @@ const blogCreateSchema = z.object({
         .optional(),
     authorSlugs: z.array(z.string().min(1)).max(50).optional(),
     projectSlugs: z.array(z.string().min(1)).max(200).optional(),
+    eventSlugs: z.array(z.string().min(1)).max(200).optional(),
 });
 
 async function uniqueBlogSlug(base) {
@@ -2903,6 +2911,16 @@ app.get("/api/blogs", async (req, res) => {
                         },
                     },
                 },
+                // NEW: include related events so we can surface eventSlugs
+                events: {
+                    include: {
+                        event: {
+                            select: {
+                                slug: true,
+                            },
+                        },
+                    },
+                },
             },
             orderBy: [{ publishedAt: "desc" }, { title: "asc" }],
             skip: (page - 1) * size,
@@ -2938,6 +2956,13 @@ app.get("/api/blogs", async (req, res) => {
                     .filter(Boolean)
                     .map((p) => p.slug)
                 : [],
+            // NEW: expose eventSlugs on each blog
+            eventSlugs: Array.isArray(b.events)
+                ? b.events
+                    .map((eb) => eb.event)
+                    .filter(Boolean)
+                    .map((e) => e.slug)
+                : [],
         })),
         page,
         size,
@@ -2967,6 +2992,16 @@ app.get("/api/blogs/:slug", async (req, res) => {
             projects: {
                 include: {
                     project: {
+                        select: {
+                            slug: true,
+                        },
+                    },
+                },
+            },
+            // NEW: include related events so we can return eventSlugs
+            events: {
+                include: {
+                    event: {
                         select: {
                             slug: true,
                         },
@@ -3009,6 +3044,13 @@ app.get("/api/blogs/:slug", async (req, res) => {
                 .map((pb) => pb.project)
                 .filter(Boolean)
                 .map((p) => p.slug)
+            : [],
+        // NEW: eventSlugs for this blog – used by detail page and editor form
+        eventSlugs: Array.isArray(b.events)
+            ? b.events
+                .map((eb) => eb.event)
+                .filter(Boolean)
+                .map((e) => e.slug)
             : [],
     });
 });
@@ -3073,6 +3115,9 @@ app.post("/api/blogs", async (req, res) => {
             : 0,
         projectSlugsCount: Array.isArray(d.projectSlugs)
             ? d.projectSlugs.length
+            : 0,
+        eventSlugsCount: Array.isArray(d.eventSlugs)
+            ? d.eventSlugs.length
             : 0,
         photosCount: Array.isArray(d.photos) ? d.photos.length : 0,
     });
@@ -3234,6 +3279,26 @@ app.post("/api/blogs", async (req, res) => {
         }
     }
 
+    const eventSlugs = Array.isArray(d.eventSlugs)
+        ? d.eventSlugs
+        : [];
+    if (eventSlugs.length) {
+        const events = await prisma.event.findMany({
+            where: { slug: { in: eventSlugs } },
+            select: { id: true, slug: true },
+        });
+
+        if (events.length) {
+            await prisma.eventBlog.createMany({
+                data: events.map((e) => ({
+                    eventId: e.id,
+                    blogId: blog.id,
+                })),
+                skipDuplicates: true,
+            });
+        }
+    }
+
     console.log("========== [POST /api/blogs] END (success) ==========");
     return res
         .status(201)
@@ -3363,6 +3428,10 @@ app.put("/api/blogs/:slug", async (req, res) => {
         req.body || {},
         "projectSlugs",
     );
+    const hasEventSlugs = Object.prototype.hasOwnProperty.call(
+        req.body || {},
+        "eventSlugs",
+    );
 
     console.log("[PUT /api/blogs/:slug] parsed data =", {
         title: d.title,
@@ -3382,6 +3451,10 @@ app.put("/api/blogs/:slug", async (req, res) => {
         hasProjectSlugs,
         projectSlugsCount: Array.isArray(d.projectSlugs)
             ? d.projectSlugs.length
+            : 0,
+        hasEventSlugs,
+        eventSlugsCount: Array.isArray(d.eventSlugs)
+            ? d.eventSlugs.length
             : 0,
         photosCount: Array.isArray(d.photos) ? d.photos.length : 0,
     });
@@ -3607,6 +3680,37 @@ app.put("/api/blogs/:slug", async (req, res) => {
         }
     }
 
+    // --- related events ---
+    if (hasEventSlugs) {
+        const eventSlugs = Array.isArray(d.eventSlugs)
+            ? d.eventSlugs
+            : [];
+        console.log(
+            "[PUT /api/blogs/:slug] updating related events, slugs =",
+            eventSlugs,
+        );
+
+        await prisma.eventBlog.deleteMany({
+            where: { blogId: updated.id },
+        });
+
+        if (eventSlugs.length) {
+            const events = await prisma.event.findMany({
+                where: { slug: { in: eventSlugs } },
+                select: { id: true, slug: true },
+            });
+            if (events.length) {
+                await prisma.eventBlog.createMany({
+                    data: events.map((e) => ({
+                        eventId: e.id,
+                        blogId: updated.id,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+    }
+
     console.log("========== [PUT /api/blogs/:slug] END (success) ==========");
     return res
         .status(200)
@@ -3730,6 +3834,9 @@ app.delete("/api/blogs/:slug", async (req, res) => {
             await tx.projectBlog.deleteMany({
                 where: { blogId: blog.id },
             });
+            await tx.eventBlog.deleteMany({
+                where: { blogId: blog.id },
+            });
 
             await tx.blog.delete({
                 where: { id: blog.id },
@@ -3796,6 +3903,11 @@ app.get("/api/events", async (req, res) => {
                     include: { member: true },
                 },
                 invites: true,
+                blogs: {
+                    include: {
+                        blog: true,
+                    },
+                },
             },
             orderBy: [{ dateStart: "desc" }, { name: "asc" }],
             skip: (page - 1) * size,
@@ -3831,6 +3943,15 @@ app.get("/api/events", async (req, res) => {
                         cover: abs(p.cover || p.imageUrl || null, req),
                         year: p.year || null,
                     })),
+                blogs: (e.blogs || [])
+                    .map((rel) => rel.blog)
+                    .filter(Boolean)
+                    .map((b) => ({
+                        slug: b.slug,
+                        title: b.title,
+                        cover: abs(b.cover || b.imageUrl || null, req),
+                        publishedAt: b.publishedAt || null,
+                    })),
             };
         }),
         page,
@@ -3850,6 +3971,15 @@ app.get("/api/events/:slug", async (req, res) => {
                 include: { member: true },
             },
             invites: true,
+            blogs: {
+                include: {
+                    blog: {
+                        include: {
+                            tags: { include: { tag: true } },
+                        },
+                    },
+                },
+            },
         },
     });
     if (!e) return res.status(404).json({ error: "Not found" });
@@ -3883,6 +4013,24 @@ app.get("/api/events/:slug", async (req, res) => {
             year: p.year || null,
         }));
 
+    const blogs =
+        Array.isArray(e.blogs) && e.blogs.length
+            ? e.blogs
+                .map((rel) => rel.blog)
+                .filter(Boolean)
+                .map((b) => ({
+                    slug: b.slug,
+                    title: b.title,
+                    summary: b.summary || null,
+                    cover: abs(b.cover || b.imageUrl || null, req),
+                    imageUrl: abs(b.imageUrl || null, req),
+                    publishedAt: b.publishedAt || null,
+                    tags: Array.isArray(b.tags)
+                        ? b.tags.map((t) => t.tag.name)
+                        : [],
+                }))
+            : [];
+
     res.json({
         id: e.id,
         slug: e.slug,
@@ -3899,6 +4047,7 @@ app.get("/api/events/:slug", async (req, res) => {
         attendees,
         invites,
         projects,
+        blogs,
     });
 });
 
@@ -3924,6 +4073,7 @@ const eventCreateSchema = z.object({
     photos: z.array(z.string().url()).max(20).optional(),
     attendees: z.array(attendeeSchema).optional(),
     projectSlugs: z.array(z.string()).max(200).optional(),
+    blogSlugs: z.array(z.string()).max(200).optional(),
 });
 
 async function uniqueEventSlug(base) {
@@ -4089,6 +4239,25 @@ app.post("/api/events", async (req, res) => {
                 data: projects.map((p) => ({
                     eventId: event.id,
                     projectId: p.id,
+                })),
+                skipDuplicates: true,
+            });
+        }
+    }
+
+    const blogSlugs = Array.isArray(d.blogSlugs)
+        ? d.blogSlugs
+        : [];
+    if (blogSlugs.length) {
+        const blogs = await prisma.blog.findMany({
+            where: { slug: { in: blogSlugs } },
+            select: { id: true, slug: true },
+        });
+        if (blogs.length) {
+            await prisma.eventBlog.createMany({
+                data: blogs.map((b) => ({
+                    eventId: event.id,
+                    blogId: b.id,
                 })),
                 skipDuplicates: true,
             });
@@ -4265,7 +4434,8 @@ app.put("/api/events/:slug", async (req, res) => {
         const isCreatorOrAttendee =
             (event.attendees || []).some(
                 (a) => a.memberId === user.member.id,
-            ) || (user.email || "").toLowerCase() ===
+            ) ||
+            (user.email || "").toLowerCase() ===
             (MAIL_FROM || "").toLowerCase();
         if (isCreatorOrAttendee) canEdit = true;
     }
@@ -4309,6 +4479,22 @@ app.put("/api/events/:slug", async (req, res) => {
     }
 
     const d = parsed.data;
+
+    console.log("[PUT /api/events/:slug] parsed data =", {
+        name: d.name,
+        hasDescription: !!d.description,
+        dateStart: d.dateStart || null,
+        dateEnd: d.dateEnd || null,
+        projectSlugsCount: Array.isArray(d.projectSlugs)
+            ? d.projectSlugs.length
+            : 0,
+        blogSlugsCount: Array.isArray(d.blogSlugs)
+            ? d.blogSlugs.length
+            : 0,
+        attendeesCount: Array.isArray(d.attendees)
+            ? d.attendees.length
+            : 0,
+    });
 
     const photos = Array.isArray(d.photos)
         ? d.photos
@@ -4371,6 +4557,28 @@ app.put("/api/events/:slug", async (req, res) => {
                 data: projects.map((p) => ({
                     eventId: updated.id,
                     projectId: p.id,
+                })),
+                skipDuplicates: true,
+            });
+        }
+    }
+
+    const blogSlugs = Array.isArray(d.blogSlugs)
+        ? d.blogSlugs
+        : [];
+    await prisma.eventBlog.deleteMany({
+        where: { eventId: updated.id },
+    });
+    if (blogSlugs.length) {
+        const blogs = await prisma.blog.findMany({
+            where: { slug: { in: blogSlugs } },
+            select: { id: true, slug: true },
+        });
+        if (blogs.length) {
+            await prisma.eventBlog.createMany({
+                data: blogs.map((b) => ({
+                    eventId: updated.id,
+                    blogId: b.id,
                 })),
                 skipDuplicates: true,
             });
@@ -4675,6 +4883,10 @@ app.delete("/api/events/:slug", async (req, res) => {
             });
 
             await tx.eventProject.deleteMany({
+                where: { eventId: event.id },
+            });
+
+            await tx.eventBlog.deleteMany({
                 where: { eventId: event.id },
             });
 

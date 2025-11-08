@@ -105,6 +105,17 @@ export async function uploadProjectPhoto(token: string, file: File) {
     });
 }
 
+// Upload a single blog photo file; returns { url }
+export async function uploadBlogPhoto(token: string, file: File) {
+    const fd = new FormData();
+    fd.append("photo", file);
+    return fetchAuth("/api/uploads/blog-photo", {
+        method: "POST",
+        token,
+        body: fd as any,
+    });
+}
+
 // Create event (JSON; photos already uploaded separately)
 export async function createEvent(token: string, body: Json) {
     return fetchAuth("/api/events", {
@@ -165,6 +176,41 @@ export async function deleteProject(
     confirmSlug: string,
 ) {
     return fetchAuth(`/api/projects/${slug}`, {
+        method: "DELETE",
+        token,
+        body: JSON.stringify({ confirmSlug }),
+    });
+}
+
+// Create blog (JSON; photos already uploaded separately)
+export async function createBlog(token: string, body: Json) {
+    return fetchAuth("/api/blogs", {
+        method: "POST",
+        token,
+        body: JSON.stringify(body),
+    });
+}
+
+// Update blog (JSON; photos already uploaded separately)
+export async function updateBlog(
+    token: string,
+    slug: string,
+    body: Json,
+) {
+    return fetchAuth(`/api/blogs/${slug}`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify(body),
+    });
+}
+
+// Delete blog (requires slug confirmation on backend)
+export async function deleteBlog(
+    token: string,
+    slug: string,
+    confirmSlug: string,
+) {
+    return fetchAuth(`/api/blogs/${slug}`, {
         method: "DELETE",
         token,
         body: JSON.stringify({ confirmSlug }),
