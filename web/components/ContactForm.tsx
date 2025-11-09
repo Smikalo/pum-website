@@ -158,7 +158,7 @@ export default function ContactForm({
                         id="subscribe"
                         name="subscribe"
                         type="checkbox"
-                        className="accent-cyan-300"
+                        className="accent-cyan-300 emoji-stable"
                     />
                     <label htmlFor="subscribe" className="text-sm">
                         Subscribe to blog updates

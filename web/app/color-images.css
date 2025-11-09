@@ -2,16 +2,26 @@
  *
  * Ensures that pictures / avatars that users upload
  * are always shown in their original colors (not black & white),
- * everywhere on the site.
+ * in both themes.
  *
- * This file is imported after the other global styles in layout.tsx
- * so these rules override any earlier grayscale filters.
+ * With the inversion-based light theme:
+ *   - <html.light> has filter: invert(1)
+ *   - global rule (globals.css) gives: html.light img { filter: grayscale(0) invert(1); }
+ * This file reinforces that behaviour for uploaded assets/blobs with
+ * higher specificity and !important, and explicitly clears grayscale.
  */
 
-/* All uploaded assets are served from /uploads/... on the API host.
-   Some previews use blob: URLs via URL.createObjectURL while editing. */
-img[src*="/uploads/"],
-img[src^="blob:"] {
-    /* Remove any grayscale / desaturation that might be applied globally */
+/* Dark theme: explicit no extra filtering (same as global default). */
+html.dark img[src*="/uploads/"],
+html.dark img[src^="blob:"] {
     filter: none !important;
+}
+
+/* Light theme:
+   - html is inverted (filter: invert(1) on <html>)
+   - Here we neutralise grayscale AND invert images again so
+     the overall effect is: original colors, no grayscale, not inverted. */
+html.light img[src*="/uploads/"],
+html.light img[src^="blob:"] {
+    filter: grayscale(0) invert(1) !important;
 }

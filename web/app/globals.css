@@ -2,24 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
-/* --- Theme tokens: dark as default, light override --- */
+/* --- Theme tokens: dark as default, light via inversion --- */
 :root {
   --bg: #121212;
   --fg: #ffffff;
   --muted: #a3a3a3;
 }
 
-/* Explicit theme classes set by NavBar (html.dark / html.light) */
+/* Explicit theme classes set by NavBar (html.dark / html.light)
+   Dark uses real dark colors; light is visually achieved via inversion. */
 html.dark {
+  /* Original dark theme tokens */
   --bg: #121212;
   --fg: #ffffff;
   --muted: #a3a3a3;
 }
 
 html.light {
-  --bg: #f9fafb;
-  --fg: #020617;
-  --muted: #4b5563;
+  /* Same tokens; the visual lightness comes from filter: invert(1) on <html>. */
+  --bg: #121212;
+  --fg: #ffffff;
+  --muted: #a3a3a3;
+}
+
+/* Base document */
+html {
+  color-scheme: dark;
+}
+
+/* Dark theme: original look, no inversion */
+html.dark {
+  filter: none;
+  color-scheme: dark;
+}
+
+/* Light theme: implemented via inversion of the entire page */
+html.light {
+  filter: invert(1);
+  color-scheme: light;
 }
 
 html,
@@ -41,8 +61,16 @@ body {
 
 /* Subtle grid background helper */
 .grid-bg {
-  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-  linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-image: linear-gradient(
+          to bottom,
+          rgba(255, 255, 255, 0.05) 1px,
+          transparent 1px
+  ),
+  linear-gradient(
+          to right,
+          rgba(255, 255, 255, 0.05) 1px,
+          transparent 1px
+  );
   background-size: 40px 40px;
   border-radius: 2rem;
 }
@@ -95,10 +123,44 @@ body {
   }
 }
 
-/* BW treatment for images */
+/* ======================== Images & filters ==============================
+   Requirements:
+   - Images should normally show their original colors (no grayscale).
+   - Light theme is html-level invert(1); we cancel that on <img>.
+   - Uploaded / avatar images get extra protection in color-images.css.
+   ===================================================================== */
+
+/* Default images: no grayscale, no extra filters */
 img,
 .bw {
-  filter: grayscale(100%);
+  filter: none;
+}
+
+/* In light theme, cancel the html-level inversion for all images,
+   and explicitly neutralise grayscale first. */
+html.light img,
+html.light .bw {
+  filter: grayscale(0) invert(1);
+}
+
+/* ================= Emojis that ignore theme inversion ===================
+   Wrap any emoji you want to stay visually identical in both themes in:
+     <span class="emoji-stable">🔥</span>
+
+   - Dark mode: filter: none ➜ normal emoji.
+   - Light mode: html inverts, then we invert the emoji again so colors
+     look the same as in dark.
+   ===================================================================== */
+
+/* Base: do nothing special in dark mode */
+.emoji-stable {
+  filter: none;
+}
+
+/* Light mode: cancel the html-level inversion for these emojis.
+   grayscale(0) ensures we never pick up any grayscale. */
+html.light .emoji-stable {
+  filter: grayscale(0) invert(1);
 }
 
 /* Big type */
@@ -131,25 +193,49 @@ img,
   animation: caretBlink 1s step-end infinite;
 }
 
-/* ---- Logos (white, non-stretched, hover brighten) ---- */
+/* ---- Logos (marquee etc.) ---------------------------------------------
+   Requirement: “logos in the rotating logos marque to not have color,
+   just like before in dark mode”.
+
+   We treat `.logo-img` as “monochrome logos”:
+   - Dark theme: use brightness(0) invert(1) → white logos on dark bg.
+   - Light theme: due to html-level invert(1), we override the generic
+     img rule and use brightness(0) so they stay colorless silhouettes.
+   ---------------------------------------------------------------------- */
 .logo-wrap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding-inline: 0.75rem; /* spacing between logos */
-  padding-block: 0.25rem; /* vertical breathing room so hover-lift isn’t clipped */
+  padding-block: 0.25rem;  /* vertical breathing room so hover-lift isn’t clipped */
   flex-shrink: 0;
 }
+
+/* base visual: non-stretched, animated */
 .logo-img {
   display: block;
   height: 34px;
   width: auto; /* keep aspect ratio */
   object-fit: contain;
-  filter: brightness(0) invert(1); /* force white while preserving alpha */
   opacity: 0.72;
   transition: opacity 0.2s ease, transform 0.2s ease;
   will-change: transform;
 }
+
+/* Dark: restore original “no color” look – white logos on dark bg */
+html.dark img.logo-img {
+  filter: brightness(0) invert(1);
+}
+
+/* Light:
+   - html has filter: invert(1)
+   - generic html.light img rule would cancel that (grayscale(0) invert(1)),
+     but we override it with higher-specificity selector.
+   - This keeps logos monochrome silhouettes (no brand colors). */
+html.light img.logo-img {
+  filter: invert(1);
+}
+
 .logo-wrap:hover .logo-img {
   opacity: 1;
   transform: translateY(-2px);
@@ -199,43 +285,9 @@ img,
   background: linear-gradient(to left, var(--bg) 0%, transparent 100%);
 }
 
-/* -------- Light theme adjustments for Tailwind utility classes -------- */
-
-/* Backgrounds that are hard-coded as "black" become light in html.light */
-html.light .bg-black,
-html.light .bg-black\/60,
-html.light .bg-black\/70,
-html.light .bg-black\/80 {
-  background-color: rgba(255, 255, 255, 0.94);
-}
-
-/* Make "white text" utilities dark in light mode */
-html.light .text-white {
-  color: #020617;
-}
-html.light .text-white\/40 {
-  color: rgba(15, 23, 42, 0.4);
-}
-html.light .text-white\/50 {
-  color: rgba(15, 23, 42, 0.5);
-}
-html.light .text-white\/60 {
-  color: rgba(15, 23, 42, 0.6);
-}
-html.light .text-white\/70 {
-  color: rgba(15, 23, 42, 0.7);
-}
-html.light .text-white\/80 {
-  color: rgba(15, 23, 42, 0.8);
-}
-html.light .text-white\/90 {
-  color: rgba(15, 23, 42, 0.9);
-}
-
-/* Keep base body text aligned with theme variables */
-html.light body {
-  color: var(--fg);
-}
-html.dark body {
-  color: var(--fg);
-}
+/* ------------------------------------------------------------------------
+   NOTE: The old "Light theme adjustments for Tailwind utility classes"
+   block (overriding .bg-black, .text-white, etc.) has been removed because
+   the light theme is now purely inversion-based. Tailwind colors will be
+   visually inverted automatically in html.light.
+   ------------------------------------------------------------------------ */

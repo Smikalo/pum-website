@@ -13,7 +13,7 @@ export default function Footer() {
                 <div className="grid gap-8 md:grid-cols-4">
                     {/* Brand / Mission */}
                     <div className="md:col-span-2">
-                        <div className="inline-block rounded-xl px-3 py-1 ring-1 ring-cyan-400/20 bg-cyan-400/5 text-cyan-200 text-xs tracking-widest">
+                        <div className="inline-block rounded-xl px-3 py-1 ring-1 ring-white/20 bg-white/5 text-white text-xs tracking-widest">
                             PUM — Project of United Minds
                         </div>
                         <h2 className="mt-3 text-xl font-semibold text-white">
@@ -94,7 +94,7 @@ export default function Footer() {
                 <div className="section py-2 sm:py-2.5 text-[11px] sm:text-xs leading-tight flex flex-col sm:flex-row items-center justify-between gap-1.5 sm:gap-2 text-white/60">
                     <div>© {year} PUM — Project of United Minds</div>
                     <div className="flex items-center gap-2">
-                        <span className="inline-block w-2 h-2 rounded-full bg-cyan-300 ring-1 ring-white/40 shadow-[0_0_12px_rgba(56,189,248,.9)]" />
+                        <span className="inline-block w-2 h-2 rounded-full bg-cyan-300 ring-1 ring-white/40 shadow-[0_0_12px_rgba(56,189,248,.9)] emoji-stable" />
                         <span>Made with curiosity &amp; Spezi</span>
                     </div>
                 </div>
