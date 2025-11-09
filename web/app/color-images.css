@@ -1,0 +1,17 @@
+/* color-images.css
+ *
+ * Ensures that pictures / avatars that users upload
+ * are always shown in their original colors (not black & white),
+ * everywhere on the site.
+ *
+ * This file is imported after the other global styles in layout.tsx
+ * so these rules override any earlier grayscale filters.
+ */
+
+/* All uploaded assets are served from /uploads/... on the API host.
+   Some previews use blob: URLs via URL.createObjectURL while editing. */
+img[src*="/uploads/"],
+img[src^="blob:"] {
+    /* Remove any grayscale / desaturation that might be applied globally */
+    filter: none !important;
+}

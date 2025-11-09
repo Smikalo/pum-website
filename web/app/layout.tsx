@@ -1,6 +1,7 @@
 import "./globals.css";
 import "./containers.css";
 import "./nav-animations.css"; // ← add animations
+import "./color-images.css";   // ← keep uploaded pictures/avatars in full color
 
 import React from "react";
 import type { Metadata } from "next";
