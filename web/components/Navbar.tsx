@@ -1,13 +1,14 @@
+// web/components/Navbar.tsx
 "use client";
 
-import * as NavigationMenu from "@radix-ui/react-navigation-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import React from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { toImageSrc } from "@/lib/images";
+import { useI18n } from "@/context/I18nProvider";
 
 type NavKey = "home" | "members" | "projects" | "events" | "blog" | "contact";
 
@@ -22,591 +23,396 @@ const NAV_ITEMS: NavItem[] = [
     { href: "/contact", key: "contact" },
 ];
 
-const NAV_LABELS: Record<"en" | "de", Record<NavKey | "tagline", string>> = {
-    en: {
-        home: "Home",
-        members: "Members",
-        projects: "Projects",
-        events: "Events",
-        blog: "Blog",
-        contact: "Contact",
-        tagline: "Project of United Minds",
-    },
-    de: {
-        home: "Startseite",
-        members: "Mitglieder",
-        projects: "Projekte",
-        events: "Events",
-        blog: "Blog",
-        contact: "Kontakt",
-        // You can change this to a German variant if you want
-        tagline: "Project of United Minds",
-    },
-};
-
-export default function NavBar() {
+export default function Navbar() {
     const pathname = usePathname();
-    const router = useRouter();
-    const { user, login, logout } = useAuth();
+    const { user, logout } = useAuth();
+    const { lang, setLang, t } = useI18n();
 
-    const [drawerOpen, setDrawerOpen] = React.useState(false);
-    const [drawerView, setDrawerView] = React.useState<"menu" | "settings" | "login">("menu");
-    const firstLinkRef = React.useRef<HTMLAnchorElement | null>(null);
+    const [theme, setTheme] = React.useState<"dark" | "light">(() => {
+        if (typeof window === "undefined") return "dark";
+        const stored = window.localStorage.getItem("theme");
+        return stored === "light" || stored === "dark" ? stored : "dark";
+    });
 
-    // desktop login dialog
+    const [mobileOpen, setMobileOpen] = React.useState(false);
     const [loginOpen, setLoginOpen] = React.useState(false);
 
-    // settings (theme + language)
-    const [theme, setTheme] = React.useState<"dark" | "light">(
-        (typeof window !== "undefined" && (localStorage.getItem("theme") as "dark" | "light")) || "dark",
-    );
-    const [lang, setLang] = React.useState<"en" | "de">(
-        (typeof window !== "undefined" && (localStorage.getItem("lang") as "en" | "de")) || "en",
+    const isActive = React.useCallback(
+        (href: string) =>
+            pathname === href || pathname.startsWith(`${href}/`),
+        [pathname],
     );
 
-    const labels = NAV_LABELS[lang];
-
-    React.useEffect(() => setDrawerOpen(false), [pathname]);
+    // Close mobile drawer on route change
     React.useEffect(() => {
-        function onKey(e: KeyboardEvent) {
-            if (e.key === "Escape") {
-                setDrawerOpen(false);
-                setLoginOpen(false);
-                setDrawerView("menu");
-            }
-        }
-        if (drawerOpen || loginOpen) window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, [drawerOpen, loginOpen]);
+        setMobileOpen(false);
+    }, [pathname]);
 
+    // Apply theme class + persist
     React.useEffect(() => {
-        if (drawerOpen && drawerView === "menu") firstLinkRef.current?.focus();
-    }, [drawerOpen, drawerView]);
+        if (typeof document === "undefined") return;
+        const root = document.documentElement;
+        const other = theme === "dark" ? "light" : "dark";
+        root.classList.remove(other);
+        root.classList.add(theme);
 
-    // apply theme/lang
-    React.useEffect(() => {
-        if (typeof document !== "undefined") {
-            const root = document.documentElement;
-            root.classList.remove(theme === "dark" ? "light" : "dark");
-            root.classList.add(theme);
-            localStorage.setItem("theme", theme);
+        if (typeof window !== "undefined") {
+            window.localStorage.setItem("theme", theme);
         }
     }, [theme]);
-    React.useEffect(() => {
-        if (typeof window !== "undefined") {
-            localStorage.setItem("lang", lang);
-            window.dispatchEvent(new CustomEvent("pum:lang", { detail: { lang } }));
-        }
-    }, [lang]);
 
-    const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
-
-    // --- Desktop gear animation (spin cw on open, ccw on close) for LOGGED-OUT only ---
-    const [settingsOpen, setSettingsOpen] = React.useState(false);
-    const [gearAnim, setGearAnim] = React.useState<"idle" | "open" | "close">("idle");
-    const handleSettingsOpenChange = (o: boolean) => {
-        setSettingsOpen(o);
-        setGearAnim(o ? "open" : "close");
+    const toggleTheme = () => {
+        setTheme((prev) => (prev === "dark" ? "light" : "dark"));
     };
 
-    // login helpers
-    async function handleLogin(email: string, pw: string) {
-        await login(email, pw);
-        setLoginOpen(false);
-        setDrawerOpen(false);
-        setDrawerView("menu");
-        router.push("/account");
-    }
-
-    // ---- FIX: ensure `avatarSrc` is strictly `string | undefined` (never `null`) ----
-    const avatarRaw = user?.member?.avatarUrl ?? undefined; // null -> undefined
-    const avatarSrc: string | undefined = avatarRaw ? (toImageSrc(avatarRaw) ?? undefined) : undefined;
+    const changeLang = (next: "en" | "de") => {
+        if (next !== lang) {
+            setLang(next);
+        }
+    };
 
     return (
-        <header className="sticky top-0 z-50 bg-black/60 backdrop-blur border-b border-white/10">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-                {/* Brand */}
+        <header className="sticky top-0 z-40 border-b border-white/10 bg-black/80 backdrop-blur">
+            <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+                {/* Brand + tagline */}
                 <div className="flex items-center gap-3">
-                    <Link href="/" className="font-extrabold tracking-tight text-white text-lg">
-                        PUM
+                    <Link href="/" className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-xs font-bold text-black">
+                            PUM
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-sm font-semibold tracking-wide">
+                                PUM
+                            </span>
+                            <span className="hidden text-xs text-white/60 sm:inline">
+                                {t("nav.tagline")}
+                            </span>
+                        </div>
                     </Link>
-                    <span className="hidden sm:inline text-white/40 text-sm">
-                        {labels.tagline}
-                    </span>
                 </div>
 
                 {/* Desktop nav */}
-                <div className="hidden md:flex items-center gap-3">
-                    <NavigationMenu.Root>
-                        <NavigationMenu.List className="flex items-center gap-1">
+                <nav className="hidden items-center gap-2 md:flex">
+                    {NAV_ITEMS.map((item) => {
+                        const active = isActive(item.href);
+                        return (
+                            <Link
+                                key={item.href}
+                                href={item.href}
+                                className={[
+                                    "px-3 py-2 rounded-lg text-sm ring-1 ring-white/10 transition",
+                                    active
+                                        ? "bg-white text-black font-semibold"
+                                        : "text-white/80 hover:bg-white/10",
+                                ].join(" ")}
+                                aria-current={active ? "page" : undefined}
+                            >
+                                {t(`nav.${item.key}`)}
+                            </Link>
+                        );
+                    })}
+                </nav>
+
+                {/* Right side: theme, language, auth, mobile toggle */}
+                <div className="flex items-center gap-2">
+                    {/* Theme toggle */}
+                    <button
+                        type="button"
+                        onClick={toggleTheme}
+                        className="hidden items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-xs text-white/80 ring-1 ring-white/10 transition hover:bg-white/10 sm:inline-flex"
+                    >
+                        <ThemeIcon mode={theme} />
+                        <span className="sr-only">Toggle theme</span>
+                    </button>
+
+                    {/* Language toggle */}
+                    <div className="hidden overflow-hidden rounded-lg bg-white/5 text-xs ring-1 ring-white/10 sm:flex">
+                        <button
+                            type="button"
+                            onClick={() => changeLang("en")}
+                            className={[
+                                "px-2 py-1",
+                                lang === "en"
+                                    ? "bg-white text-black font-semibold"
+                                    : "text-white/80 hover:bg-white/10",
+                            ].join(" ")}
+                        >
+                            EN
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => changeLang("de")}
+                            className={[
+                                "px-2 py-1",
+                                lang === "de"
+                                    ? "bg-white text-black font-semibold"
+                                    : "text-white/80 hover:bg-white/10",
+                            ].join(" ")}
+                        >
+                            DE
+                        </button>
+                    </div>
+
+                    {/* Auth (desktop) */}
+                    {!user ? (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => setLoginOpen(true)}
+                                className="hidden rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black md:inline-flex"
+                            >
+                                Log in
+                            </button>
+                            {/* mobile burger */}
+                            <button
+                                type="button"
+                                onClick={() => setMobileOpen(true)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10 hover:bg-white/10 md:hidden"
+                                aria-label="Open navigation"
+                            >
+                                <MenuIcon />
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <DropdownMenu.Root>
+                                <DropdownMenu.Trigger asChild>
+                                    <button
+                                        type="button"
+                                        className="hidden h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-white/10 md:inline-flex"
+                                        aria-label="Open account menu"
+                                    >
+                                        <Avatar
+                                            label={
+                                                user.member?.name ||
+                                                user.email ||
+                                                "Profile"
+                                            }
+                                            src={
+                                                user.member
+                                                    ? toImageSrc(
+                                                        user.member
+                                                            .avatarUrl ||
+                                                        null,
+                                                    )
+                                                    : undefined
+                                            }
+                                        />
+                                    </button>
+                                </DropdownMenu.Trigger>
+                                <DropdownMenu.Content className="z-50 mt-1 min-w-[160px] rounded-lg border border-white/10 bg-black/95 p-1 text-sm text-white shadow-xl">
+                                    <DropdownMenu.Item asChild>
+                                        <Link
+                                            href="/account"
+                                            className="block rounded-md px-3 py-2 hover:bg:white/10"
+                                        >
+                                            Profile
+                                        </Link>
+                                    </DropdownMenu.Item>
+                                    <DropdownMenu.Item
+                                        onSelect={async () => {
+                                            await logout();
+                                        }}
+                                        className="cursor-pointer rounded-md px-3 py-2 text-red-300 hover:bg-white/10"
+                                    >
+                                        Log out
+                                    </DropdownMenu.Item>
+                                </DropdownMenu.Content>
+                            </DropdownMenu.Root>
+
+                            {/* Mobile burger */}
+                            <button
+                                type="button"
+                                onClick={() => setMobileOpen(true)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10 hover:bg:white/10 md:hidden"
+                                aria-label="Open navigation"
+                            >
+                                <MenuIcon />
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Mobile drawer */}
+            <Dialog.Root open={mobileOpen} onOpenChange={setMobileOpen}>
+                <Dialog.Portal>
+                    <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
+                    <Dialog.Content className="fixed inset-x-0 top-0 z-50 max-h-[100vh] rounded-b-3xl border-b border-white/10 bg-black px-4 pb-6 pt-3 shadow-xl">
+                        <div className="flex items-center justify-between pb-3">
+                            <div className="flex items-center gap-2">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-xs font-bold text-black">
+                                    PUM
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-semibold tracking-wide">
+                                        PUM
+                                    </span>
+                                    <span className="text-xs text-white/60">
+                                        {t("nav.tagline")}
+                                    </span>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setMobileOpen(false)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10 hover:bg-white/10"
+                                aria-label="Close navigation"
+                            >
+                                <CloseIcon />
+                            </button>
+                        </div>
+
+                        {/* Mobile language + theme */}
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => changeLang("en")}
+                                    className={[
+                                        "rounded-md px-2 py-1 text-xs ring-1 ring-white/10",
+                                        lang === "en"
+                                            ? "bg-white text-black font-semibold"
+                                            : "bg-white/5 text-white/80",
+                                    ].join(" ")}
+                                >
+                                    EN
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => changeLang("de")}
+                                    className={[
+                                        "rounded-md px-2 py-1 text-xs ring-1 ring-white/10",
+                                        lang === "de"
+                                            ? "bg-white text-black font-semibold"
+                                            : "bg-white/5 text:white/80",
+                                    ].join(" ")}
+                                >
+                                    DE
+                                </button>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={toggleTheme}
+                                className="inline-flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-xs text-white/80 ring-1 ring-white/10 hover:bg-white/10"
+                            >
+                                <ThemeIcon mode={theme} />
+                                <span className="sr-only">Toggle theme</span>
+                            </button>
+                        </div>
+
+                        {/* Mobile nav links */}
+                        <nav className="flex flex-col gap-1 pb-4">
                             {NAV_ITEMS.map((item) => {
                                 const active = isActive(item.href);
                                 return (
-                                    <NavigationMenu.Item key={item.href}>
-                                        <Link
-                                            href={item.href}
-                                            className={[
-                                                "px-3 py-2 rounded-lg text-sm transition ring-1 ring-white/10",
-                                                active
-                                                    ? "bg-white text-black font-semibold"
-                                                    : "text-white/80 hover:bg-white/10",
-                                            ].join(" ")}
-                                            aria-current={active ? "page" : undefined}
-                                        >
-                                            {labels[item.key]}
-                                        </Link>
-                                    </NavigationMenu.Item>
+                                    <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        className={[
+                                            "w-full rounded-lg px-3 py-2 text-sm ring-1 ring-white/10",
+                                            active
+                                                ? "bg-white text-black font-semibold"
+                                                : "bg-white/5 text-white/80 hover:bg-white/10",
+                                        ].join(" ")}
+                                        aria-current={active ? "page" : undefined}
+                                    >
+                                        {t(`nav.${item.key}`)}
+                                    </Link>
                                 );
                             })}
-                        </NavigationMenu.List>
-                    </NavigationMenu.Root>
+                        </nav>
 
-                    {/* Right side: gear (logged out) OR avatar (logged in) */}
-                    {!user ? (
-                        <DropdownMenu.Root open={settingsOpen} onOpenChange={handleSettingsOpenChange}>
-                            <DropdownMenu.Trigger asChild>
+                        {/* Mobile auth block */}
+                        <div className="border-t border-white/10 pt-4">
+                            {!user ? (
+                                <LoginForm
+                                    mode="drawer"
+                                    onSuccess={() => setMobileOpen(false)}
+                                />
+                            ) : (
                                 <button
                                     type="button"
-                                    aria-label="Open settings"
-                                    className={[
-                                        "w-9 h-9 rounded-full grid place-items-center ring-1 ring-white/10 text-white/90",
-                                        "hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
-                                    ].join(" ")}
-                                >
-                                    {/* Wrap to catch animation end and reset */}
-                                    <span
-                                        onAnimationEnd={() => setGearAnim("idle")}
-                                        className={[
-                                            gearAnim === "open" ? "gear-anim-open" : "",
-                                            gearAnim === "close" ? "gear-anim-close" : "",
-                                        ].join(" ")}
-                                    >
-                                        <GearIcon />
-                                    </span>
-                                </button>
-                            </DropdownMenu.Trigger>
-
-                            <DropdownMenu.Content
-                                align="end"
-                                sideOffset={8}
-                                className="min-w-[220px] rounded-lg bg-black text-white shadow-2xl ring-1 ring-white/10 p-1"
-                            >
-                                <DropdownSection label="Theme" />
-                                <DropdownMenu.Item
-                                    onSelect={() => setTheme("dark")}
-                                    className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
-                                >
-                                    Dark
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                    onSelect={() => setTheme("light")}
-                                    className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
-                                >
-                                    Light
-                                </DropdownMenu.Item>
-
-                                <div className="my-1 h-px bg-white/10" />
-
-                                <DropdownSection label="Language" />
-                                <DropdownMenu.Item
-                                    onSelect={() => setLang("en")}
-                                    className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
-                                >
-                                    English
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                    onSelect={() => setLang("de")}
-                                    className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
-                                >
-                                    Deutsch
-                                </DropdownMenu.Item>
-
-                                <div className="my-1 h-px bg-white/10" />
-
-                                <DropdownMenu.Item
-                                    onSelect={() => setLoginOpen(true)}
-                                    className="px-3 py-2 rounded-md text-sm outline-none cursor-pointer hover:bg-white/10 data-[highlighted]:bg-white/10"
-                                >
-                                    Log in
-                                </DropdownMenu.Item>
-                            </DropdownMenu.Content>
-                        </DropdownMenu.Root>
-                    ) : (
-                        <DropdownMenu.Root>
-                            <DropdownMenu.Trigger asChild>
-                                <button
-                                    type="button"
-                                    aria-label="Open account menu"
-                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg ring-1 ring-white/10 text-white/90 hover:bg-white/10"
-                                >
-                                    <Avatar label={user.member?.name || user.email} src={avatarSrc} />
-                                    <span className="text-sm">{user.member?.name || user.email}</span>
-                                </button>
-                            </DropdownMenu.Trigger>
-                            <DropdownMenu.Content
-                                align="end"
-                                sideOffset={8}
-                                className="min-w-[240px] rounded-lg bg-black text-white shadow-2xl ring-1 ring-white/10 p-1"
-                            >
-                                <DropdownSection label="Theme" />
-                                <DropdownMenu.Item
-                                    onSelect={() => setTheme("dark")}
-                                    className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
-                                >
-                                    Dark
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                    onSelect={() => setTheme("light")}
-                                    className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
-                                >
-                                    Light
-                                </DropdownMenu.Item>
-
-                                <div className="my-1 h-px bg-white/10" />
-
-                                <DropdownSection label="Language" />
-                                <DropdownMenu.Item
-                                    onSelect={() => setLang("en")}
-                                    className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
-                                >
-                                    English
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                    onSelect={() => setLang("de")}
-                                    className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
-                                >
-                                    Deutsch
-                                </DropdownMenu.Item>
-
-                                <div className="my-1 h-px bg-white/10" />
-
-                                {/* PROFILE BUTTON: full-width inside the dropdown */}
-                                <DropdownMenu.Item asChild>
-                                    <Link
-                                        href="/account"
-                                        className="flex w-full px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
-                                    >
-                                        Profile
-                                    </Link>
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                    onSelect={async () => {
+                                    onClick={async () => {
                                         await logout();
+                                        setMobileOpen(false);
                                     }}
-                                    className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                    className="w-full rounded-lg bg-white px-3 py-2 text-sm font-semibold text-black"
                                 >
                                     Log out
-                                </DropdownMenu.Item>
-                            </DropdownMenu.Content>
-                        </DropdownMenu.Root>
-                    )}
-                </div>
-
-                {/* Mobile: hamburger -> Drawer */}
-                <Dialog.Root
-                    open={drawerOpen}
-                    onOpenChange={(o) => {
-                        setDrawerOpen(o);
-                        if (!o) setDrawerView("menu");
-                    }}
-                >
-                    <Dialog.Trigger asChild>
-                        <button
-                            type="button"
-                            className="md:hidden inline-flex items-center justify-center rounded-lg px-3 py-2 ring-1 ring-white/10 text-white/90 hover:bg-white/10"
-                            aria-label="Open navigation"
-                        >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-                                {drawerOpen ? (
-                                    <path
-                                        d="M6 6L18 18M6 18L18 6"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                    />
-                                ) : (
-                                    <path
-                                        d="M3 6H21M3 12H21M3 18H21"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                    />
-                                )}
-                            </svg>
-                        </button>
-                    </Dialog.Trigger>
-
-                    <Dialog.Portal>
-                        <Dialog.Overlay className="fixed inset-0 z-[10000] bg-black/60 data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out transition-opacity data-[state=closed]:pointer-events-none" />
-                        <Dialog.Content
-                            aria-label="Mobile navigation"
-                            className={[
-                                "fixed top-0 right-0 h-dvh w-80 max-w-[85%] bg-black text-white shadow-2xl",
-                                "ring-1 ring-white/10 overflow-y-auto z-[10001]",
-                                "translate-x-[calc(100%+8px)] data-[state=open]:translate-x-0",
-                                "transition-transform duration-200 ease-out will-change-transform",
-                            ].join(" ")}
-                        >
-                            <div className="h-16 px-4 flex items-center justify-between border-b border-white/10">
-                                {drawerView !== "menu" ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => setDrawerView("menu")}
-                                        className="inline-flex items-center gap-2 rounded-lg px-2 py-2 ring-1 ring-white/10 text-white/90 hover:bg-white/10"
-                                    >
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                                            <path
-                                                d="M15 19l-7-7 7-7"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            />
-                                        </svg>
-                                        Back
-                                    </button>
-                                ) : (
-                                    <span className="font-semibold">Menu</span>
-                                )}
-                                <Dialog.Close asChild>
-                                    <button
-                                        type="button"
-                                        className="inline-flex items-center justify-center rounded-lg px-2 py-2 ring-1 ring-white/10 text-white/90 hover:bg-white/10"
-                                        aria-label="Close navigation"
-                                    >
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                                            <path
-                                                d="M6 6L18 18M6 18L18 6"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                                strokeLinecap="round"
-                                            />
-                                        </svg>
-                                    </button>
-                                </Dialog.Close>
-                            </div>
-
-                            {/* MAIN VIEW */}
-                            {drawerView === "menu" && (
-                                <nav aria-label="Mobile Primary" className="px-2 py-4 space-y-1">
-                                    {NAV_ITEMS.map((item, idx) => {
-                                        const active = isActive(item.href);
-                                        return (
-                                            <Link
-                                                key={item.href}
-                                                href={item.href}
-                                                ref={idx === 0 ? firstLinkRef : undefined}
-                                                className={[
-                                                    "block px-3 py-2 rounded-lg text-base ring-1 ring-white/10",
-                                                    active
-                                                        ? "bg-white text-black font-semibold"
-                                                        : "bg-black text-white/90 hover:bg-white/5",
-                                                ].join(" ")}
-                                                aria-current={active ? "page" : undefined}
-                                                onClick={() => setDrawerOpen(false)}
-                                            >
-                                                {labels[item.key]}
-                                            </Link>
-                                        );
-                                    })}
-
-                                    {/* Sub-pages inside the drawer */}
-                                    <button
-                                        type="button"
-                                        onClick={() => setDrawerView("settings")}
-                                        className="w-full text-left mt-2 block px-3 py-2 rounded-lg text-base ring-1 ring-white/10 bg-black text-white/90 hover:bg-white/5"
-                                    >
-                                        Settings
-                                    </button>
-                                    {!user ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => setDrawerView("login")}
-                                            className="w-full text-left mt-2 block px-3 py-2 rounded-lg text-base ring-1 ring-white/10 bg-black text-white/90 hover:bg-white/5"
-                                        >
-                                            Log in
-                                        </button>
-                                    ) : (
-                                        <>
-                                            <Link
-                                                href="/account"
-                                                className="mt-2 block px-3 py-2 rounded-lg text-base ring-1 ring-white/10 bg-black text-white/90 hover:bg-white/5"
-                                                onClick={() => setDrawerOpen(false)}
-                                            >
-                                                Profile
-                                            </Link>
-                                            <button
-                                                type="button"
-                                                className="mt-2 block w-full text-left px-3 py-2 rounded-lg text-base ring-1 ring-white/10 bg-black text-white/90 hover:bg-white/5"
-                                                onClick={async () => {
-                                                    await logout();
-                                                    setDrawerOpen(false);
-                                                }}
-                                            >
-                                                Log out
-                                            </button>
-                                        </>
-                                    )}
-                                </nav>
-                            )}
-
-                            {/* SETTINGS SUBPAGE (list only; same items as desktop dropdown) */}
-                            {drawerView === "settings" && (
-                                <div className="p-3 space-y-1">
-                                    <MobileSection label="Theme" />
-                                    <button
-                                        onClick={() => setTheme("dark")}
-                                        className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10"
-                                    >
-                                        Dark
-                                    </button>
-                                    <button
-                                        onClick={() => setTheme("light")}
-                                        className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10"
-                                    >
-                                        Light
-                                    </button>
-                                    <div className="my-1 h-px bg-white/10" />
-                                    <MobileSection label="Language" />
-                                    <button
-                                        onClick={() => setLang("en")}
-                                        className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10"
-                                    >
-                                        English
-                                    </button>
-                                    <button
-                                        onClick={() => setLang("de")}
-                                        className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10"
-                                    >
-                                        Deutsch
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* LOGIN SUBPAGE (real auth) */}
-                            {drawerView === "login" && (
-                                <div className="p-4">
-                                    <h3 className="text-lg font-semibold">Log in</h3>
-                                    <LoginForm
-                                        mode="drawer"
-                                        onSubmit={async (email, pw) => {
-                                            await handleLogin(email, pw);
-                                        }}
-                                    />
-                                </div>
-                            )}
-                        </Dialog.Content>
-                    </Dialog.Portal>
-                </Dialog.Root>
-            </div>
-
-            {/* Desktop login dialog (triggered from gear dropdown “Log in”) */}
-            <Dialog.Root open={loginOpen} onOpenChange={setLoginOpen}>
-                <Dialog.Portal>
-                    <Dialog.Overlay className="fixed inset-0 z-[11000] bg-black/60 data-[state=open]:animate-overlay-in" />
-                    <Dialog.Content
-                        className="fixed left-1/2 top-1/2 z-[11001] -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-xl bg-black ring-1 ring-white/10 p-5 shadow-2xl"
-                        aria-label="Login"
-                    >
-                        <div className="flex items-center justify-between mb-2">
-                            <h3 className="text-lg font-semibold">Log in</h3>
-                            <Dialog.Close asChild>
-                                <button
-                                    className="rounded-md px-2 py-1 ring-1 ring-white/10 hover:bg-white/10"
-                                    aria-label="Close"
-                                >
-                                    ✕
                                 </button>
-                            </Dialog.Close>
+                            )}
                         </div>
-                        <LoginForm
-                            mode="dialog"
-                            onSubmit={async (email, pw) => {
-                                await handleLogin(email, pw);
-                            }}
-                        />
                     </Dialog.Content>
                 </Dialog.Portal>
             </Dialog.Root>
 
-            {/* local CSS for gear animation */}
-            <style jsx>{`
-                @keyframes gear-open {
-                    from {
-                        transform: rotate(0deg);
-                    }
-                    to {
-                        transform: rotate(180deg);
-                    }
-                }
-                @keyframes gear-close {
-                    from {
-                        transform: rotate(0deg);
-                    }
-                    to {
-                        transform: rotate(-180deg);
-                    }
-                }
-                .gear-anim-open {
-                    animation: gear-open 220ms linear;
-                }
-                .gear-anim-close {
-                    animation: gear-close 220ms linear;
-                }
-            `}</style>
+            {/* Desktop login dialog */}
+            <Dialog.Root open={loginOpen} onOpenChange={setLoginOpen}>
+                <Dialog.Portal>
+                    <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
+                    <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/10 bg-black px-5 py-6 shadow-xl">
+                        <Dialog.Title className="text-base font-semibold">
+                            Log in
+                        </Dialog.Title>
+                        <Dialog.Description className="mt-1 text-sm text-white/70">
+                            Use your Project of United Minds account to sign in.
+                        </Dialog.Description>
+                        <div className="mt-4">
+                            <LoginForm
+                                mode="dialog"
+                                onSuccess={() => setLoginOpen(false)}
+                            />
+                        </div>
+                    </Dialog.Content>
+                </Dialog.Portal>
+            </Dialog.Root>
         </header>
     );
 }
 
-/* ----------------------------- small pieces ----------------------------- */
-
-function DropdownSection({ label }: { label: string }) {
-    return (
-        <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-widest text-white/50">
-            {label}
-        </div>
-    );
-}
-function MobileSection({ label }: { label: string }) {
-    return (
-        <div className="px-1 pt-1 pb-2 text-[11px] uppercase tracking-widest text-white/50">
-            {label}
-        </div>
-    );
-}
-
-function LoginForm({
-                       onSubmit,
-                       mode,
-                   }: {
-    onSubmit: (email: string, password: string) => void | Promise<void>;
+type LoginFormProps = {
     mode: "dialog" | "drawer";
-}) {
+    onSuccess?: () => void;
+};
+
+function LoginForm({ mode, onSuccess }: LoginFormProps) {
+    const { login } = useAuth();
     const [email, setEmail] = React.useState("");
-    const [pw, setPw] = React.useState("");
+    const [password, setPassword] = React.useState("");
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
-    const canSubmit = email.length > 3 && pw.length >= 8 && !loading;
 
-    async function submit(e: React.FormEvent) {
+    const canSubmit = email.length > 3 && password.length >= 8 && !loading;
+
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!canSubmit) return;
         setLoading(true);
         setError(null);
         try {
-            await onSubmit(email, pw);
-        } catch (e: any) {
-            setError(e?.message || "Login failed");
+            await login(email, password);
+            onSuccess?.();
+        } catch (err: any) {
+            setError(err?.message || "Login failed");
         } finally {
             setLoading(false);
         }
     }
 
     return (
-        <form onSubmit={submit} className="space-y-3">
-            {error && <div className="text-red-400 text-sm">{error}</div>}
+        <form onSubmit={handleSubmit} className="space-y-3">
+            {error && (
+                <div className="text-sm text-red-400" role="alert">
+                    {error}
+                </div>
+            )}
+
             <div className="space-y-1">
-                <label htmlFor={`email-${mode}`} className="text-sm text-white/80">
+                <label
+                    htmlFor={`email-${mode}`}
+                    className="text-sm text-white/80"
+                >
                     Email
                 </label>
                 <input
@@ -616,11 +422,16 @@ function LoginForm({
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 text-sm outline-none focus:ring-white/30"
+                    className="w-full rounded-md bg-white/5 px-3 py-2 text-sm text-white outline-none ring-1 ring-white/10 placeholder:text-white/40 focus:ring-white/30"
+                    placeholder="you@example.com"
                 />
             </div>
+
             <div className="space-y-1">
-                <label htmlFor={`password-${mode}`} className="text-sm text-white/80">
+                <label
+                    htmlFor={`password-${mode}`}
+                    className="text-sm text:white/80"
+                >
                     Password
                 </label>
                 <input
@@ -628,26 +439,18 @@ function LoginForm({
                     type="password"
                     autoComplete="current-password"
                     required
-                    minLength={8}
-                    value={pw}
-                    onChange={(e) => setPw(e.target.value)}
-                    className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 text-sm outline-none focus:ring-white/30"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full rounded-md bg-white/5 px-3 py-2 text-sm text-white outline-none ring-1 ring-white/10 placeholder:text-white/40 focus:ring-white/30"
+                    placeholder="••••••••"
                 />
-                <p className="text-xs text-white/50">At least 8 characters.</p>
             </div>
-            <div className="flex items-center justify-end gap-2 pt-1">
-                <Dialog.Close asChild>
-                    <button
-                        type="button"
-                        className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10 text-sm"
-                    >
-                        Cancel
-                    </button>
-                </Dialog.Close>
+
+            <div className="pt-1">
                 <button
                     type="submit"
                     disabled={!canSubmit}
-                    className="px-3 py-2 rounded-md bg-white text-black text-sm font-semibold disabled:opacity-40"
+                    className="w-full rounded-md bg-white px-3 py-2 text-sm font-semibold text-black disabled:opacity-50"
                 >
                     {loading ? "Logging in…" : "Log in"}
                 </button>
@@ -656,20 +459,7 @@ function LoginForm({
     );
 }
 
-function GearIcon({ className = "" }: { className?: string }) {
-    return (
-        <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <path
-                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-3.5c0-.5 0-1-.1-1.4l2-1.6-2-3.5-2.5 1a7.7 7.7 0 0 0-2.3-1.3l-.4-2.7h-4l-.4 2.7c-.8.3-1.6.7-2.3 1.3l-2.5-1-2 3.5 2 1.6c0 .5-.1.9-.1 1.4s0 1 .1 1.4l-2 1.6 2 3.5 2.5-1c.7.6 1.5 1 2.3 1.3l.4 2.7h4l.4-2.7c.8-.3 1.6-.7 2.3-1.3l2.5 1 2-3.5-2-1.6c.1-.4.1-.9.1-1.4Z"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinejoin="round"
-            />
-        </svg>
-    );
-}
-
-function Avatar({ label, src }: { label: string; src?: string }) {
+function Avatar({ label, src }: { label: string; src?: string | null }) {
     const initials = React.useMemo(() => {
         const parts = label.split(" ").filter(Boolean);
         const s = (parts[0]?.[0] || "") + (parts[1]?.[0] || "");
@@ -677,9 +467,93 @@ function Avatar({ label, src }: { label: string; src?: string }) {
     }, [label]);
 
     return (
-        <div className="w-5 h-5 rounded-full bg-white text-black grid place-items-center text-xs font-bold overflow-hidden">
+        <div className="grid h-8 w-8 place-items-center overflow-hidden rounded-full bg:white text-xs font-bold text-black">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            {src ? <img src={src} alt={label} className="w-full h-full object-cover" /> : initials}
+            {src ? (
+                <img
+                    src={src}
+                    alt={label}
+                    className="h-full w-full object-cover"
+                />
+            ) : (
+                initials
+            )}
         </div>
+    );
+}
+
+function MenuIcon() {
+    return (
+        <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-4 w-4 text-white/80"
+        >
+            <path
+                d="M4 7h16M4 12h16M4 17h16"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+            />
+        </svg>
+    );
+}
+
+function CloseIcon() {
+    return (
+        <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-4 w-4 text-white/80"
+        >
+            <path
+                d="M6 6l12 12M18 6l-12 12"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+            />
+        </svg>
+    );
+}
+
+function ThemeIcon({ mode }: { mode: "dark" | "light" }) {
+    if (mode === "dark") {
+        // Moon
+        return (
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-4 w-4 text-white/80"
+            >
+                <path
+                    d="M21 12.79A9 9 0 0 1 12.79 3 7 7 0 1 0 21 12.79z"
+                    fill="currentColor"
+                />
+            </svg>
+        );
+    }
+    // Sun
+    return (
+        <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className="h-4 w-4 text-white/80"
+        >
+            <circle cx="12" cy="12" r="4" fill="currentColor" />
+            <path
+                d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l-1.5-1.5M19.5 19.5 18 18M5 19l-1.5 1.5M19.5 4.5 18 6"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+            />
+        </svg>
     );
 }

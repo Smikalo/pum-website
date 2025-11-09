@@ -4,7 +4,7 @@
 
 /* --- Theme tokens: dark as default, light via inversion --- */
 :root {
-  --bg: #121212;
+  --bg: #020512;
   --fg: #ffffff;
   --muted: #a3a3a3;
 }
@@ -13,14 +13,14 @@
    Dark uses real dark colors; light is visually achieved via inversion. */
 html.dark {
   /* Original dark theme tokens */
-  --bg: #121212;
+  --bg: #020512;
   --fg: #ffffff;
   --muted: #a3a3a3;
 }
 
 html.light {
   /* Same tokens; the visual lightness comes from filter: invert(1) on <html>. */
-  --bg: #121212;
+  --bg: #020512;
   --fg: #ffffff;
   --muted: #a3a3a3;
 }
