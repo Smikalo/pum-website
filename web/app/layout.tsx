@@ -1,7 +1,7 @@
 import "./globals.css";
 import "./containers.css";
 import "./nav-animations.css"; // ← add animations
-import "./color-images.css";   // ← keep uploaded pictures/avatars in full color
+import "./color-images.css"; // ← keep uploaded pictures/avatars in full color
 
 import React from "react";
 import type { Metadata } from "next";
@@ -17,8 +17,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en" className="bg-black">
-        <body className="text-white antialiased">
+        <html lang="en">
+        <body className="antialiased">
         <AuthProvider>
             <NavBar />
             <main>{children}</main>

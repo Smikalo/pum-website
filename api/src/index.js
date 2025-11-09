@@ -160,7 +160,103 @@ if (SMTP_HOST) {
     // );
 }
 
-async function sendInviteEmail(to, subject, text) {
+/**
+ * Base HTML wrapper for all transactional emails so they
+ * render nicely across clients and keep unsubscribe links visible.
+ *
+ * `contentHtml` is expected to be a sanitized/snippet-level HTML string.
+ */
+function renderBaseEmailHtml({ title, preheader, bodyHtml }) {
+    const safeTitle = (title || "PUM").toString().slice(0, 200);
+    const safePreheader = (preheader || "").toString().slice(0, 300);
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>${safeTitle}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  body {
+    margin:0;
+    padding:0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background-color:#f5f5f7;
+    color:#111827;
+  }
+  .wrapper {
+    width:100%;
+    background-color:#f5f5f7;
+    padding:24px 0;
+  }
+  .container {
+    max-width:600px;
+    margin:0 auto;
+    background:#ffffff;
+    border-radius:12px;
+    overflow:hidden;
+    border:1px solid #e5e7eb;
+  }
+  .header {
+    padding:16px 24px;
+    border-bottom:1px solid #e5e7eb;
+    background:#111827;
+    color:#f9fafb;
+  }
+  .header h1 {
+    margin:0;
+    font-size:20px;
+    line-height:1.3;
+  }
+  .preheader {
+    display:none;
+    max-height:0;
+    overflow:hidden;
+    opacity:0;
+    color:transparent;
+    height:0;
+    width:0;
+  }
+  .content {
+    padding:24px;
+    font-size:14px;
+    line-height:1.6;
+    color:#111827;
+  }
+  .content a {
+    color:#2563eb;
+  }
+  .footer {
+    padding:16px 24px;
+    font-size:12px;
+    line-height:1.4;
+    color:#6b7280;
+    border-top:1px solid #e5e7eb;
+    background:#f9fafb;
+  }
+</style>
+</head>
+<body>
+<span class="preheader">${safePreheader}</span>
+<div class="wrapper">
+  <div class="container">
+    <div class="header">
+      <h1>${safeTitle}</h1>
+    </div>
+    <div class="content">
+      ${bodyHtml || ""}
+    </div>
+    <div class="footer">
+      <div>PUM – Projects of United Minds</div>
+      <div style="margin-top:4px;">This message was sent from ${MAIL_FROM}.</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+async function sendInviteEmail(to, subject, text, html) {
     if (!to) return;
     if (!mailTransporter) {
         // console.log(
@@ -175,6 +271,7 @@ async function sendInviteEmail(to, subject, text) {
             to,
             subject,
             text,
+            html,
         });
         // console.log("[invite-email] sent OK to", to);
     } catch (err) {
@@ -1857,7 +1954,18 @@ Project page: ${projectUrl}
 This invite was sent from ${MAIL_FROM}.
 `;
 
-            void sendInviteEmail(email, subject, text);
+            const html = renderBaseEmailHtml({
+                title: "Project invite",
+                preheader: `You've been invited to join "${project.title}" on PUM.`,
+                bodyHtml: `<p>Hi,</p>
+<p>You've been invited to join the project <strong>${project.title}</strong> at PUM.</p>
+<p><strong>Role on the project:</strong> ${roleLabel}</p>
+<p><a href="${acceptUrl}">Approve your invite</a></p>
+<p>Project page: <a href="${projectUrl}">${projectUrl}</a></p>
+<p>This invite was sent from ${MAIL_FROM}.</p>`,
+            });
+
+            void sendInviteEmail(email, subject, text, html);
         }
     }
 
@@ -2409,7 +2517,18 @@ Project page: ${projectUrl}
 This invite was sent from ${MAIL_FROM}.
 `;
 
-                void sendInviteEmail(email, subject, text);
+                const html = renderBaseEmailHtml({
+                    title: "Project invite",
+                    preheader: `You've been invited to join "${updated.title}" on PUM.`,
+                    bodyHtml: `<p>Hi,</p>
+<p>You've been invited to join the project <strong>${updated.title}</strong> at PUM.</p>
+<p><strong>Role on the project:</strong> ${roleLabel}</p>
+<p><a href="${acceptUrl}">Approve your invite</a></p>
+<p>Project page: <a href="${projectUrl}">${projectUrl}</a></p>
+<p>This invite was sent from ${MAIL_FROM}.</p>`,
+                });
+
+                void sendInviteEmail(email, subject, text, html);
             }
         }
     }
@@ -3012,6 +3131,23 @@ Message:
 ${message}
 `;
 
+        const html = renderBaseEmailHtml({
+            title: "New contact form submission",
+            preheader: `${name} sent a message via the contact form.`,
+            bodyHtml: `<p>New contact form submission:</p>
+<p><strong>Name:</strong> ${name}<br/>
+<strong>Email:</strong> ${email}<br/>
+<strong>Role:</strong> ${role}<br/>
+<strong>Topic:</strong> ${topic}<br/>
+<strong>Subscribe to newsletter:</strong> ${
+                subscribe ? "YES" : "no"
+            }<br/>
+<strong>Source:</strong> ${source || "n/a"}<br/>
+<strong>IP:</strong> ${ip}</p>
+<p><strong>Message:</strong></p>
+<p>${message.replace(/\n/g, "<br/>")}</p>`,
+        });
+
         if (!mailTransporter) {
             // console.log(
             //     "[POST /api/contact] (no SMTP configured) Would send mail from",
@@ -3031,6 +3167,7 @@ ${message}
                 replyTo: safeReplyTo(email), // key: avoid spoofing FROM user email
                 subject,
                 text, // text-only, sanitized
+                html,
             });
             // console.log("[POST /api/contact] mail sent OK");
         }
@@ -3137,12 +3274,23 @@ ${verifyUrl}
 If you did not request this, you can safely ignore this email and you won't be subscribed.
 `;
 
+                const html = renderBaseEmailHtml({
+                    title: "Confirm your subscription",
+                    preheader: "Please confirm your subscription to PUM updates.",
+                    bodyHtml: `<p>Hi${sub.name ? " " + sub.name : ""},</p>
+<p>Thanks for staying in touch with PUM!</p>
+<p>Please confirm your subscription by clicking the link below:</p>
+<p><a href="${verifyUrl}">${verifyUrl}</a></p>
+<p>If you did not request this, you can safely ignore this email and you won't be subscribed.</p>`,
+                });
+
                 try {
                     await mailTransporter.sendMail({
                         from: MAIL_FROM,
                         to: sub.email,
                         subject,
                         text,
+                        html,
                     });
                     // console.log(
                     //     "[POST /api/contact] sent newsletter verification email to",
@@ -3314,12 +3462,23 @@ ${verifyUrl}
 If you did not request this, you can safely ignore this email and you won't be subscribed.
 `;
 
+            const html = renderBaseEmailHtml({
+                title: "Confirm your subscription",
+                preheader: "Please confirm your subscription to PUM updates.",
+                bodyHtml: `<p>Hi${sub.name ? " " + sub.name : ""},</p>
+<p>Thanks for staying in touch with PUM!</p>
+<p>Please confirm your subscription by clicking the link below:</p>
+<p><a href="${verifyUrl}">${verifyUrl}</a></p>
+<p>If you did not request this, you can safely ignore this email and you won't be subscribed.</p>`,
+            });
+
             try {
                 await mailTransporter.sendMail({
                     from: MAIL_FROM,
                     to: sub.email,
                     subject,
                     text,
+                    html,
                 });
                 // console.log(
                 //     "[POST /api/newsletter/subscribe] sent verification email to",
@@ -4263,11 +4422,31 @@ If you no longer wish to receive these, you can unsubscribe here:
 ${unsubscribeUrl}
 `;
 
+                    const html = renderBaseEmailHtml({
+                        title: "New blog post on PUM",
+                        preheader: blog.summary
+                            ? blog.summary.slice(0, 150)
+                            : `New blog post: ${blog.title}`,
+                        bodyHtml: `<p>Hi${sub.name ? " " + sub.name : ""}!</p>
+<p>We've just published a new blog post on PUM:</p>
+<p><strong>${blog.title}</strong></p>
+${
+                            blog.summary
+                                ? `<p>${blog.summary.replace(/\n/g, "<br/>")}</p>`
+                                : ""
+                        }
+<p><a href="${blogUrl}">Read the full post</a></p>
+<p>You're receiving this because you subscribed to updates from PUM.</p>
+<p>If you no longer wish to receive these, you can unsubscribe here:<br/>
+<a href="${unsubscribeUrl}">${unsubscribeUrl}</a></p>`,
+                    });
+
                     await mailTransporter.sendMail({
                         from: MAIL_FROM,
                         to,
                         subject,
                         text,
+                        html,
                     });
                     // console.log(
                     //     "[POST /api/blogs] newsletter mail sent to subscriber",
@@ -5361,7 +5540,17 @@ Event page: ${eventUrl}
 This invite was sent from ${MAIL_FROM}.
 `;
 
-            void sendInviteEmail(email, subject, text);
+            const html = renderBaseEmailHtml({
+                title: "Event invite",
+                preheader: `You've been invited to "${event.name}" on PUM.`,
+                bodyHtml: `<p>Hi,</p>
+<p>You've been invited to join the event <strong>${event.name}</strong> at PUM.</p>
+<p><a href="${acceptUrl}">Approve your invite</a></p>
+<p>Event page: <a href="${eventUrl}">${eventUrl}</a></p>
+<p>This invite was sent from ${MAIL_FROM}.</p>`,
+            });
+
+            void sendInviteEmail(email, subject, text, html);
         }
     }
 
@@ -5754,7 +5943,17 @@ Event page: ${eventUrl}
 This invite was sent from ${MAIL_FROM}.
 `;
 
-            void sendInviteEmail(email, subject, text);
+            const html = renderBaseEmailHtml({
+                title: "Event invite",
+                preheader: `You've been invited to "${updated.name}" on PUM.`,
+                bodyHtml: `<p>Hi,</p>
+<p>You've been invited to join the event <strong>${updated.name}</strong> at PUM.</p>
+<p><a href="${acceptUrl}">Approve your invite</a></p>
+<p>Event page: <a href="${eventUrl}">${eventUrl}</a></p>
+<p>This invite was sent from ${MAIL_FROM}.</p>`,
+            });
+
+            void sendInviteEmail(email, subject, text, html);
         }
     }
 
@@ -5914,7 +6113,7 @@ app.delete("/api/events/:slug", async (req, res) => {
     }
 });
 
-/* -------------------------- Invite consumption -------------------------- */
+/* -------------------------- Invite consumption (deprecated for more csrf secure version in auth) -------------------------- */
 //
 // const inviteConsumeSchema = z.object({
 //     token: z.string().min(10),

@@ -9,16 +9,40 @@ import React from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { toImageSrc } from "@/lib/images";
 
-type NavItem = { href: string; label: string };
+type NavKey = "home" | "members" | "projects" | "events" | "blog" | "contact";
+
+type NavItem = { href: string; key: NavKey };
 
 const NAV_ITEMS: NavItem[] = [
-    { href: "/", label: "Home" },
-    { href: "/members", label: "Members" },
-    { href: "/projects", label: "Projects" },
-    { href: "/events", label: "Events" },
-    { href: "/blog", label: "Blog" },
-    { href: "/contact", label: "Contact" },
+    { href: "/", key: "home" },
+    { href: "/members", key: "members" },
+    { href: "/projects", key: "projects" },
+    { href: "/events", key: "events" },
+    { href: "/blog", key: "blog" },
+    { href: "/contact", key: "contact" },
 ];
+
+const NAV_LABELS: Record<"en" | "de", Record<NavKey | "tagline", string>> = {
+    en: {
+        home: "Home",
+        members: "Members",
+        projects: "Projects",
+        events: "Events",
+        blog: "Blog",
+        contact: "Contact",
+        tagline: "Project of United Minds",
+    },
+    de: {
+        home: "Startseite",
+        members: "Mitglieder",
+        projects: "Projekte",
+        events: "Events",
+        blog: "Blog",
+        contact: "Kontakt",
+        // You can change this to a German variant if you want
+        tagline: "Project of United Minds",
+    },
+};
 
 export default function NavBar() {
     const pathname = usePathname();
@@ -39,6 +63,8 @@ export default function NavBar() {
     const [lang, setLang] = React.useState<"en" | "de">(
         (typeof window !== "undefined" && (localStorage.getItem("lang") as "en" | "de")) || "en",
     );
+
+    const labels = NAV_LABELS[lang];
 
     React.useEffect(() => setDrawerOpen(false), [pathname]);
     React.useEffect(() => {
@@ -101,8 +127,12 @@ export default function NavBar() {
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                 {/* Brand */}
                 <div className="flex items-center gap-3">
-                    <Link href="/" className="font-extrabold tracking-tight text-white text-lg">PUM</Link>
-                    <span className="hidden sm:inline text-white/40 text-sm">Project of United Minds</span>
+                    <Link href="/" className="font-extrabold tracking-tight text-white text-lg">
+                        PUM
+                    </Link>
+                    <span className="hidden sm:inline text-white/40 text-sm">
+                        {labels.tagline}
+                    </span>
                 </div>
 
                 {/* Desktop nav */}
@@ -117,11 +147,13 @@ export default function NavBar() {
                                             href={item.href}
                                             className={[
                                                 "px-3 py-2 rounded-lg text-sm transition ring-1 ring-white/10",
-                                                active ? "bg-white text-black font-semibold" : "text-white/80 hover:bg-white/10",
+                                                active
+                                                    ? "bg-white text-black font-semibold"
+                                                    : "text-white/80 hover:bg-white/10",
                                             ].join(" ")}
                                             aria-current={active ? "page" : undefined}
                                         >
-                                            {item.label}
+                                            {labels[item.key]}
                                         </Link>
                                     </NavigationMenu.Item>
                                 );
@@ -149,8 +181,8 @@ export default function NavBar() {
                                             gearAnim === "close" ? "gear-anim-close" : "",
                                         ].join(" ")}
                                     >
-                    <GearIcon />
-                  </span>
+                                        <GearIcon />
+                                    </span>
                                 </button>
                             </DropdownMenu.Trigger>
 
@@ -217,27 +249,45 @@ export default function NavBar() {
                                 className="min-w-[240px] rounded-lg bg-black text-white shadow-2xl ring-1 ring-white/10 p-1"
                             >
                                 <DropdownSection label="Theme" />
-                                <DropdownMenu.Item onSelect={() => setTheme("dark")} className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10">
+                                <DropdownMenu.Item
+                                    onSelect={() => setTheme("dark")}
+                                    className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                >
                                     Dark
                                 </DropdownMenu.Item>
-                                <DropdownMenu.Item onSelect={() => setTheme("light")} className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10">
+                                <DropdownMenu.Item
+                                    onSelect={() => setTheme("light")}
+                                    className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                >
                                     Light
                                 </DropdownMenu.Item>
 
                                 <div className="my-1 h-px bg-white/10" />
 
                                 <DropdownSection label="Language" />
-                                <DropdownMenu.Item onSelect={() => setLang("en")} className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10">
+                                <DropdownMenu.Item
+                                    onSelect={() => setLang("en")}
+                                    className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                >
                                     English
                                 </DropdownMenu.Item>
-                                <DropdownMenu.Item onSelect={() => setLang("de")} className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10">
+                                <DropdownMenu.Item
+                                    onSelect={() => setLang("de")}
+                                    className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                >
                                     Deutsch
                                 </DropdownMenu.Item>
 
                                 <div className="my-1 h-px bg-white/10" />
 
-                                <DropdownMenu.Item asChild className="px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10">
-                                    <Link href="/account">Profile</Link>
+                                {/* PROFILE BUTTON: full-width inside the dropdown */}
+                                <DropdownMenu.Item asChild>
+                                    <Link
+                                        href="/account"
+                                        className="flex w-full px-3 py-2 rounded-md text-sm hover:bg-white/10 data-[highlighted]:bg-white/10"
+                                    >
+                                        Profile
+                                    </Link>
                                 </DropdownMenu.Item>
                                 <DropdownMenu.Item
                                     onSelect={async () => {
@@ -268,9 +318,19 @@ export default function NavBar() {
                         >
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
                                 {drawerOpen ? (
-                                    <path d="M6 6L18 18M6 18L18 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                    <path
+                                        d="M6 6L18 18M6 18L18 6"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                    />
                                 ) : (
-                                    <path d="M3 6H21M3 12H21M3 18H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                    <path
+                                        d="M3 6H21M3 12H21M3 18H21"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                    />
                                 )}
                             </svg>
                         </button>
@@ -295,7 +355,13 @@ export default function NavBar() {
                                         className="inline-flex items-center gap-2 rounded-lg px-2 py-2 ring-1 ring-white/10 text-white/90 hover:bg-white/10"
                                     >
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                                            <path d="M15 19l-7-7 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            <path
+                                                d="M15 19l-7-7 7-7"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                            />
                                         </svg>
                                         Back
                                     </button>
@@ -309,7 +375,12 @@ export default function NavBar() {
                                         aria-label="Close navigation"
                                     >
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                                            <path d="M6 6L18 18M6 18L18 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                            <path
+                                                d="M6 6L18 18M6 18L18 6"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                            />
                                         </svg>
                                     </button>
                                 </Dialog.Close>
@@ -327,12 +398,14 @@ export default function NavBar() {
                                                 ref={idx === 0 ? firstLinkRef : undefined}
                                                 className={[
                                                     "block px-3 py-2 rounded-lg text-base ring-1 ring-white/10",
-                                                    active ? "bg-white text-black font-semibold" : "bg-black text-white/90 hover:bg-white/5",
+                                                    active
+                                                        ? "bg-white text-black font-semibold"
+                                                        : "bg-black text-white/90 hover:bg-white/5",
                                                 ].join(" ")}
                                                 aria-current={active ? "page" : undefined}
                                                 onClick={() => setDrawerOpen(false)}
                                             >
-                                                {item.label}
+                                                {labels[item.key]}
                                             </Link>
                                         );
                                     })}
@@ -381,19 +454,39 @@ export default function NavBar() {
                             {drawerView === "settings" && (
                                 <div className="p-3 space-y-1">
                                     <MobileSection label="Theme" />
-                                    <button onClick={() => setTheme("dark")} className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10">Dark</button>
-                                    <button onClick={() => setTheme("light")} className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10">Light</button>
+                                    <button
+                                        onClick={() => setTheme("dark")}
+                                        className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10"
+                                    >
+                                        Dark
+                                    </button>
+                                    <button
+                                        onClick={() => setTheme("light")}
+                                        className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10"
+                                    >
+                                        Light
+                                    </button>
                                     <div className="my-1 h-px bg-white/10" />
                                     <MobileSection label="Language" />
-                                    <button onClick={() => setLang("en")} className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10">English</button>
-                                    <button onClick={() => setLang("de")} className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10">Deutsch</button>
+                                    <button
+                                        onClick={() => setLang("en")}
+                                        className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10"
+                                    >
+                                        English
+                                    </button>
+                                    <button
+                                        onClick={() => setLang("de")}
+                                        className="w-full text-left px-3 py-2 rounded-md hover:bg-white/10"
+                                    >
+                                        Deutsch
+                                    </button>
                                 </div>
                             )}
 
                             {/* LOGIN SUBPAGE (real auth) */}
                             {drawerView === "login" && (
                                 <div className="p-4">
-                                    <h3 className="text-lg font-semibold mb-2">Log in</h3>
+                                    <h3 className="text-lg font-semibold">Log in</h3>
                                     <LoginForm
                                         mode="drawer"
                                         onSubmit={async (email, pw) => {
@@ -418,7 +511,12 @@ export default function NavBar() {
                         <div className="flex items-center justify-between mb-2">
                             <h3 className="text-lg font-semibold">Log in</h3>
                             <Dialog.Close asChild>
-                                <button className="rounded-md px-2 py-1 ring-1 ring-white/10 hover:bg-white/10" aria-label="Close">✕</button>
+                                <button
+                                    className="rounded-md px-2 py-1 ring-1 ring-white/10 hover:bg-white/10"
+                                    aria-label="Close"
+                                >
+                                    ✕
+                                </button>
                             </Dialog.Close>
                         </div>
                         <LoginForm
@@ -434,15 +532,27 @@ export default function NavBar() {
             {/* local CSS for gear animation */}
             <style jsx>{`
                 @keyframes gear-open {
-                    from { transform: rotate(0deg); }
-                    to   { transform: rotate(180deg); }
+                    from {
+                        transform: rotate(0deg);
+                    }
+                    to {
+                        transform: rotate(180deg);
+                    }
                 }
                 @keyframes gear-close {
-                    from { transform: rotate(0deg); }
-                    to   { transform: rotate(-180deg); }
+                    from {
+                        transform: rotate(0deg);
+                    }
+                    to {
+                        transform: rotate(-180deg);
+                    }
                 }
-                .gear-anim-open { animation: gear-open 220ms linear; }
-                .gear-anim-close { animation: gear-close 220ms linear; }
+                .gear-anim-open {
+                    animation: gear-open 220ms linear;
+                }
+                .gear-anim-close {
+                    animation: gear-close 220ms linear;
+                }
             `}</style>
         </header>
     );
@@ -451,10 +561,18 @@ export default function NavBar() {
 /* ----------------------------- small pieces ----------------------------- */
 
 function DropdownSection({ label }: { label: string }) {
-    return <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-widest text-white/50">{label}</div>;
+    return (
+        <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-widest text-white/50">
+            {label}
+        </div>
+    );
 }
 function MobileSection({ label }: { label: string }) {
-    return <div className="px-1 pt-1 pb-2 text-[11px] uppercase tracking-widest text-white/50">{label}</div>;
+    return (
+        <div className="px-1 pt-1 pb-2 text-[11px] uppercase tracking-widest text-white/50">
+            {label}
+        </div>
+    );
 }
 
 function LoginForm({
@@ -488,7 +606,9 @@ function LoginForm({
         <form onSubmit={submit} className="space-y-3">
             {error && <div className="text-red-400 text-sm">{error}</div>}
             <div className="space-y-1">
-                <label htmlFor={`email-${mode}`} className="text-sm text-white/80">Email</label>
+                <label htmlFor={`email-${mode}`} className="text-sm text-white/80">
+                    Email
+                </label>
                 <input
                     id={`email-${mode}`}
                     type="email"
@@ -500,7 +620,9 @@ function LoginForm({
                 />
             </div>
             <div className="space-y-1">
-                <label htmlFor={`password-${mode}`} className="text-sm text-white/80">Password</label>
+                <label htmlFor={`password-${mode}`} className="text-sm text-white/80">
+                    Password
+                </label>
                 <input
                     id={`password-${mode}`}
                     type="password"
@@ -515,7 +637,10 @@ function LoginForm({
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
                 <Dialog.Close asChild>
-                    <button type="button" className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10 text-sm">
+                    <button
+                        type="button"
+                        className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10 text-sm"
+                    >
                         Cancel
                     </button>
                 </Dialog.Close>

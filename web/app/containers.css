@@ -45,7 +45,8 @@
 }
 
 /* Prevent accidental horizontal scroll with full-bleed sections */
-html, body {
+html,
+body {
     overflow-x: hidden;
 }
 

@@ -136,7 +136,12 @@ export default function ContactPage() {
               </ul>
               <div className="pt-2 text-sm text-white/60">
                 Prefer email?{" "}
-                <span className="text-white">contact@the-pum.com</span>
+                <span className="text-white"><a
+                    className="underline underline-offset-4"
+                    href="mailto:contact@the-pum.de"
+                >
+                            contact@the-pum.de
+                        </a></span>
               </div>
             </div>
           </aside>
