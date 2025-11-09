@@ -5915,310 +5915,310 @@ app.delete("/api/events/:slug", async (req, res) => {
 });
 
 /* -------------------------- Invite consumption -------------------------- */
-
-const inviteConsumeSchema = z.object({
-    token: z.string().min(10),
-    name: z.string().optional(),
-    password: z.string().optional(),
-    passwordRepeat: z.string().optional(),
-});
-
-app.post("/api/auth/invite/consume", async (req, res) => {
-    // console.log(
-    //     "========== [POST /api/auth/invite/consume] BEGIN ==========",
-    // );
-    // console.log(
-    //     "[invite/consume] raw body =",
-    //     JSON.stringify(req.body),
-    // );
-
-    const parsed = inviteConsumeSchema.safeParse(req.body);
-    if (!parsed.success) {
-        // console.warn(
-        //     "[invite/consume] validation error",
-        //     parsed.error.flatten(),
-        // );
-        // console.log(
-        //     "========== [POST /api/auth/invite/consume] END (validation error) ==========",
-        // );
-        return res
-            .status(400)
-            .json({ ok: false, error: "Invalid token payload" });
-    }
-
-    const { token, name, password, passwordRepeat } = parsed.data;
-    const tokenHash = hashInviteToken(token);
-    if (!tokenHash) {
-        // console.warn("[invite/consume] missing token hash");
-        // console.log(
-        //     "========== [POST /api/auth/invite/consume] END (no token) ==========",
-        // );
-        return res
-            .status(400)
-            .json({ ok: false, error: "Invite invalid or expired." });
-    }
-
-    let projectInvite = await prisma.projectInvite.findFirst({
-        where: {
-            tokenHash,
-            status: "PENDING",
-            expiresAt: { gt: new Date() },
-        },
-        include: {
-            project: {
-                include: {
-                    members: true,
-                },
-            },
-        },
-    });
-
-    let eventInvite = null;
-    if (!projectInvite) {
-        eventInvite = await prisma.eventInvite.findFirst({
-            where: {
-                tokenHash,
-                status: "PENDING",
-                expiresAt: { gt: new Date() },
-            },
-            include: {
-                event: true,
-            },
-        });
-    }
-
-    if (!projectInvite && !eventInvite) {
-        // console.warn(
-        //     "[invite/consume] no invite found for tokenHash",
-        //     tokenHash,
-        // );
-        // console.log(
-        //     "========== [POST /api/auth/invite/consume] END (not found) ==========",
-        // );
-        return res
-            .status(400)
-            .json({ ok: false, error: "Invite invalid or expired." });
-    }
-
-    const inviteObj = projectInvite || eventInvite;
-    const emailLower = (inviteObj.email || "").toLowerCase();
-
-    let user = await prisma.user.findUnique({
-        where: { email: emailLower },
-        include: { member: true, roles: true },
-    });
-
-    const isNewUser = !user;
-
-    if (isNewUser) {
-        if (!password || !passwordRepeat || password !== passwordRepeat) {
-            // console.warn(
-            //     "[invite/consume] new-user password mismatch/empty for",
-            //     emailLower,
-            // );
-            // console.log(
-            //     "========== [POST /api/auth/invite/consume] END (password mismatch) ==========",
-            // );
-            return res.status(400).json({
-                ok: false,
-                error:
-                    "To accept this invite, please provide a valid password and make sure both fields match.",
-                needsPassword: true,
-            });
-        }
-        if (!name || !name.trim()) {
-            // console.warn(
-            //     "[invite/consume] new-user missing name for",
-            //     emailLower,
-            // );
-            // console.log(
-            //     "========== [POST /api/auth/invite/consume] END (missing name) ==========",
-            // );
-            return res.status(400).json({
-                ok: false,
-                error: "Please provide your name to complete the invite.",
-                needsName: true,
-            });
-        }
-
-        const passwordHash = await argon2.hash(password, {
-            type: argon2.argon2id,
-        });
-
-        const baseSlug =
-            slugify(name, { lower: true, strict: true }) ||
-            emailLower.split("@")[0] ||
-            "user";
-        let slug = baseSlug;
-        let i = 0;
-        while (await prisma.member.findUnique({ where: { slug } })) {
-            slug = `${baseSlug}-${++i}`;
-            if (i > 20) break;
-        }
-
-        const member = await prisma.member.create({
-            data: {
-                slug,
-                name: name.trim(),
-                bio: "",
-                links: {},
-                avatarUrl: null,
-                focusArea: null,
-            },
-        });
-
-        await ensureMemberAvatar(member);
-
-        user = await prisma.user.create({
-            data: {
-                email: emailLower,
-                passwordHash,
-                memberId: member.id,
-                roles: {
-                    create: [{ role: "MEMBER" }],
-                },
-            },
-            include: { member: true, roles: true },
-        });
-
-        // console.log(
-        //     "[invite/consume] created new user from invite",
-        //     emailLower,
-        //     "userId =",
-        //     user.id,
-        // );
-    }
-
-    let member = user.member;
-    if (!member) {
-        const baseName = user.email.split("@")[0] || "user";
-        const slugBase =
-            slugify(baseName, { lower: true, strict: true }) ||
-            "user";
-        let slug = slugBase;
-        let i = 0;
-        while (await prisma.member.findUnique({ where: { slug } })) {
-            slug = `${slugBase}-${++i}`;
-            if (i > 20) break;
-        }
-        member = await prisma.member.create({
-            data: {
-                slug,
-                name: baseName,
-                bio: "",
-                links: {},
-                avatarUrl: null,
-                focusArea: null,
-            },
-        });
-
-        member = await ensureMemberAvatar(member);
-
-        await prisma.user.update({
-            where: { id: user.id },
-            data: { memberId: member.id },
-        });
-    }
-
-    let projectSlug = null;
-    let eventSlug = null;
-
-    if (projectInvite && projectInvite.project) {
-        const project = projectInvite.project;
-        projectSlug = project.slug;
-
-        const existingMemberProject =
-            await prisma.memberProject.findUnique({
-                where: {
-                    memberId_projectId: {
-                        memberId: member.id,
-                        projectId: project.id,
-                    },
-                },
-            });
-
-        if (!existingMemberProject) {
-            await prisma.memberProject.create({
-                data: {
-                    memberId: member.id,
-                    projectId: project.id,
-                    role: projectInvite.role || "Contributor",
-                    contribution: null,
-                    isCreator: false,
-                },
-            });
-        }
-
-        await prisma.projectInvite.update({
-            where: { id: projectInvite.id },
-            data: {
-                status: "ACCEPTED",
-                consumedAt: new Date(),
-            },
-        });
-
-        // console.log(
-        //     "[invite/consume] accepted project invite for email",
-        //     emailLower,
-        //     "projectSlug =",
-        //     projectSlug,
-        //     "newUser =",
-        //     isNewUser,
-        // );
-    }
-
-    if (eventInvite && eventInvite.event) {
-        const eventObj = eventInvite.event;
-        eventSlug = eventObj.slug;
-
-        const existingMemberEvent = await prisma.memberEvent.findUnique({
-            where: {
-                memberId_eventId: {
-                    memberId: member.id,
-                    eventId: eventObj.id,
-                },
-            },
-        });
-
-        if (!existingMemberEvent) {
-            await prisma.memberEvent.create({
-                data: {
-                    memberId: member.id,
-                    eventId: eventObj.id,
-                    role: null,
-                },
-            });
-        }
-
-        await prisma.eventInvite.update({
-            where: { id: eventInvite.id },
-            data: {
-                status: "ACCEPTED",
-                consumedAt: new Date(),
-            },
-        });
-
-        // console.log(
-        //     "[invite/consume] accepted event invite for email",
-        //     emailLower,
-        //     "eventSlug =",
-        //     eventSlug,
-        //     "newUser =",
-        //     isNewUser,
-        // );
-    }
-
-    // console.log(
-    //     "========== [POST /api/auth/invite/consume] END (success) ==========",
-    // );
-    return res.json({
-        ok: true,
-        newUser: isNewUser,
-        projectSlug,
-        eventSlug,
-        email: emailLower,
-    });
-});
+//
+// const inviteConsumeSchema = z.object({
+//     token: z.string().min(10),
+//     name: z.string().optional(),
+//     password: z.string().optional(),
+//     passwordRepeat: z.string().optional(),
+// });
+//
+// app.post("/api/auth/invite/consume", async (req, res) => {
+//     // console.log(
+//     //     "========== [POST /api/auth/invite/consume] BEGIN ==========",
+//     // );
+//     // console.log(
+//     //     "[invite/consume] raw body =",
+//     //     JSON.stringify(req.body),
+//     // );
+//
+//     const parsed = inviteConsumeSchema.safeParse(req.body);
+//     if (!parsed.success) {
+//         // console.warn(
+//         //     "[invite/consume] validation error",
+//         //     parsed.error.flatten(),
+//         // );
+//         // console.log(
+//         //     "========== [POST /api/auth/invite/consume] END (validation error) ==========",
+//         // );
+//         return res
+//             .status(400)
+//             .json({ ok: false, error: "Invalid token payload" });
+//     }
+//
+//     const { token, name, password, passwordRepeat } = parsed.data;
+//     const tokenHash = hashInviteToken(token);
+//     if (!tokenHash) {
+//         // console.warn("[invite/consume] missing token hash");
+//         // console.log(
+//         //     "========== [POST /api/auth/invite/consume] END (no token) ==========",
+//         // );
+//         return res
+//             .status(400)
+//             .json({ ok: false, error: "Invite invalid or expired." });
+//     }
+//
+//     let projectInvite = await prisma.projectInvite.findFirst({
+//         where: {
+//             tokenHash,
+//             status: "PENDING",
+//             expiresAt: { gt: new Date() },
+//         },
+//         include: {
+//             project: {
+//                 include: {
+//                     members: true,
+//                 },
+//             },
+//         },
+//     });
+//
+//     let eventInvite = null;
+//     if (!projectInvite) {
+//         eventInvite = await prisma.eventInvite.findFirst({
+//             where: {
+//                 tokenHash,
+//                 status: "PENDING",
+//                 expiresAt: { gt: new Date() },
+//             },
+//             include: {
+//                 event: true,
+//             },
+//         });
+//     }
+//
+//     if (!projectInvite && !eventInvite) {
+//         // console.warn(
+//         //     "[invite/consume] no invite found for tokenHash",
+//         //     tokenHash,
+//         // );
+//         // console.log(
+//         //     "========== [POST /api/auth/invite/consume] END (not found) ==========",
+//         // );
+//         return res
+//             .status(400)
+//             .json({ ok: false, error: "Invite invalid or expired." });
+//     }
+//
+//     const inviteObj = projectInvite || eventInvite;
+//     const emailLower = (inviteObj.email || "").toLowerCase();
+//
+//     let user = await prisma.user.findUnique({
+//         where: { email: emailLower },
+//         include: { member: true, roles: true },
+//     });
+//
+//     const isNewUser = !user;
+//
+//     if (isNewUser) {
+//         if (!password || !passwordRepeat || password !== passwordRepeat) {
+//             // console.warn(
+//             //     "[invite/consume] new-user password mismatch/empty for",
+//             //     emailLower,
+//             // );
+//             // console.log(
+//             //     "========== [POST /api/auth/invite/consume] END (password mismatch) ==========",
+//             // );
+//             return res.status(400).json({
+//                 ok: false,
+//                 error:
+//                     "To accept this invite, please provide a valid password and make sure both fields match.",
+//                 needsPassword: true,
+//             });
+//         }
+//         if (!name || !name.trim()) {
+//             // console.warn(
+//             //     "[invite/consume] new-user missing name for",
+//             //     emailLower,
+//             // );
+//             // console.log(
+//             //     "========== [POST /api/auth/invite/consume] END (missing name) ==========",
+//             // );
+//             return res.status(400).json({
+//                 ok: false,
+//                 error: "Please provide your name to complete the invite.",
+//                 needsName: true,
+//             });
+//         }
+//
+//         const passwordHash = await argon2.hash(password, {
+//             type: argon2.argon2id,
+//         });
+//
+//         const baseSlug =
+//             slugify(name, { lower: true, strict: true }) ||
+//             emailLower.split("@")[0] ||
+//             "user";
+//         let slug = baseSlug;
+//         let i = 0;
+//         while (await prisma.member.findUnique({ where: { slug } })) {
+//             slug = `${baseSlug}-${++i}`;
+//             if (i > 20) break;
+//         }
+//
+//         const member = await prisma.member.create({
+//             data: {
+//                 slug,
+//                 name: name.trim(),
+//                 bio: "",
+//                 links: {},
+//                 avatarUrl: null,
+//                 focusArea: null,
+//             },
+//         });
+//
+//         await ensureMemberAvatar(member);
+//
+//         user = await prisma.user.create({
+//             data: {
+//                 email: emailLower,
+//                 passwordHash,
+//                 memberId: member.id,
+//                 roles: {
+//                     create: [{ role: "MEMBER" }],
+//                 },
+//             },
+//             include: { member: true, roles: true },
+//         });
+//
+//         // console.log(
+//         //     "[invite/consume] created new user from invite",
+//         //     emailLower,
+//         //     "userId =",
+//         //     user.id,
+//         // );
+//     }
+//
+//     let member = user.member;
+//     if (!member) {
+//         const baseName = user.email.split("@")[0] || "user";
+//         const slugBase =
+//             slugify(baseName, { lower: true, strict: true }) ||
+//             "user";
+//         let slug = slugBase;
+//         let i = 0;
+//         while (await prisma.member.findUnique({ where: { slug } })) {
+//             slug = `${slugBase}-${++i}`;
+//             if (i > 20) break;
+//         }
+//         member = await prisma.member.create({
+//             data: {
+//                 slug,
+//                 name: baseName,
+//                 bio: "",
+//                 links: {},
+//                 avatarUrl: null,
+//                 focusArea: null,
+//             },
+//         });
+//
+//         member = await ensureMemberAvatar(member);
+//
+//         await prisma.user.update({
+//             where: { id: user.id },
+//             data: { memberId: member.id },
+//         });
+//     }
+//
+//     let projectSlug = null;
+//     let eventSlug = null;
+//
+//     if (projectInvite && projectInvite.project) {
+//         const project = projectInvite.project;
+//         projectSlug = project.slug;
+//
+//         const existingMemberProject =
+//             await prisma.memberProject.findUnique({
+//                 where: {
+//                     memberId_projectId: {
+//                         memberId: member.id,
+//                         projectId: project.id,
+//                     },
+//                 },
+//             });
+//
+//         if (!existingMemberProject) {
+//             await prisma.memberProject.create({
+//                 data: {
+//                     memberId: member.id,
+//                     projectId: project.id,
+//                     role: projectInvite.role || "Contributor",
+//                     contribution: null,
+//                     isCreator: false,
+//                 },
+//             });
+//         }
+//
+//         await prisma.projectInvite.update({
+//             where: { id: projectInvite.id },
+//             data: {
+//                 status: "ACCEPTED",
+//                 consumedAt: new Date(),
+//             },
+//         });
+//
+//         // console.log(
+//         //     "[invite/consume] accepted project invite for email",
+//         //     emailLower,
+//         //     "projectSlug =",
+//         //     projectSlug,
+//         //     "newUser =",
+//         //     isNewUser,
+//         // );
+//     }
+//
+//     if (eventInvite && eventInvite.event) {
+//         const eventObj = eventInvite.event;
+//         eventSlug = eventObj.slug;
+//
+//         const existingMemberEvent = await prisma.memberEvent.findUnique({
+//             where: {
+//                 memberId_eventId: {
+//                     memberId: member.id,
+//                     eventId: eventObj.id,
+//                 },
+//             },
+//         });
+//
+//         if (!existingMemberEvent) {
+//             await prisma.memberEvent.create({
+//                 data: {
+//                     memberId: member.id,
+//                     eventId: eventObj.id,
+//                     role: null,
+//                 },
+//             });
+//         }
+//
+//         await prisma.eventInvite.update({
+//             where: { id: eventInvite.id },
+//             data: {
+//                 status: "ACCEPTED",
+//                 consumedAt: new Date(),
+//             },
+//         });
+//
+//         // console.log(
+//         //     "[invite/consume] accepted event invite for email",
+//         //     emailLower,
+//         //     "eventSlug =",
+//         //     eventSlug,
+//         //     "newUser =",
+//         //     isNewUser,
+//         // );
+//     }
+//
+//     // console.log(
+//     //     "========== [POST /api/auth/invite/consume] END (success) ==========",
+//     // );
+//     return res.json({
+//         ok: true,
+//         newUser: isNewUser,
+//         projectSlug,
+//         eventSlug,
+//         email: emailLower,
+//     });
+// });
 
 /* ------------------------------ Routers ------------------------------ */
 app.use("/api/auth", authRouter);
