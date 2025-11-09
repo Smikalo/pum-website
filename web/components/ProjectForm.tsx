@@ -992,7 +992,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 result?.slug || slug || state.title.toLowerCase().replace(/\s+/g, "-");
             router.replace(`/projects/${encodeURIComponent(nextSlug)}`);
         } catch (err: any) {
-            console.error("[ProjectForm] submit error", err);
+            // console.error("[ProjectForm] submit error", err);
             setSubmitError(err?.message || "Failed to save project.");
         } finally {
             setSubmitting(false);
@@ -1025,7 +1025,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
             setHint("Project deleted. Redirecting…");
             router.replace("/projects");
         } catch (err: any) {
-            console.error("[ProjectForm] delete error", err);
+            // console.error("[ProjectForm] delete error", err);
             setSubmitError(err?.message || "Failed to delete project.");
         } finally {
             setDeleting(false);

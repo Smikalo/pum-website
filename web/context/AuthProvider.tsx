@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const me = await apiMe(r.accessToken);
             setUser(normalizeUser(me.user));
         } catch (err) {
-            console.warn("[AuthProvider] silent refresh failed", err);
+            // console.warn("[AuthProvider] silent refresh failed", err);
             setAccessToken(null);
             setAccessTokenCookie(null);
             setUser(null);

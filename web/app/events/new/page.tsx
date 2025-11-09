@@ -450,7 +450,7 @@ export default function NewEventPage() {
             } catch (err) {
                 if ((err as any)?.name !== "AbortError") {
                     // eslint-disable-next-line no-console
-                    console.error("[NewEvent] geocode error", err);
+                    // console.error("[NewEvent] geocode error", err);
                 }
             } finally {
                 setSearching(false);
@@ -488,7 +488,7 @@ export default function NewEventPage() {
             } catch (err) {
                 if (!cancelled) {
                     // eslint-disable-next-line no-console
-                    console.error("[NewEvent] members load error", err);
+                    // console.error("[NewEvent] members load error", err);
                     setMembersError("Could not load members.");
                 }
             } finally {
@@ -527,7 +527,7 @@ export default function NewEventPage() {
             } catch (err) {
                 if (!cancelled) {
                     // eslint-disable-next-line no-console
-                    console.error("[NewEvent] projects load error", err);
+                    // console.error("[NewEvent] projects load error", err);
                     setProjectsError("Could not load projects.");
                 }
             } finally {
@@ -576,7 +576,7 @@ export default function NewEventPage() {
             } catch (err) {
                 if (!cancelled) {
                     // eslint-disable-next-line no-console
-                    console.error("[NewEvent] blogs load error", err);
+                    // console.error("[NewEvent] blogs load error", err);
                     // blogs are optional; do not set a red error
                 }
             } finally {
@@ -889,7 +889,7 @@ export default function NewEventPage() {
             }, 600);
         } catch (err: any) {
             // eslint-disable-next-line no-console
-            console.error("[NewEvent] onSubmit error", err);
+            // console.error("[NewEvent] onSubmit error", err);
             const msg = err?.message || "Failed to create event";
             setError(msg);
         } finally {

@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
         const data = await res.json().catch(() => ({}));
         return NextResponse.json(data, { status: res.status });
     } catch (err) {
-        console.error("[api/blogs] proxy error", err);
+        // console.error("[api/blogs] proxy error", err);
         return NextResponse.json(
             { error: "Failed to load blogs" },
             { status: 500 },

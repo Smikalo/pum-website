@@ -90,7 +90,7 @@ async function createBlog(formData: FormData) {
             const url = (result as any)?.url;
             if (url) uploadedPhotoUrls.push(url);
         } catch (err) {
-            console.error("[createBlog] failed to upload blog photo", err);
+            // console.error("[createBlog] failed to upload blog photo", err);
             throw new Error("Failed to upload one of the images");
         }
     }

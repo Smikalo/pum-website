@@ -73,7 +73,7 @@ async function submitContact(
     });
 
     if (!res.ok) {
-      console.error("Contact API returned non-OK:", res.status);
+      // console.error("Contact API returned non-OK:", res.status);
       ok = true; // we still show a generic success to not leak infra details
     } else {
       const json = (await res.json().catch(() => null)) as
@@ -88,7 +88,7 @@ async function submitContact(
       }
     }
   } catch (err) {
-    console.warn("Contact API not reachable; using fallback message.", err);
+    // console.warn("Contact API not reachable; using fallback message.", err);
     ok = true;
   }
 

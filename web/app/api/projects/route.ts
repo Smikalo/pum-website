@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json(data, { status: res.status });
     } catch (err) {
         // Surface a 500 so the caller can show "Could not load projects."
-        console.error("[api/projects] proxy error", err);
+        // console.error("[api/projects] proxy error", err);
         return NextResponse.json(
             { error: "Failed to load projects" },
             { status: 500 },

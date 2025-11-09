@@ -103,23 +103,23 @@ function normalizeBlog(raw: any): Blog | null {
         eventSlugs, // ✅
     };
 
-    console.log("[EditBlogPage] normalizeBlog result", {
-        input: b,
-        normalized: {
-            id: blog.id,
-            slug: blog.slug,
-            title: blog.title,
-            authors: blog.authors,
-            projectSlugs: blog.projectSlugs,
-            eventSlugs: blog.eventSlugs,
-        },
-    });
+    // console.log("[EditBlogPage] normalizeBlog result", {
+    //     input: b,
+    //     normalized: {
+    //         id: blog.id,
+    //         slug: blog.slug,
+    //         title: blog.title,
+    //         authors: blog.authors,
+    //         projectSlugs: blog.projectSlugs,
+    //         eventSlugs: blog.eventSlugs,
+    //     },
+    // });
 
     return blog;
 }
 
 async function fetchBlog(slug: string): Promise<Blog | null> {
-    console.log("[EditBlogPage] fetchBlog start", { slug });
+    // console.log("[EditBlogPage] fetchBlog start", { slug });
 
     try {
         const url = new URL(`/api/blogs/${slug}`, API_BASE);
@@ -128,26 +128,26 @@ async function fetchBlog(slug: string): Promise<Blog | null> {
         });
 
         if (!res.ok) {
-            console.warn("[EditBlogPage] fetchBlog non-OK response", {
-                slug,
-                status: res.status,
-            });
+            // console.warn("[EditBlogPage] fetchBlog non-OK response", {
+            //     slug,
+            //     status: res.status,
+            // });
             return null;
         }
 
         const json = await res.json();
         const blog = normalizeBlog(json);
 
-        console.log("[EditBlogPage] fetchBlog success", {
-            slug: blog?.slug,
-            authorSlugs: (blog?.authors || []).map((a) => a.slug),
-            projectSlugs: blog?.projectSlugs,
-            eventSlugs: blog?.eventSlugs,
-        });
+        // console.log("[EditBlogPage] fetchBlog success", {
+        //     slug: blog?.slug,
+        //     authorSlugs: (blog?.authors || []).map((a) => a.slug),
+        //     projectSlugs: blog?.projectSlugs,
+        //     eventSlugs: blog?.eventSlugs,
+        // });
 
         return blog;
     } catch (err) {
-        console.error("[EditBlogPage] fetchBlog error", { slug, err });
+        // console.error("[EditBlogPage] fetchBlog error", { slug, err });
         return null;
     }
 }
@@ -179,21 +179,21 @@ function isNonEmptyFileLike(value: unknown): value is File {
 async function updateBlog(slug: string, formData: FormData) {
     "use server";
 
-    console.log("[EditBlogPage] updateBlog action invoked", { slug });
+    // console.log("[EditBlogPage] updateBlog action invoked", { slug });
 
     const cookieStore = cookies();
     const token = cookieStore.get("access_token")?.value;
 
-    console.log("[EditBlogPage] updateBlog cookie check", {
-        slug,
-        hasToken: !!token,
-    });
+    // console.log("[EditBlogPage] updateBlog cookie check", {
+    //     slug,
+    //     hasToken: !!token,
+    // });
 
     if (!token) {
-        console.warn(
-            "[EditBlogPage] updateBlog: no token, redirecting to /account",
-            { slug },
-        );
+        // console.warn(
+        //     "[EditBlogPage] updateBlog: no token, redirecting to /account",
+        //     { slug },
+        // );
         redirect("/account");
     }
 
@@ -243,7 +243,7 @@ async function updateBlog(slug: string, formData: FormData) {
             const url = (result as any)?.url;
             if (url) uploadedPhotoUrls.push(url);
         } catch (err) {
-            console.error("[updateBlog] failed to upload blog photo", err);
+            // console.error("[updateBlog] failed to upload blog photo", err);
             throw new Error("Failed to upload one of the images");
         }
     }
@@ -297,15 +297,15 @@ async function updateBlog(slug: string, formData: FormData) {
         }
     }
 
-    console.log("[EditBlogPage] updateBlog sending PUT", {
-        slug,
-        hasPhotos: allPhotos.length > 0,
-        tagCount: tags.length,
-        techStackCount: techStack.length,
-        authorSlugsCount: authorSlugs.length,
-        projectSlugsCount: projectSlugs.length,
-        eventSlugsCount: eventSlugs.length, // ✅
-    });
+    // console.log("[EditBlogPage] updateBlog sending PUT", {
+    //     slug,
+    //     hasPhotos: allPhotos.length > 0,
+    //     tagCount: tags.length,
+    //     techStackCount: techStack.length,
+    //     authorSlugsCount: authorSlugs.length,
+    //     projectSlugsCount: projectSlugs.length,
+    //     eventSlugsCount: eventSlugs.length, // ✅
+    // });
 
     const res = await fetch(`${API_BASE}/api/blogs/${slug}`, {
         method: "PUT",
@@ -325,21 +325,21 @@ async function updateBlog(slug: string, formData: FormData) {
         } catch {
             // ignore
         }
-        console.error("[EditBlogPage] updateBlog failed", {
-            slug,
-            status: res.status,
-            msg,
-        });
+        // console.error("[EditBlogPage] updateBlog failed", {
+        //     slug,
+        //     status: res.status,
+        //     msg,
+        // });
         throw new Error(msg);
     }
 
     const json = await res.json();
     const newSlug = json?.slug || slug;
 
-    console.log("[EditBlogPage] updateBlog success, redirecting", {
-        oldSlug: slug,
-        newSlug,
-    });
+    // console.log("[EditBlogPage] updateBlog success, redirecting", {
+    //     oldSlug: slug,
+    //     newSlug,
+    // });
 
     redirect(`/blog/${newSlug}`);
 }
@@ -347,7 +347,7 @@ async function updateBlog(slug: string, formData: FormData) {
 async function deleteBlog(slug: string, formData: FormData) {
     "use server";
 
-    console.log("[EditBlogPage] deleteBlog action invoked", { slug });
+    // console.log("[EditBlogPage] deleteBlog action invoked", { slug });
 
     const confirmSlug = (formData.get("confirmSlug") || "")
         .toString()
@@ -356,17 +356,17 @@ async function deleteBlog(slug: string, formData: FormData) {
     const cookieStore = cookies();
     const token = cookieStore.get("access_token")?.value;
 
-    console.log("[EditBlogPage] deleteBlog cookie check", {
-        slug,
-        hasToken: !!token,
-        confirmSlug,
-    });
+    // console.log("[EditBlogPage] deleteBlog cookie check", {
+    //     slug,
+    //     hasToken: !!token,
+    //     confirmSlug,
+    // });
 
     if (!token) {
-        console.warn(
-            "[EditBlogPage] deleteBlog: no token, redirecting to /account",
-            { slug },
-        );
+        // console.warn(
+        //     "[EditBlogPage] deleteBlog: no token, redirecting to /account",
+        //     { slug },
+        // );
         redirect("/account");
     }
 
@@ -388,17 +388,17 @@ async function deleteBlog(slug: string, formData: FormData) {
         } catch {
             // ignore
         }
-        console.error("[EditBlogPage] deleteBlog failed", {
-            slug,
-            status: res.status,
-            msg,
-        });
+        // console.error("[EditBlogPage] deleteBlog failed", {
+        //     slug,
+        //     status: res.status,
+        //     msg,
+        // });
         throw new Error(msg);
     }
 
-    console.log("[EditBlogPage] deleteBlog success, redirecting to /blog", {
-        slug,
-    });
+    // console.log("[EditBlogPage] deleteBlog success, redirecting to /blog", {
+    //     slug,
+    // });
 
     redirect("/blog");
 }
@@ -408,36 +408,36 @@ export default async function EditBlogPage({
                                            }: {
     params: { slug: string };
 }) {
-    console.log("[EditBlogPage] page start", { slug: params.slug });
+    // console.log("[EditBlogPage] page start", { slug: params.slug });
 
     const blog = await fetchBlog(params.slug);
     if (!blog) {
-        console.warn("[EditBlogPage] blog not found, calling notFound()", {
-            slug: params.slug,
-        });
+        // console.warn("[EditBlogPage] blog not found, calling notFound()", {
+        //     slug: params.slug,
+        // });
         notFound();
     }
 
-    console.log("[EditBlogPage] blog loaded", {
-        slug: blog.slug,
-        authorSlugs: (blog.authors || []).map((a) => a.slug),
-        projectSlugs: blog.projectSlugs,
-        eventSlugs: blog.eventSlugs, // ✅
-    });
+    // console.log("[EditBlogPage] blog loaded", {
+    //     slug: blog.slug,
+    //     authorSlugs: (blog.authors || []).map((a) => a.slug),
+    //     projectSlugs: blog.projectSlugs,
+    //     eventSlugs: blog.eventSlugs, // ✅
+    // });
 
     const cookieStore = cookies();
     const token = cookieStore.get("access_token")?.value;
 
-    console.log("[EditBlogPage] cookie access_token present?", {
-        slug: blog.slug,
-        hasToken: !!token,
-    });
+    // console.log("[EditBlogPage] cookie access_token present?", {
+    //     slug: blog.slug,
+    //     hasToken: !!token,
+    // });
 
     if (!token) {
-        console.warn(
-            "[EditBlogPage] no token on page load, redirecting to /account",
-            { slug: blog.slug },
-        );
+        // console.warn(
+        //     "[EditBlogPage] no token on page load, redirecting to /account",
+        //     { slug: blog.slug },
+        // );
         redirect("/account");
     }
 
@@ -445,9 +445,9 @@ export default async function EditBlogPage({
     let canEdit = false;
 
     try {
-        console.log("[EditBlogPage] fetching /api/auth/me for permission check", {
-            slug: blog.slug,
-        });
+        // console.log("[EditBlogPage] fetching /api/auth/me for permission check", {
+        //     slug: blog.slug,
+        // });
 
         const meData: any = await fetchMe(token);
         const rawUser = meData?.user ?? null;
@@ -482,38 +482,38 @@ export default async function EditBlogPage({
 
         canEdit = isAdminOrModerator || isAuthor;
 
-        console.log("[EditBlogPage] permission check", {
-            slug: blog.slug,
-            rawRoles,
-            upperRoles,
-            isAdminOrModerator,
-            myMemberSlug,
-            authorSlugsNorm,
-            isAuthor,
-            canEdit,
-        });
+        // console.log("[EditBlogPage] permission check", {
+        //     slug: blog.slug,
+        //     rawRoles,
+        //     upperRoles,
+        //     isAdminOrModerator,
+        //     myMemberSlug,
+        //     authorSlugsNorm,
+        //     isAuthor,
+        //     canEdit,
+        // });
     } catch (err) {
-        console.error(
-            "[EditBlogPage] failed to determine edit permissions",
-            err,
-        );
+        // console.error(
+        //     "[EditBlogPage] failed to determine edit permissions",
+        //     err,
+        // );
         canEdit = false;
     }
 
     if (!canEdit) {
-        console.warn(
-            "[EditBlogPage] canEdit=false, redirecting to detail view",
-            { slug: blog.slug },
-        );
+        // console.warn(
+        //     "[EditBlogPage] canEdit=false, redirecting to detail view",
+        //     { slug: blog.slug },
+        // );
         redirect(`/blog/${blog.slug}`);
     }
 
     const updateBlogWithSlug = updateBlog.bind(null, blog.slug);
     const deleteBlogWithSlug = deleteBlog.bind(null, blog.slug);
 
-    console.log("[EditBlogPage] rendering editor UI", {
-        slug: blog.slug,
-    });
+    // console.log("[EditBlogPage] rendering editor UI", {
+    //     slug: blog.slug,
+    // });
 
     return (
         <section className="section max-w-3xl">

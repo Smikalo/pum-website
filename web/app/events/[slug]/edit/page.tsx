@@ -488,7 +488,7 @@ export default function EditEventPage({ params }: Props) {
             } catch (err) {
                 if ((err as any)?.name !== "AbortError") {
                     // eslint-disable-next-line no-console
-                    console.error("[EditEvent] geocode error", err);
+                    // console.error("[EditEvent] geocode error", err);
                 }
             } finally {
                 setSearching(false);
@@ -532,7 +532,7 @@ export default function EditEventPage({ params }: Props) {
             } catch (err) {
                 if (!cancelled) {
                     // eslint-disable-next-line no-console
-                    console.error("[EditEvent] members load error", err);
+                    // console.error("[EditEvent] members load error", err);
                     setMembersError("Could not load members.");
                 }
             } finally {
@@ -572,7 +572,7 @@ export default function EditEventPage({ params }: Props) {
             } catch (err) {
                 if (!cancelled) {
                     // eslint-disable-next-line no-console
-                    console.error("[EditEvent] projects load error", err);
+                    // console.error("[EditEvent] projects load error", err);
                     setProjectsError("Could not load projects.");
                 }
             } finally {
@@ -621,7 +621,7 @@ export default function EditEventPage({ params }: Props) {
             } catch (err) {
                 if (!cancelled) {
                     // eslint-disable-next-line no-console
-                    console.error("[EditEvent] blogs load error", err);
+                    // console.error("[EditEvent] blogs load error", err);
                     // blogs are optional; we do NOT surface a red error
                 }
             } finally {
@@ -767,7 +767,7 @@ export default function EditEventPage({ params }: Props) {
                 }
             } catch (err) {
                 // eslint-disable-next-line no-console
-                console.error("[EditEvent] loadEvent error", err);
+                // console.error("[EditEvent] loadEvent error", err);
                 if (!cancelled)
                     setLoadError("Failed to load event.");
             } finally {
@@ -1350,7 +1350,7 @@ export default function EditEventPage({ params }: Props) {
             }, 600);
         } catch (err: any) {
             // eslint-disable-next-line no-console
-            console.error("[EditEvent] onSubmit error", err);
+            // console.error("[EditEvent] onSubmit error", err);
             const msg =
                 err?.message ||
                 "Failed to update event";
@@ -1402,10 +1402,10 @@ export default function EditEventPage({ params }: Props) {
             router.push("/events");
         } catch (err: any) {
             // eslint-disable-next-line no-console
-            console.error(
-                "[EditEvent] delete error",
-                err,
-            );
+            // console.error(
+            //     "[EditEvent] delete error",
+            //     err,
+            // );
             const msg =
                 err?.message ||
                 "Failed to delete event.";

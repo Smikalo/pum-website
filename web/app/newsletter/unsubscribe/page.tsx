@@ -39,7 +39,7 @@ async function unsubscribeWithToken(token: string | null): Promise<UnsubResult> 
             message: body?.message || "You’ve been unsubscribed from updates.",
         };
     } catch (err) {
-        console.error("[unsubscribe] request failed", err);
+        // console.error("[unsubscribe] request failed", err);
         return {
             state: "error",
             message: "We couldn’t reach the server. Please try again later.",

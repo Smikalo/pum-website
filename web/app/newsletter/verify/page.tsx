@@ -34,7 +34,7 @@ async function verifyToken(token: string): Promise<VerifyResult> {
             email: json.email,
         };
     } catch (err) {
-        console.error("[newsletter/verify] request failed", err);
+        // console.error("[newsletter/verify] request failed", err);
         return {
             ok: false,
             error: "Unable to reach verification server. Please try again later.",

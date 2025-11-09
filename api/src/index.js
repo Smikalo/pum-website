@@ -33,12 +33,12 @@ const corsOptions = {
     optionsSuccessStatus: 204,
 };
 
-console.log("[config] WEB_ORIGIN =", WEB_ORIGIN);
+// console.log("[config] WEB_ORIGIN =", WEB_ORIGIN);
 
 app.use((req, _res, next) => {
-    console.log(
-        `[req] ${req.method} ${req.originalUrl} origin=${req.headers.origin || "n/a"}`,
-    );
+    // console.log(
+    //     `[req] ${req.method} ${req.originalUrl} origin=${req.headers.origin || "n/a"}`,
+    // );
     next();
 });
 
@@ -101,7 +101,7 @@ const JWT_ACCESS_SECRET =
 const NEWSLETTER_SECRET =
     process.env.NEWSLETTER_SECRET || "dev-only-newsletter-secret";
 
-console.log("[config] PUBLIC_API_BASE =", PUBLIC_API_BASE || "(not set)");
+// console.log("[config] PUBLIC_API_BASE =", PUBLIC_API_BASE || "(not set)");
 
 function abs(u, req) {
     if (!u) return null;
@@ -138,11 +138,11 @@ const SMTP_PASS = process.env.SMTP_PASS || null;
 
 let mailTransporter = null;
 if (SMTP_HOST) {
-    console.log("[mail] configuring SMTP transport", {
-        host: SMTP_HOST,
-        port: SMTP_PORT,
-        user: SMTP_USER ? "(set)" : "(none)",
-    });
+    // console.log("[mail] configuring SMTP transport", {
+    //     host: SMTP_HOST,
+    //     port: SMTP_PORT,
+    //     user: SMTP_USER ? "(set)" : "(none)",
+    // });
     mailTransporter = nodemailer.createTransport({
         host: SMTP_HOST,
         port: SMTP_PORT,
@@ -155,30 +155,30 @@ if (SMTP_HOST) {
             : undefined,
     });
 } else {
-    console.log(
-        "[mail] SMTP_HOST not set; invite emails will be logged only",
-    );
+    // console.log(
+    //     "[mail] SMTP_HOST not set; invite emails will be logged only",
+    // );
 }
 
 async function sendInviteEmail(to, subject, text) {
     if (!to) return;
     if (!mailTransporter) {
-        console.log(
-            `[invite-email] (no SMTP configured) Would send mail from ${MAIL_FROM} to ${to}:\nSubject: ${subject}\n\n${text}`,
-        );
+        // console.log(
+        //     `[invite-email] (no SMTP configured) Would send mail from ${MAIL_FROM} to ${to}:\nSubject: ${subject}\n\n${text}`,
+        // );
         return;
     }
     try {
-        console.log("[invite-email] sending mail to", to);
+        // console.log("[invite-email] sending mail to", to);
         await mailTransporter.sendMail({
             from: MAIL_FROM,
             to,
             subject,
             text,
         });
-        console.log("[invite-email] sent OK to", to);
+        // console.log("[invite-email] sent OK to", to);
     } catch (err) {
-        console.error("[invite-email] send error", err);
+        // console.error("[invite-email] send error", err);
     }
 }
 
@@ -197,11 +197,11 @@ async function requireUser(req, res) {
     const auth = req.get("authorization") || "";
     const m = auth.match(/^Bearer (.+)$/i);
     if (!m) {
-        console.warn(
-            "[auth] missing access token for",
-            req.method,
-            req.originalUrl,
-        );
+        // console.warn(
+        //     "[auth] missing access token for",
+        //     req.method,
+        //     req.originalUrl,
+        // );
         res.status(401).json({ ok: false, error: "Missing access token" });
         return null;
     }
@@ -209,27 +209,27 @@ async function requireUser(req, res) {
         const decoded = jwt.verify(m[1], JWT_ACCESS_SECRET, {
             algorithms: ["HS256"],
         });
-        console.log("[auth] token OK for user id", decoded.sub);
+        // console.log("[auth] token OK for user id", decoded.sub);
         const user = await prisma.user.findUnique({
             where: { id: decoded.sub },
             include: { roles: true, member: true },
         });
         if (!user) {
-            console.warn(
-                "[auth] token user not found in DB",
-                decoded.sub,
-            );
+            // console.warn(
+            //     "[auth] token user not found in DB",
+            //     decoded.sub,
+            // );
             res.status(401).json({ ok: false, error: "Unknown user" });
             return null;
         }
         return user;
     } catch (err) {
-        console.warn(
-            "[auth] invalid access token for",
-            req.method,
-            req.originalUrl,
-            err?.message,
-        );
+        // console.warn(
+        //     "[auth] invalid access token for",
+        //     req.method,
+        //     req.originalUrl,
+        //     err?.message,
+        // );
         res.status(401).json({ ok: false, error: "Invalid access token" });
         return null;
     }
@@ -360,7 +360,7 @@ app.get("/api/members/:slug", async (req, res) => {
         events: { include: { event: true } },
     };
 
-    console.log("[members/:slug] slug =", req.params.slug);
+    // console.log("[members/:slug] slug =", req.params.slug);
 
     let m = await prisma.member.findUnique({
         where: { slug: req.params.slug },
@@ -368,9 +368,9 @@ app.get("/api/members/:slug", async (req, res) => {
     });
 
     if (!m) {
-        console.log(
-            "[members/:slug] not found by slug; trying user email link",
-        );
+        // console.log(
+        //     "[members/:slug] not found by slug; trying user email link",
+        // );
         const u = await prisma.user.findFirst({
             where: {
                 email: {
@@ -390,7 +390,7 @@ app.get("/api/members/:slug", async (req, res) => {
     }
 
     if (!m) {
-        console.warn("[members/:slug] 404 for slug", req.params.slug);
+        // console.warn("[members/:slug] 404 for slug", req.params.slug);
         return res.status(404).json({ error: "Not found" });
     }
 
@@ -467,21 +467,21 @@ app.get("/api/members/:slug", async (req, res) => {
 });
 
 app.put("/api/members/:slug", async (req, res) => {
-    console.log("========== [PUT /api/members/:slug] BEGIN ==========");
-    console.log("[PUT /api/members/:slug] slug =", req.params.slug);
-    console.log(
-        "[PUT /api/members/:slug] raw body =",
-        JSON.stringify(req.body),
-    );
+    // console.log("========== [PUT /api/members/:slug] BEGIN ==========");
+    // console.log("[PUT /api/members/:slug] slug =", req.params.slug);
+    // console.log(
+    //     "[PUT /api/members/:slug] raw body =",
+    //     JSON.stringify(req.body),
+    // );
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn(
-            "[PUT /api/members/:slug] blocked: unauthenticated",
-        );
-        console.log(
-            "========== [PUT /api/members/:slug] END (unauthenticated) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/members/:slug] blocked: unauthenticated",
+        // );
+        // console.log(
+        //     "========== [PUT /api/members/:slug] END (unauthenticated) ==========",
+        // );
         return;
     }
 
@@ -492,13 +492,13 @@ app.put("/api/members/:slug", async (req, res) => {
     const isAdmin = roles.includes("ADMIN");
 
     if (!isAdminOrModerator) {
-        console.warn(
-            "[PUT /api/members/:slug] blocked: insufficient permissions for user",
-            user.id,
-        );
-        console.log(
-            "========== [PUT /api/members/:slug] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/members/:slug] blocked: insufficient permissions for user",
+        //     user.id,
+        // );
+        // console.log(
+        //     "========== [PUT /api/members/:slug] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -509,13 +509,13 @@ app.put("/api/members/:slug", async (req, res) => {
     });
 
     if (!member) {
-        console.warn(
-            "[PUT /api/members/:slug] 404 for slug",
-            req.params.slug,
-        );
-        console.log(
-            "========== [PUT /api/members/:slug] END (not found) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/members/:slug] 404 for slug",
+        //     req.params.slug,
+        // );
+        // console.log(
+        //     "========== [PUT /api/members/:slug] END (not found) ==========",
+        // );
         return res.status(404).json({ ok: false, error: "Not found" });
     }
 
@@ -529,13 +529,13 @@ app.put("/api/members/:slug", async (req, res) => {
     );
 
     if (isAdminMember) {
-        console.warn(
-            "[PUT /api/members/:slug] blocked: attempted edit of admin member id",
-            member.id,
-        );
-        console.log(
-            "========== [PUT /api/members/:slug] END (admin blocked) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/members/:slug] blocked: attempted edit of admin member id",
+        //     member.id,
+        // );
+        // console.log(
+        //     "========== [PUT /api/members/:slug] END (admin blocked) ==========",
+        // );
         return res.status(403).json({
             ok: false,
             error: "Cannot edit admin member from this page",
@@ -544,13 +544,13 @@ app.put("/api/members/:slug", async (req, res) => {
 
     const parsed = memberProfileUpdateSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[PUT /api/members/:slug] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [PUT /api/members/:slug] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/members/:slug] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [PUT /api/members/:slug] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -564,13 +564,13 @@ app.put("/api/members/:slug", async (req, res) => {
     );
 
     if (bodyHasAccessRole && !isAdmin) {
-        console.warn(
-            "[PUT /api/members/:slug] blocked: non-admin attempting to change accessRole",
-            user.id,
-        );
-        console.log(
-            "========== [PUT /api/members/:slug] END (accessRole forbidden) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/members/:slug] blocked: non-admin attempting to change accessRole",
+        //     user.id,
+        // );
+        // console.log(
+        //     "========== [PUT /api/members/:slug] END (accessRole forbidden) ==========",
+        // );
         return res.status(403).json({
             ok: false,
             error: "Only admins can change member access role",
@@ -704,10 +704,10 @@ app.put("/api/members/:slug", async (req, res) => {
         const userRoles = Array.from(roleSet);
         const isAdminMemberAfter = userRoles.includes("ADMIN");
 
-        console.log(
-            "[PUT /api/members/:slug] END (success) member id =",
-            updated?.id,
-        );
+        // console.log(
+        //     "[PUT /api/members/:slug] END (success) member id =",
+        //     updated?.id,
+        // );
         return res.status(200).json({
             ok: true,
             member: {
@@ -758,13 +758,13 @@ app.put("/api/members/:slug", async (req, res) => {
             },
         });
     } catch (err) {
-        console.error(
-            "[PUT /api/members/:slug] error during update",
-            err,
-        );
-        console.log(
-            "========== [PUT /api/members/:slug] END (error) ==========",
-        );
+        // console.error(
+        //     "[PUT /api/members/:slug] error during update",
+        //     err,
+        // );
+        // console.log(
+        //     "========== [PUT /api/members/:slug] END (error) ==========",
+        // );
         return res.status(500).json({
             ok: false,
             error: "Failed to update member",
@@ -773,17 +773,17 @@ app.put("/api/members/:slug", async (req, res) => {
 });
 
 app.delete("/api/members/:slug", async (req, res) => {
-    console.log("========== [DELETE /api/members/:slug] BEGIN ==========");
-    console.log("[DELETE /api/members/:slug] slug =", req.params.slug);
+    // console.log("========== [DELETE /api/members/:slug] BEGIN ==========");
+    // console.log("[DELETE /api/members/:slug] slug =", req.params.slug);
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn(
-            "[DELETE /api/members/:slug] blocked: unauthenticated",
-        );
-        console.log(
-            "========== [DELETE /api/members/:slug] END (unauthenticated) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/members/:slug] blocked: unauthenticated",
+        // );
+        // console.log(
+        //     "========== [DELETE /api/members/:slug] END (unauthenticated) ==========",
+        // );
         return;
     }
 
@@ -793,13 +793,13 @@ app.delete("/api/members/:slug", async (req, res) => {
     );
 
     if (!isAdminOrModerator) {
-        console.warn(
-            "[DELETE /api/members/:slug] blocked: insufficient permissions for user",
-            user.id,
-        );
-        console.log(
-            "========== [DELETE /api/members/:slug] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/members/:slug] blocked: insufficient permissions for user",
+        //     user.id,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/members/:slug] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -810,13 +810,13 @@ app.delete("/api/members/:slug", async (req, res) => {
     });
 
     if (!member) {
-        console.warn(
-            "[DELETE /api/members/:slug] 404 for slug",
-            req.params.slug,
-        );
-        console.log(
-            "========== [DELETE /api/members/:slug] END (not found) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/members/:slug] 404 for slug",
+        //     req.params.slug,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/members/:slug] END (not found) ==========",
+        // );
         return res
             .status(404)
             .json({ ok: false, error: "Not found" });
@@ -832,13 +832,13 @@ app.delete("/api/members/:slug", async (req, res) => {
     );
 
     if (isAdminMemberDelete) {
-        console.warn(
-            "[DELETE /api/members/:slug] blocked: attempted delete of admin member id",
-            member.id,
-        );
-        console.log(
-            "========== [DELETE /api/members/:slug] END (admin blocked) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/members/:slug] blocked: attempted delete of admin member id",
+        //     member.id,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/members/:slug] END (admin blocked) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Cannot delete admin member" });
@@ -846,13 +846,13 @@ app.delete("/api/members/:slug", async (req, res) => {
 
     const parsed = deleteBySlugSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[DELETE /api/members/:slug] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [DELETE /api/members/:slug] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/members/:slug] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [DELETE /api/members/:slug] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -862,15 +862,15 @@ app.delete("/api/members/:slug", async (req, res) => {
 
     const { confirmSlug } = parsed.data;
     if (confirmSlug !== member.slug) {
-        console.warn(
-            "[DELETE /api/members/:slug] slug confirmation mismatch, got",
-            confirmSlug,
-            "expected",
-            member.slug,
-        );
-        console.log(
-            "========== [DELETE /api/members/:slug] END (slug mismatch) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/members/:slug] slug confirmation mismatch, got",
+        //     confirmSlug,
+        //     "expected",
+        //     member.slug,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/members/:slug] END (slug mismatch) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Slug confirmation does not match",
@@ -902,18 +902,18 @@ app.delete("/api/members/:slug", async (req, res) => {
             });
         });
 
-        console.log(
-            "========== [DELETE /api/members/:slug] END (success) ==========",
-        );
+        // console.log(
+        //     "========== [DELETE /api/members/:slug] END (success) ==========",
+        // );
         return res.status(200).json({ ok: true });
     } catch (err) {
-        console.error(
-            "[DELETE /api/members/:slug] error during deletion",
-            err,
-        );
-        console.log(
-            "========== [DELETE /api/members/:slug] END (error) ==========",
-        );
+        // console.error(
+        //     "[DELETE /api/members/:slug] error during deletion",
+        //     err,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/members/:slug] END (error) ==========",
+        // );
         return res.status(500).json({
             ok: false,
             error: "Failed to delete member",
@@ -945,12 +945,12 @@ const uploadMemberCv = multer({
 app.post(
     "/api/members/:slug/cv",
     async (req, res, next) => {
-        console.log("[POST /api/members/:slug/cv] incoming upload");
+        // console.log("[POST /api/members/:slug/cv] incoming upload");
         const user = await requireUser(req, res);
         if (!user) {
-            console.warn(
-                "[POST /api/members/:slug/cv] blocked: unauthenticated",
-            );
+            // console.warn(
+            //     "[POST /api/members/:slug/cv] blocked: unauthenticated",
+            // );
             return;
         }
 
@@ -959,10 +959,10 @@ app.post(
             ["ADMIN", "MODERATOR"].includes(r),
         );
         if (!isAdminOrModerator) {
-            console.warn(
-                "[POST /api/members/:slug/cv] blocked: insufficient permissions",
-                user.id,
-            );
+            // console.warn(
+            //     "[POST /api/members/:slug/cv] blocked: insufficient permissions",
+            //     user.id,
+            // );
             return res.status(403).json({
                 ok: false,
                 error: "Insufficient permissions",
@@ -973,10 +973,10 @@ app.post(
             where: { slug: req.params.slug },
         });
         if (!member) {
-            console.warn(
-                "[POST /api/members/:slug/cv] member not found for slug",
-                req.params.slug,
-            );
+            // console.warn(
+            //     "[POST /api/members/:slug/cv] member not found for slug",
+            //     req.params.slug,
+            // );
             return res
                 .status(404)
                 .json({ ok: false, error: "Member not found" });
@@ -991,10 +991,10 @@ app.post(
             (u.roles || []).some((r) => r.role === "ADMIN"),
         );
         if (isAdminMember) {
-            console.warn(
-                "[POST /api/members/:slug/cv] blocked: attempt to upload CV for admin member",
-                member.id,
-            );
+            // console.warn(
+            //     "[POST /api/members/:slug/cv] blocked: attempt to upload CV for admin member",
+            //     member.id,
+            // );
             return res.status(403).json({
                 ok: false,
                 error: "Cannot modify admin member from this page",
@@ -1002,10 +1002,10 @@ app.post(
         }
 
         if (!usersForMember.length) {
-            console.warn(
-                "[POST /api/members/:slug/cv] no users linked to member id",
-                member.id,
-            );
+            // console.warn(
+            //     "[POST /api/members/:slug/cv] no users linked to member id",
+            //     member.id,
+            // );
             return res.status(400).json({
                 ok: false,
                 error: "No user account linked to this member",
@@ -1037,10 +1037,10 @@ app.post(
         try {
             fs.renameSync(req.file.path, finalPath);
         } catch (err) {
-            console.error(
-                "[POST /api/members/:slug/cv] failed to move CV file",
-                err,
-            );
+            // console.error(
+            //     "[POST /api/members/:slug/cv] failed to move CV file",
+            //     err,
+            // );
             return res.status(500).json({
                 ok: false,
                 error: "Failed to store CV file",
@@ -1048,12 +1048,12 @@ app.post(
         }
 
         const url = abs(`/uploads/cv/${finalName}`, req);
-        console.log(
-            "[POST /api/members/:slug/cv] stored CV for userId",
-            userId,
-            "at",
-            url,
-        );
+        // console.log(
+        //     "[POST /api/members/:slug/cv] stored CV for userId",
+        //     userId,
+        //     "at",
+        //     url,
+        // );
 
         return res.status(201).json({ ok: true, url });
     },
@@ -1084,12 +1084,12 @@ const uploadMemberAvatar = multer({
 app.post(
     "/api/members/:slug/avatar",
     async (req, res, next) => {
-        console.log("[POST /api/members/:slug/avatar] incoming upload");
+        // console.log("[POST /api/members/:slug/avatar] incoming upload");
         const user = await requireUser(req, res);
         if (!user) {
-            console.warn(
-                "[POST /api/members/:slug/avatar] blocked: unauthenticated",
-            );
+            // console.warn(
+            //     "[POST /api/members/:slug/avatar] blocked: unauthenticated",
+            // );
             return;
         }
 
@@ -1098,10 +1098,10 @@ app.post(
             ["ADMIN", "MODERATOR"].includes(r),
         );
         if (!isAdminOrModerator) {
-            console.warn(
-                "[POST /api/members/:slug/avatar] blocked: insufficient permissions",
-                user.id,
-            );
+            // console.warn(
+            //     "[POST /api/members/:slug/avatar] blocked: insufficient permissions",
+            //     user.id,
+            // );
             return res.status(403).json({
                 ok: false,
                 error: "Insufficient permissions",
@@ -1112,10 +1112,10 @@ app.post(
             where: { slug: req.params.slug },
         });
         if (!member) {
-            console.warn(
-                "[POST /api/members/:slug/avatar] member not found for slug",
-                req.params.slug,
-            );
+            // console.warn(
+            //     "[POST /api/members/:slug/avatar] member not found for slug",
+            //     req.params.slug,
+            // );
             return res
                 .status(404)
                 .json({ ok: false, error: "Member not found" });
@@ -1130,10 +1130,10 @@ app.post(
             (u.roles || []).some((r) => r.role === "ADMIN"),
         );
         if (isAdminMember) {
-            console.warn(
-                "[POST /api/members/:slug/avatar] blocked: attempt to upload avatar for admin member",
-                member.id,
-            );
+            // console.warn(
+            //     "[POST /api/members/:slug/avatar] blocked: attempt to upload avatar for admin member",
+            //     member.id,
+            // );
             return res.status(403).json({
                 ok: false,
                 error: "Cannot modify admin member from this page",
@@ -1171,10 +1171,10 @@ app.post(
                 }
             }
         } catch (err) {
-            console.warn(
-                "[POST /api/members/:slug/avatar] failed to delete old avatar",
-                err,
-            );
+            // console.warn(
+            //     "[POST /api/members/:slug/avatar] failed to delete old avatar",
+            //     err,
+            // );
         }
 
         await prisma.member.update({
@@ -1182,12 +1182,12 @@ app.post(
             data: { avatarUrl: relPath },
         });
 
-        console.log(
-            "[POST /api/members/:slug/avatar] stored avatar for memberId",
-            member.id,
-            "at",
-            absUrl,
-        );
+        // console.log(
+        //     "[POST /api/members/:slug/avatar] stored avatar for memberId",
+        //     member.id,
+        //     "at",
+        //     absUrl,
+        // );
 
         return res.status(201).json({
             ok: true,
@@ -1458,37 +1458,37 @@ app.get("/api/projects/:slug", async (req, res) => {
 });
 
 app.post("/api/projects", async (req, res) => {
-    console.log("========== [POST /api/projects] BEGIN ==========");
-    console.log("[POST /api/projects] raw body =", JSON.stringify(req.body));
+    // console.log("========== [POST /api/projects] BEGIN ==========");
+    // console.log("[POST /api/projects] raw body =", JSON.stringify(req.body));
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn("[POST /api/projects] blocked: unauthenticated");
-        console.log(
-            "========== [POST /api/projects] END (unauthenticated) ==========",
-        );
+        // console.warn("[POST /api/projects] blocked: unauthenticated");
+        // console.log(
+        //     "========== [POST /api/projects] END (unauthenticated) ==========",
+        // );
         return;
     }
 
     const userRoles = (user.roles || []).map((r) => r.role);
-    console.log(
-        "[POST /api/projects] authenticated user id =",
-        user.id,
-        "roles =",
-        userRoles,
-    );
+    // console.log(
+    //     "[POST /api/projects] authenticated user id =",
+    //     user.id,
+    //     "roles =",
+    //     userRoles,
+    // );
 
     const hasMemberRole = userRoles.some((r) =>
         ["ADMIN", "MODERATOR", "MEMBER"].includes(r),
     );
     if (!hasMemberRole) {
-        console.warn(
-            "[POST /api/projects] blocked: insufficient role for user",
-            user.id,
-        );
-        console.log(
-            "========== [POST /api/projects] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/projects] blocked: insufficient role for user",
+        //     user.id,
+        // );
+        // console.log(
+        //     "========== [POST /api/projects] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -1502,13 +1502,13 @@ app.post("/api/projects", async (req, res) => {
                 : req.body?.year,
     });
     if (!parsed.success) {
-        console.warn(
-            "[POST /api/projects] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [POST /api/projects] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/projects] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [POST /api/projects] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -1517,34 +1517,34 @@ app.post("/api/projects", async (req, res) => {
     }
 
     const d = parsed.data;
-    console.log("[POST /api/projects] parsed data (without photos) =", {
-        title: d.title,
-        year: d.year,
-        status: d.status,
-        summary: d.summary ? d.summary.slice(0, 100) + "…" : null,
-        demoUrl: d.demoUrl || null,
-        repoUrl: d.repoUrl || null,
-        techStackCount: Array.isArray(d.techStack)
-            ? d.techStack.length
-            : 0,
-        tagsCount: Array.isArray(d.tags) ? d.tags.length : 0,
-        membersCount: Array.isArray(d.members) ? d.members.length : 0,
-        blogSlugsCount: Array.isArray(d.blogSlugs)
-            ? d.blogSlugs.length
-            : 0,
-        eventSlugsCount: Array.isArray(d.eventSlugs)
-            ? d.eventSlugs.length
-            : 0,
-        linksCount: Array.isArray(d.links) ? d.links.length : 0,
-    });
+    // console.log("[POST /api/projects] parsed data (without photos) =", {
+    //     title: d.title,
+    //     year: d.year,
+    //     status: d.status,
+    //     summary: d.summary ? d.summary.slice(0, 100) + "…" : null,
+    //     demoUrl: d.demoUrl || null,
+    //     repoUrl: d.repoUrl || null,
+    //     techStackCount: Array.isArray(d.techStack)
+    //         ? d.techStack.length
+    //         : 0,
+    //     tagsCount: Array.isArray(d.tags) ? d.tags.length : 0,
+    //     membersCount: Array.isArray(d.members) ? d.members.length : 0,
+    //     blogSlugsCount: Array.isArray(d.blogSlugs)
+    //         ? d.blogSlugs.length
+    //         : 0,
+    //     eventSlugsCount: Array.isArray(d.eventSlugs)
+    //         ? d.eventSlugs.length
+    //         : 0,
+    //     linksCount: Array.isArray(d.links) ? d.links.length : 0,
+    // });
 
     const rawMembers = Array.isArray(d.members) ? d.members : [];
     rawMembers.forEach((m, idx) => {
-        console.log(`[POST /api/projects] members[${idx}] =`, m);
+        // console.log(`[POST /api/projects] members[${idx}] =`, m);
     });
 
     const slug = await uniqueProjectSlug(d.title);
-    console.log("[POST /api/projects] generated slug =", slug);
+    // console.log("[POST /api/projects] generated slug =", slug);
 
     const photos = Array.isArray(d.photos) ? d.photos : [];
     const coverRel = photos.length ? photos[0] : null;
@@ -1563,7 +1563,7 @@ app.post("/api/projects", async (req, res) => {
         linksMap[label] = url;
     }
 
-    console.log("[POST /api/projects] creating project record in DB…");
+    // console.log("[POST /api/projects] creating project record in DB…");
     const project = await prisma.project.create({
         data: {
             slug,
@@ -1584,7 +1584,7 @@ app.post("/api/projects", async (req, res) => {
         },
     });
 
-    console.log("[POST /api/projects] created project id =", project.id);
+    // console.log("[POST /api/projects] created project id =", project.id);
 
     const techNames = Array.isArray(d.techStack) ? d.techStack : [];
     const tagNames = Array.isArray(d.tags) ? d.tags : [];
@@ -1617,18 +1617,18 @@ app.post("/api/projects", async (req, res) => {
 
     const blogSlugs = Array.isArray(d.blogSlugs) ? d.blogSlugs : [];
     if (blogSlugs.length) {
-        console.log(
-            "[POST /api/projects] linking related blogs by slugs =",
-            blogSlugs,
-        );
+        // console.log(
+        //     "[POST /api/projects] linking related blogs by slugs =",
+        //     blogSlugs,
+        // );
         const blogs = await prisma.blog.findMany({
             where: { slug: { in: blogSlugs } },
             select: { id: true, slug: true },
         });
-        console.log(
-            "[POST /api/projects] found blogs for relation =",
-            blogs.map((b) => b.slug),
-        );
+        // console.log(
+        //     "[POST /api/projects] found blogs for relation =",
+        //     blogs.map((b) => b.slug),
+        // );
 
         if (blogs.length) {
             await prisma.projectBlog.createMany({
@@ -1643,18 +1643,18 @@ app.post("/api/projects", async (req, res) => {
 
     const eventSlugs = Array.isArray(d.eventSlugs) ? d.eventSlugs : [];
     if (eventSlugs.length) {
-        console.log(
-            "[POST /api/projects] linking related events by slugs =",
-            eventSlugs,
-        );
+        // console.log(
+        //     "[POST /api/projects] linking related events by slugs =",
+        //     eventSlugs,
+        // );
         const events = await prisma.event.findMany({
             where: { slug: { in: eventSlugs } },
             select: { id: true, slug: true },
         });
-        console.log(
-            "[POST /api/projects] found events for relation =",
-            events.map((e) => e.slug),
-        );
+        // console.log(
+        //     "[POST /api/projects] found events for relation =",
+        //     events.map((e) => e.slug),
+        // );
         if (events.length) {
             await prisma.eventProject.createMany({
                 data: events.map((e) => ({
@@ -1701,15 +1701,15 @@ app.post("/api/projects", async (req, res) => {
                 },
             });
         } catch (err) {
-            console.error(
-                "[POST /api/projects] failed to create memberProject CREATOR record",
-                err,
-            );
+            // console.error(
+            //     "[POST /api/projects] failed to create memberProject CREATOR record",
+            //     err,
+            // );
         }
     } else {
-        console.log(
-            "[POST /api/projects] user has no member profile; skipping creator memberProject",
-        );
+        // console.log(
+        //     "[POST /api/projects] user has no member profile; skipping creator memberProject",
+        // );
     }
 
     for (const m of membersWithId) {
@@ -1732,11 +1732,11 @@ app.post("/api/projects", async (req, res) => {
                 },
             });
         } catch (err) {
-            console.error(
-                "[POST /api/projects] failed to create memberProject row for memberId",
-                m.memberId,
-                err,
-            );
+            // console.error(
+            //     "[POST /api/projects] failed to create memberProject row for memberId",
+            //     m.memberId,
+            //     err,
+            // );
         }
     }
 
@@ -1768,18 +1768,18 @@ app.post("/api/projects", async (req, res) => {
     }
 
     if (memberIdsFromPayload.length) {
-        console.log(
-            "[POST /api/projects] looking up users for memberIds =",
-            memberIdsFromPayload,
-        );
+        // console.log(
+        //     "[POST /api/projects] looking up users for memberIds =",
+        //     memberIdsFromPayload,
+        // );
         const usersForMembers = await prisma.user.findMany({
             where: { memberId: { in: memberIdsFromPayload } },
             select: { email: true, memberId: true },
         });
-        console.log(
-            "[POST /api/projects] usersForMembers =",
-            usersForMembers,
-        );
+        // console.log(
+        //     "[POST /api/projects] usersForMembers =",
+        //     usersForMembers,
+        // );
         for (const u of usersForMembers) {
             if (!u.email) continue;
             const lower = u.email.toLowerCase();
@@ -1807,7 +1807,7 @@ app.post("/api/projects", async (req, res) => {
     }
 
     const invites = Array.from(inviteMap.values());
-    console.log("[POST /api/projects] final invite specs =", invites);
+    // console.log("[POST /api/projects] final invite specs =", invites);
 
     if (invites.length) {
         const webBase = WEB_ORIGIN.replace(/\/$/, "");
@@ -1817,15 +1817,15 @@ app.post("/api/projects", async (req, res) => {
             const email = inv.email;
             const roleLabel = inv.role || "Contributor";
 
-            console.log(
-                "[POST /api/projects] creating invite for email =",
-                email,
-            );
+            // console.log(
+            //     "[POST /api/projects] creating invite for email =",
+            //     email,
+            // );
             const { raw, hash } = genInviteToken();
-            console.log(
-                "[POST /api/projects] generated invite token (hash only logged) tokenHash =",
-                hash,
-            );
+            // console.log(
+            //     "[POST /api/projects] generated invite token (hash only logged) tokenHash =",
+            //     hash,
+            // );
 
             await prisma.projectInvite.create({
                 data: {
@@ -1861,38 +1861,38 @@ This invite was sent from ${MAIL_FROM}.
         }
     }
 
-    console.log("========== [POST /api/projects] END (success) ==========");
+    // console.log("========== [POST /api/projects] END (success) ==========");
     return res
         .status(201)
         .json({ ok: true, slug: project.slug, id: project.id });
 });
 
 app.put("/api/projects/:slug", async (req, res) => {
-    console.log("========== [PUT /api/projects/:slug] BEGIN ==========");
-    console.log("[PUT /api/projects/:slug] slug =", req.params.slug);
-    console.log(
-        "[PUT /api/projects/:slug] raw body =",
-        JSON.stringify(req.body),
-    );
+    // console.log("========== [PUT /api/projects/:slug] BEGIN ==========");
+    // console.log("[PUT /api/projects/:slug] slug =", req.params.slug);
+    // console.log(
+    //     "[PUT /api/projects/:slug] raw body =",
+    //     JSON.stringify(req.body),
+    // );
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn(
-            "[PUT /api/projects/:slug] blocked: unauthenticated",
-        );
-        console.log(
-            "========== [PUT /api/projects/:slug] END (unauthenticated) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/projects/:slug] blocked: unauthenticated",
+        // );
+        // console.log(
+        //     "========== [PUT /api/projects/:slug] END (unauthenticated) ==========",
+        // );
         return;
     }
 
     const userRoles = (user.roles || []).map((r) => r.role);
-    console.log(
-        "[PUT /api/projects/:slug] authenticated user id =",
-        user.id,
-        "roles =",
-        userRoles,
-    );
+    // console.log(
+    //     "[PUT /api/projects/:slug] authenticated user id =",
+    //     user.id,
+    //     "roles =",
+    //     userRoles,
+    // );
 
     const project = await prisma.project.findUnique({
         where: { slug: req.params.slug },
@@ -1903,13 +1903,13 @@ app.put("/api/projects/:slug", async (req, res) => {
     });
 
     if (!project) {
-        console.warn(
-            "[PUT /api/projects/:slug] 404 for slug",
-            req.params.slug,
-        );
-        console.log(
-            "========== [PUT /api/projects/:slug] END (not found) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/projects/:slug] 404 for slug",
+        //     req.params.slug,
+        // );
+        // console.log(
+        //     "========== [PUT /api/projects/:slug] END (not found) ==========",
+        // );
         return res.status(404).json({ ok: false, error: "Not found" });
     }
 
@@ -1931,13 +1931,13 @@ app.put("/api/projects/:slug", async (req, res) => {
     }
 
     if (!canEdit) {
-        console.warn(
-            "[PUT /api/projects/:slug] blocked: insufficient permissions for user",
-            user.id,
-        );
-        console.log(
-            "========== [PUT /api/projects/:slug] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/projects/:slug] blocked: insufficient permissions for user",
+        //     user.id,
+        // );
+        // console.log(
+        //     "========== [PUT /api/projects/:slug] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -1951,13 +1951,13 @@ app.put("/api/projects/:slug", async (req, res) => {
                 : req.body?.year,
     });
     if (!parsed.success) {
-        console.warn(
-            "[PUT /api/projects/:slug] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [PUT /api/projects/:slug] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/projects/:slug] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [PUT /api/projects/:slug] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -1991,32 +1991,32 @@ app.put("/api/projects/:slug", async (req, res) => {
         "links",
     );
 
-    console.log("[PUT /api/projects/:slug] parsed data (without photos) =", {
-        title: d.title,
-        year: d.year,
-        status: d.status,
-        summary: d.summary ? d.summary.slice(0, 100) + "…" : null,
-        demoUrl: d.demoUrl || null,
-        repoUrl: d.repoUrl || null,
-        techStackCount: Array.isArray(d.techStack)
-            ? d.techStack.length
-            : 0,
-        tagsCount: Array.isArray(d.tags) ? d.tags.length : 0,
-        hasBlogSlugs,
-        blogSlugsCount: Array.isArray(d.blogSlugs)
-            ? d.blogSlugs.length
-            : 0,
-        hasMembers,
-        membersCount: Array.isArray(d.members)
-            ? d.members.length
-            : 0,
-        hasEventSlugs,
-        eventSlugsCount: Array.isArray(d.eventSlugs)
-            ? d.eventSlugs.length
-            : 0,
-        hasLinks,
-        linksCount: Array.isArray(d.links) ? d.links.length : 0,
-    });
+    // console.log("[PUT /api/projects/:slug] parsed data (without photos) =", {
+    //     title: d.title,
+    //     year: d.year,
+    //     status: d.status,
+    //     summary: d.summary ? d.summary.slice(0, 100) + "…" : null,
+    //     demoUrl: d.demoUrl || null,
+    //     repoUrl: d.repoUrl || null,
+    //     techStackCount: Array.isArray(d.techStack)
+    //         ? d.techStack.length
+    //         : 0,
+    //     tagsCount: Array.isArray(d.tags) ? d.tags.length : 0,
+    //     hasBlogSlugs,
+    //     blogSlugsCount: Array.isArray(d.blogSlugs)
+    //         ? d.blogSlugs.length
+    //         : 0,
+    //     hasMembers,
+    //     membersCount: Array.isArray(d.members)
+    //         ? d.members.length
+    //         : 0,
+    //     hasEventSlugs,
+    //     eventSlugsCount: Array.isArray(d.eventSlugs)
+    //         ? d.eventSlugs.length
+    //         : 0,
+    //     hasLinks,
+    //     linksCount: Array.isArray(d.links) ? d.links.length : 0,
+    // });
 
     const photos = Array.isArray(d.photos)
         ? d.photos
@@ -2043,7 +2043,7 @@ app.put("/api/projects/:slug", async (req, res) => {
         linksToStore = map;
     }
 
-    console.log("[PUT /api/projects/:slug] updating project record in DB…");
+    // console.log("[PUT /api/projects/:slug] updating project record in DB…");
     const updated = await prisma.project.update({
         where: { id: project.id },
         data: {
@@ -2064,14 +2064,14 @@ app.put("/api/projects/:slug", async (req, res) => {
         },
     });
 
-    console.log("[PUT /api/projects/:slug] updated project id =", updated.id);
+    // console.log("[PUT /api/projects/:slug] updated project id =", updated.id);
 
     if (hasTechStack) {
         const techNames = Array.isArray(d.techStack) ? d.techStack : [];
-        console.log(
-            "[PUT /api/projects/:slug] updating techStack =",
-            techNames,
-        );
+        // console.log(
+        //     "[PUT /api/projects/:slug] updating techStack =",
+        //     techNames,
+        // );
         await prisma.projectTech.deleteMany({
             where: { projectId: updated.id },
         });
@@ -2091,7 +2091,7 @@ app.put("/api/projects/:slug", async (req, res) => {
 
     if (hasTags) {
         const tagNames = Array.isArray(d.tags) ? d.tags : [];
-        console.log("[PUT /api/projects/:slug] updating tags =", tagNames);
+        // console.log("[PUT /api/projects/:slug] updating tags =", tagNames);
         await prisma.projectTag.deleteMany({
             where: { projectId: updated.id },
         });
@@ -2111,10 +2111,10 @@ app.put("/api/projects/:slug", async (req, res) => {
 
     if (hasBlogSlugs) {
         const blogSlugs = Array.isArray(d.blogSlugs) ? d.blogSlugs : [];
-        console.log(
-            "[PUT /api/projects/:slug] updating related blogs, slugs =",
-            blogSlugs,
-        );
+        // console.log(
+        //     "[PUT /api/projects/:slug] updating related blogs, slugs =",
+        //     blogSlugs,
+        // );
 
         await prisma.projectBlog.deleteMany({
             where: { projectId: updated.id },
@@ -2125,10 +2125,10 @@ app.put("/api/projects/:slug", async (req, res) => {
                 where: { slug: { in: blogSlugs } },
                 select: { id: true, slug: true },
             });
-            console.log(
-                "[PUT /api/projects/:slug] found blogs for new relations =",
-                blogs.map((b) => b.slug),
-            );
+            // console.log(
+            //     "[PUT /api/projects/:slug] found blogs for new relations =",
+            //     blogs.map((b) => b.slug),
+            // );
 
             if (blogs.length) {
                 await prisma.projectBlog.createMany({
@@ -2146,10 +2146,10 @@ app.put("/api/projects/:slug", async (req, res) => {
         const eventSlugs = Array.isArray(d.eventSlugs)
             ? d.eventSlugs
             : [];
-        console.log(
-            "[PUT /api/projects/:slug] updating related events, slugs =",
-            eventSlugs,
-        );
+        // console.log(
+        //     "[PUT /api/projects/:slug] updating related events, slugs =",
+        //     eventSlugs,
+        // );
 
         await prisma.eventProject.deleteMany({
             where: { projectId: updated.id },
@@ -2160,10 +2160,10 @@ app.put("/api/projects/:slug", async (req, res) => {
                 where: { slug: { in: eventSlugs } },
                 select: { id: true, slug: true },
             });
-            console.log(
-                "[PUT /api/projects/:slug] found events for new relations =",
-                events.map((e) => e.slug),
-            );
+            // console.log(
+            //     "[PUT /api/projects/:slug] found events for new relations =",
+            //     events.map((e) => e.slug),
+            // );
 
             if (events.length) {
                 await prisma.eventProject.createMany({
@@ -2180,10 +2180,10 @@ app.put("/api/projects/:slug", async (req, res) => {
     if (hasMembers) {
         const rawMembers = Array.isArray(d.members) ? d.members : [];
         rawMembers.forEach((m, idx) => {
-            console.log(
-                `[PUT /api/projects/:slug] members[${idx}] =`,
-                m,
-            );
+            // console.log(
+            //     `[PUT /api/projects/:slug] members[${idx}] =`,
+            //     m,
+            // );
         });
 
         const existingInviteEmails = new Set(
@@ -2191,10 +2191,10 @@ app.put("/api/projects/:slug", async (req, res) => {
                 .map((i) => (i.email || "").toLowerCase())
                 .filter((e) => !!e),
         );
-        console.log(
-            "[PUT /api/projects/:slug] existingInviteEmails =",
-            Array.from(existingInviteEmails),
-        );
+        // console.log(
+        //     "[PUT /api/projects/:slug] existingInviteEmails =",
+        //     Array.from(existingInviteEmails),
+        // );
 
         const existingMemberMap = new Map(
             (project.members || []).map((m) => [m.memberId, m]),
@@ -2223,14 +2223,14 @@ app.put("/api/projects/:slug", async (req, res) => {
                         : !!existing?.isCreator;
 
                 if (existing) {
-                    console.log(
-                        "[PUT /api/projects/:slug] updating memberProject row for memberId",
-                        memberId,
-                        "role ->",
-                        newRole,
-                        "isCreator ->",
-                        newIsCreator,
-                    );
+                    // console.log(
+                    //     "[PUT /api/projects/:slug] updating memberProject row for memberId",
+                    //     memberId,
+                    //     "role ->",
+                    //     newRole,
+                    //     "isCreator ->",
+                    //     newIsCreator,
+                    // );
                     await prisma.memberProject.update({
                         where: {
                             memberId_projectId: {
@@ -2244,10 +2244,10 @@ app.put("/api/projects/:slug", async (req, res) => {
                         },
                     });
                 } else {
-                    console.log(
-                        "[PUT /api/projects/:slug] creating memberProject row for new memberId",
-                        memberId,
-                    );
+                    // console.log(
+                    //     "[PUT /api/projects/:slug] creating memberProject row for new memberId",
+                    //     memberId,
+                    // );
                     await prisma.memberProject.create({
                         data: {
                             memberId,
@@ -2264,16 +2264,16 @@ app.put("/api/projects/:slug", async (req, res) => {
         for (const existing of project.members || []) {
             if (newMemberIdsSet.has(existing.memberId)) continue;
             if (existing.isCreator) {
-                console.log(
-                    "[PUT /api/projects/:slug] not removing creator memberId",
-                    existing.memberId,
-                );
+                // console.log(
+                //     "[PUT /api/projects/:slug] not removing creator memberId",
+                //     existing.memberId,
+                // );
                 continue;
             }
-            console.log(
-                "[PUT /api/projects/:slug] removing memberProject row for memberId not in payload",
-                existing.memberId,
-            );
+            // console.log(
+            //     "[PUT /api/projects/:slug] removing memberProject row for memberId not in payload",
+            //     existing.memberId,
+            // );
             await prisma.memberProject.delete({
                 where: {
                     memberId_projectId: {
@@ -2296,10 +2296,10 @@ app.put("/api/projects/:slug", async (req, res) => {
             if (!addr || !emailRegex.test(addr)) continue;
             const lower = addr.toLowerCase();
             if (existingInviteEmails.has(lower)) {
-                console.log(
-                    "[PUT /api/projects/:slug] skipping already invited email (no re-invite):",
-                    lower,
-                );
+                // console.log(
+                //     "[PUT /api/projects/:slug] skipping already invited email (no re-invite):",
+                //     lower,
+                // );
                 continue;
             }
             if (!inviteMap.has(lower)) {
@@ -2310,26 +2310,26 @@ app.put("/api/projects/:slug", async (req, res) => {
         }
 
         if (memberIdsFromPayload.length) {
-            console.log(
-                "[PUT /api/projects/:slug] looking up users for memberIds =",
-                memberIdsFromPayload,
-            );
+            // console.log(
+            //     "[PUT /api/projects/:slug] looking up users for memberIds =",
+            //     memberIdsFromPayload,
+            // );
             const usersForMembers = await prisma.user.findMany({
                 where: { memberId: { in: memberIdsFromPayload } },
                 select: { email: true, memberId: true },
             });
-            console.log(
-                "[PUT /api/projects/:slug] usersForMembers =",
-                usersForMembers,
-            );
+            // console.log(
+            //     "[PUT /api/projects/:slug] usersForMembers =",
+            //     usersForMembers,
+            // );
             for (const u of usersForMembers) {
                 if (!u.email) continue;
                 const lower = u.email.toLowerCase();
                 if (existingInviteEmails.has(lower)) {
-                    console.log(
-                        "[PUT /api/projects/:slug] skipping already invited member email (no re-invite):",
-                        lower,
-                    );
+                    // console.log(
+                    //     "[PUT /api/projects/:slug] skipping already invited member email (no re-invite):",
+                    //     lower,
+                    // );
                     continue;
                 }
                 const fromPayload = rawMembers.find(
@@ -2356,10 +2356,10 @@ app.put("/api/projects/:slug", async (req, res) => {
         }
 
         const invites = Array.from(inviteMap.values());
-        console.log(
-            "[PUT /api/projects/:slug] final inviteEmails array (new only) =",
-            invites,
-        );
+        // console.log(
+        //     "[PUT /api/projects/:slug] final inviteEmails array (new only) =",
+        //     invites,
+        // );
 
         if (invites.length) {
             const webBase = WEB_ORIGIN.replace(/\/$/, "");
@@ -2369,15 +2369,15 @@ app.put("/api/projects/:slug", async (req, res) => {
                 const email = inv.email;
                 const roleLabel = inv.role || "Contributor";
 
-                console.log(
-                    "[PUT /api/projects/:slug] creating invite for email =",
-                    email,
-                );
+                // console.log(
+                //     "[PUT /api/projects/:slug] creating invite for email =",
+                //     email,
+                // );
                 const { raw, hash } = genInviteToken();
-                console.log(
-                    "[PUT /api/projects/:slug] generated invite token (hash only logged) tokenHash =",
-                    hash,
-                );
+                // console.log(
+                //     "[PUT /api/projects/:slug] generated invite token (hash only logged) tokenHash =",
+                //     hash,
+                // );
 
                 await prisma.projectInvite.create({
                     data: {
@@ -2414,34 +2414,34 @@ This invite was sent from ${MAIL_FROM}.
         }
     }
 
-    console.log("========== [PUT /api/projects/:slug] END (success) ==========");
+    // console.log("========== [PUT /api/projects/:slug] END (success) ==========");
     return res
         .status(200)
         .json({ ok: true, slug: updated.slug, id: updated.id });
 });
 
 app.delete("/api/projects/:slug", async (req, res) => {
-    console.log("========== [DELETE /api/projects/:slug] BEGIN ==========");
-    console.log("[DELETE /api/projects/:slug] slug =", req.params.slug);
+    // console.log("========== [DELETE /api/projects/:slug] BEGIN ==========");
+    // console.log("[DELETE /api/projects/:slug] slug =", req.params.slug);
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn(
-            "[DELETE /api/projects/:slug] blocked: unauthenticated",
-        );
-        console.log(
-            "========== [DELETE /api/projects/:slug] END (unauthenticated) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/projects/:slug] blocked: unauthenticated",
+        // );
+        // console.log(
+        //     "========== [DELETE /api/projects/:slug] END (unauthenticated) ==========",
+        // );
         return;
     }
 
     const userRoles = (user.roles || []).map((r) => r.role);
-    console.log(
-        "[DELETE /api/projects/:slug] authenticated user id =",
-        user.id,
-        "roles =",
-        userRoles,
-    );
+    // console.log(
+    //     "[DELETE /api/projects/:slug] authenticated user id =",
+    //     user.id,
+    //     "roles =",
+    //     userRoles,
+    // );
 
     const project = await prisma.project.findUnique({
         where: { slug: req.params.slug },
@@ -2451,19 +2451,19 @@ app.delete("/api/projects/:slug", async (req, res) => {
     });
 
     if (!project) {
-        console.warn(
-            "[DELETE /api/projects/:slug] 404 for slug",
-            req.params.slug,
-        );
+        // console.warn(
+        //     "[DELETE /api/projects/:slug] 404 for slug",
+        //     req.params.slug,
+        // );
     }
     if (!project) {
-        console.warn(
-            "[DELETE /api/projects/:slug] 404 for slug",
-            req.params.slug,
-        );
-        console.log(
-            "========== [DELETE /api/projects/:slug] END (not found) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/projects/:slug] 404 for slug",
+        //     req.params.slug,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/projects/:slug] END (not found) ==========",
+        // );
         return res
             .status(404)
             .json({ ok: false, error: "Not found" });
@@ -2481,13 +2481,13 @@ app.delete("/api/projects/:slug", async (req, res) => {
     }
 
     if (!isAdminOrModerator && !isCreator) {
-        console.warn(
-            "[DELETE /api/projects/:slug] blocked: insufficient permissions for user",
-            user.id,
-        );
-        console.log(
-            "========== [DELETE /api/projects/:slug] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/projects/:slug] blocked: insufficient permissions for user",
+        //     user.id,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/projects/:slug] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -2495,13 +2495,13 @@ app.delete("/api/projects/:slug", async (req, res) => {
 
     const parsed = deleteBySlugSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[DELETE /api/projects/:slug] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [DELETE /api/projects/:slug] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/projects/:slug] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [DELETE /api/projects/:slug] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -2511,15 +2511,15 @@ app.delete("/api/projects/:slug", async (req, res) => {
 
     const { confirmSlug } = parsed.data;
     if (confirmSlug !== project.slug) {
-        console.warn(
-            "[DELETE /api/projects/:slug] slug confirmation mismatch, got",
-            confirmSlug,
-            "expected",
-            project.slug,
-        );
-        console.log(
-            "========== [DELETE /api/projects/:slug] END (slug mismatch) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/projects/:slug] slug confirmation mismatch, got",
+        //     confirmSlug,
+        //     "expected",
+        //     project.slug,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/projects/:slug] END (slug mismatch) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Slug confirmation does not match",
@@ -2552,18 +2552,18 @@ app.delete("/api/projects/:slug", async (req, res) => {
             });
         });
 
-        console.log(
-            "========== [DELETE /api/projects/:slug] END (success) ==========",
-        );
+        // console.log(
+        //     "========== [DELETE /api/projects/:slug] END (success) ==========",
+        // );
         return res.status(200).json({ ok: true });
     } catch (err) {
-        console.error(
-            "[DELETE /api/projects/:slug] error during deletion",
-            err,
-        );
-        console.log(
-            "========== [DELETE /api/projects/:slug] END (error) ==========",
-        );
+        // console.error(
+        //     "[DELETE /api/projects/:slug] error during deletion",
+        //     err,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/projects/:slug] END (error) ==========",
+        // );
         return res.status(500).json({
             ok: false,
             error: "Failed to delete project",
@@ -2596,12 +2596,12 @@ const uploadEventPhoto = multer({
 });
 
 app.post("/api/uploads/event-photo", async (req, res, next) => {
-    console.log("[POST /api/uploads/event-photo] incoming upload");
+    // console.log("[POST /api/uploads/event-photo] incoming upload");
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn(
-            "[POST /api/uploads/event-photo] blocked: unauthenticated",
-        );
+        // console.warn(
+        //     "[POST /api/uploads/event-photo] blocked: unauthenticated",
+        // );
         return;
     }
     return uploadEventPhoto.single("photo")(req, res, (err) => {
@@ -2611,10 +2611,10 @@ app.post("/api/uploads/event-photo", async (req, res, next) => {
                 .status(400)
                 .json({ ok: false, error: "No file" });
         const url = abs(`/uploads/events/${req.file.filename}`, req);
-        console.log(
-            "[POST /api/uploads/event-photo] stored file =",
-            req.file.filename,
-        );
+        // console.log(
+        //     "[POST /api/uploads/event-photo] stored file =",
+        //     req.file.filename,
+        // );
         return res.status(201).json({ ok: true, url });
     });
 });
@@ -2644,12 +2644,12 @@ const uploadProjectPhoto = multer({
 });
 
 app.post("/api/uploads/project-photo", async (req, res, next) => {
-    console.log("[POST /api/uploads/project-photo] incoming upload");
+    // console.log("[POST /api/uploads/project-photo] incoming upload");
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn(
-            "[POST /api/uploads/project-photo] blocked: unauthenticated",
-        );
+        // console.warn(
+        //     "[POST /api/uploads/project-photo] blocked: unauthenticated",
+        // );
         return;
     }
     return uploadProjectPhoto.single("photo")(req, res, (err) => {
@@ -2659,10 +2659,10 @@ app.post("/api/uploads/project-photo", async (req, res, next) => {
                 .status(400)
                 .json({ ok: false, error: "No file" });
         const url = abs(`/uploads/projects/${req.file.filename}`, req);
-        console.log(
-            "[POST /api/uploads/project-photo] stored file =",
-            req.file.filename,
-        );
+        // console.log(
+        //     "[POST /api/uploads/project-photo] stored file =",
+        //     req.file.filename,
+        // );
         return res.status(201).json({ ok: true, url });
     });
 });
@@ -2683,13 +2683,13 @@ const uploadBlogPhoto = multer({
     storage: blogStorage,
     limits: { fileSize: 8 * 1024 * 1024, files: 1 }, // 8 MB, expect a single "photo"
     fileFilter: (req, file, cb) => {
-        console.log("[uploadBlogPhoto.fileFilter] fieldname =", file.fieldname);
-        console.log(
-            "[uploadBlogPhoto.fileFilter] originalname =",
-            file.originalname,
-            "mimetype =",
-            file.mimetype,
-        );
+        // console.log("[uploadBlogPhoto.fileFilter] fieldname =", file.fieldname);
+        // console.log(
+        //     "[uploadBlogPhoto.fileFilter] originalname =",
+        //     file.originalname,
+        //     "mimetype =",
+        //     file.mimetype,
+        // );
 
         // When no file is actually chosen, some clients send an empty part
         // with mimetype application/octet-stream and no filename.
@@ -2698,25 +2698,25 @@ const uploadBlogPhoto = multer({
             file.mimetype === "application/octet-stream";
 
         if (noRealFile) {
-            console.log(
-                "[uploadBlogPhoto.fileFilter] detected empty file field; skipping file",
-            );
+            // console.log(
+            //     "[uploadBlogPhoto.fileFilter] detected empty file field; skipping file",
+            // );
             // Tell Multer to silently skip this "file" instead of throwing.
             return cb(null, false);
         }
 
         if (/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype)) {
-            console.log(
-                "[uploadBlogPhoto.fileFilter] accepting file with mimetype",
-                file.mimetype,
-            );
+            // console.log(
+            //     "[uploadBlogPhoto.fileFilter] accepting file with mimetype",
+            //     file.mimetype,
+            // );
             return cb(null, true);
         }
 
-        console.warn(
-            "[uploadBlogPhoto.fileFilter] rejecting file due to unsupported mimetype:",
-            file.mimetype,
-        );
+        // console.warn(
+        //     "[uploadBlogPhoto.fileFilter] rejecting file due to unsupported mimetype:",
+        //     file.mimetype,
+        // );
         const err = new Error("Unsupported file type");
         err.code = "UNSUPPORTED_FILE_TYPE";
         return cb(err);
@@ -2724,80 +2724,80 @@ const uploadBlogPhoto = multer({
 });
 
 app.post("/api/uploads/blog-photo", async (req, res) => {
-    console.log("========== [POST /api/uploads/blog-photo] BEGIN ==========");
-    console.log(
-        "[POST /api/uploads/blog-photo] headers.content-type =",
-        req.headers["content-type"],
-    );
-    console.log(
-        "[POST /api/uploads/blog-photo] query =",
-        JSON.stringify(req.query),
-    );
+    // console.log("========== [POST /api/uploads/blog-photo] BEGIN ==========");
+    // console.log(
+    //     "[POST /api/uploads/blog-photo] headers.content-type =",
+    //     req.headers["content-type"],
+    // );
+    // console.log(
+    //     "[POST /api/uploads/blog-photo] query =",
+    //     JSON.stringify(req.query),
+    // );
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn(
-            "[POST /api/uploads/blog-photo] blocked: unauthenticated",
-        );
-        console.log(
-            "========== [POST /api/uploads/blog-photo] END (unauthenticated) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/uploads/blog-photo] blocked: unauthenticated",
+        // );
+        // console.log(
+        //     "========== [POST /api/uploads/blog-photo] END (unauthenticated) ==========",
+        // );
         return;
     }
 
-    console.log(
-        "[POST /api/uploads/blog-photo] authenticated user id =",
-        user.id,
-        "email =",
-        user.email,
-    );
+    // console.log(
+    //     "[POST /api/uploads/blog-photo] authenticated user id =",
+    //     user.id,
+    //     "email =",
+    //     user.email,
+    // );
 
     uploadBlogPhoto.single("photo")(req, res, (err) => {
         if (err) {
-            console.error(
-                "[POST /api/uploads/blog-photo] Multer/fileFilter error =",
-                err && err.stack ? err.stack : err,
-            );
+            // console.error(
+            //     "[POST /api/uploads/blog-photo] Multer/fileFilter error =",
+            //     err && err.stack ? err.stack : err,
+            // );
 
             if (err.code === "UNSUPPORTED_FILE_TYPE") {
-                console.log(
-                    "========== [POST /api/uploads/blog-photo] END (unsupported file type) ==========",
-                );
+                // console.log(
+                //     "========== [POST /api/uploads/blog-photo] END (unsupported file type) ==========",
+                // );
                 return res
                     .status(400)
                     .json({ ok: false, error: "Unsupported file type" });
             }
 
-            console.log(
-                "========== [POST /api/uploads/blog-photo] END (multer error) ==========",
-            );
+            // console.log(
+            //     "========== [POST /api/uploads/blog-photo] END (multer error) ==========",
+            // );
             return res
                 .status(400)
                 .json({ ok: false, error: "Upload failed" });
         }
 
         if (!req.file) {
-            console.warn(
-                "[POST /api/uploads/blog-photo] no file accepted by Multer (empty field or filtered out)",
-            );
-            console.log(
-                "========== [POST /api/uploads/blog-photo] END (no file) ==========",
-            );
+            // console.warn(
+            //     "[POST /api/uploads/blog-photo] no file accepted by Multer (empty field or filtered out)",
+            // );
+            // console.log(
+            //     "========== [POST /api/uploads/blog-photo] END (no file) ==========",
+            // );
             return res
                 .status(400)
                 .json({ ok: false, error: "No file uploaded" });
         }
 
         const url = abs(`/uploads/blogs/${req.file.filename}`, req);
-        console.log(
-            "[POST /api/uploads/blog-photo] stored file =",
-            req.file.filename,
-            "-> url =",
-            url,
-        );
-        console.log(
-            "========== [POST /api/uploads/blog-photo] END (success) ==========",
-        );
+        // console.log(
+        //     "[POST /api/uploads/blog-photo] stored file =",
+        //     req.file.filename,
+        //     "-> url =",
+        //     url,
+        // );
+        // console.log(
+        //     "========== [POST /api/uploads/blog-photo] END (success) ==========",
+        // );
         return res.status(201).json({ ok: true, url });
     });
 });
@@ -2939,13 +2939,13 @@ function clientIp(req) {
 }
 
 app.post("/api/contact", async (req, res) => {
-    console.log("========== [POST /api/contact] BEGIN ==========");
-    console.log("[POST /api/contact] raw body =", JSON.stringify(req.body));
+    // console.log("========== [POST /api/contact] BEGIN ==========");
+    // console.log("[POST /api/contact] raw body =", JSON.stringify(req.body));
 
     // Per-IP rate limit to protect mailbox / DB
     const ip = clientIp(req);
     if (!allowContactFromIp(ip)) {
-        console.warn("[POST /api/contact] rate-limit hit for IP", ip);
+        // console.warn("[POST /api/contact] rate-limit hit for IP", ip);
         return res.status(429).json({
             ok: false,
             error:
@@ -2956,13 +2956,13 @@ app.post("/api/contact", async (req, res) => {
     // 1) Validate input
     const parsed = contactSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[POST /api/contact] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [POST /api/contact] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/contact] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [POST /api/contact] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -2983,7 +2983,7 @@ app.post("/api/contact", async (req, res) => {
         : null;
 
     if (!email) {
-        console.warn("[POST /api/contact] sanitized email invalid");
+        // console.warn("[POST /api/contact] sanitized email invalid");
         return res.status(400).json({
             ok: false,
             error: "Invalid email address.",
@@ -3013,18 +3013,18 @@ ${message}
 `;
 
         if (!mailTransporter) {
-            console.log(
-                "[POST /api/contact] (no SMTP configured) Would send mail from",
-                MAIL_FROM,
-                "to",
-                toAddress,
-                ":\nSubject:",
-                subject,
-                "\n\n",
-                text,
-            );
+            // console.log(
+            //     "[POST /api/contact] (no SMTP configured) Would send mail from",
+            //     MAIL_FROM,
+            //     "to",
+            //     toAddress,
+            //     ":\nSubject:",
+            //     subject,
+            //     "\n\n",
+            //     text,
+            // );
         } else {
-            console.log("[POST /api/contact] sending mail to", toAddress);
+            // console.log("[POST /api/contact] sending mail to", toAddress);
             await mailTransporter.sendMail({
                 from: MAIL_FROM,
                 to: toAddress,
@@ -3032,10 +3032,10 @@ ${message}
                 subject,
                 text, // text-only, sanitized
             });
-            console.log("[POST /api/contact] mail sent OK");
+            // console.log("[POST /api/contact] mail sent OK");
         }
     } catch (err) {
-        console.error("[POST /api/contact] mail send error", err);
+        // console.error("[POST /api/contact] mail send error", err);
         // Don't fail the whole request – just log.
     }
 
@@ -3056,10 +3056,10 @@ ${message}
             });
         }
     } catch (err) {
-        console.error(
-            "[POST /api/contact] failed to store contactMessage in DB",
-            err,
-        );
+        // console.error(
+        //     "[POST /api/contact] failed to store contactMessage in DB",
+        //     err,
+        // );
     }
 
     // 5) Newsletter subscription (if requested)
@@ -3084,17 +3084,17 @@ ${message}
                         verifiedAt: null,
                     },
                 });
-                console.log(
-                    "[POST /api/contact] created new newsletterSubscriber",
-                    sub.id,
-                );
+                // console.log(
+                //     "[POST /api/contact] created new newsletterSubscriber",
+                //     sub.id,
+                // );
             } else {
                 // If previously unsubscribed, DO NOT silently re-subscribe
                 if (existing.unsubscribedAt) {
-                    console.log(
-                        "[POST /api/contact] email previously unsubscribed; not auto-resubscribing",
-                        emailLower,
-                    );
+                    // console.log(
+                    //     "[POST /api/contact] email previously unsubscribed; not auto-resubscribing",
+                    //     emailLower,
+                    // );
                     sub = existing;
                 } else {
                     sub = await prisma.newsletterSubscriber.update({
@@ -3104,10 +3104,10 @@ ${message}
                             lastSource: source || "contact-form",
                         },
                     });
-                    console.log(
-                        "[POST /api/contact] updated existing newsletterSubscriber",
-                        sub.id,
-                    );
+                    // console.log(
+                    //     "[POST /api/contact] updated existing newsletterSubscriber",
+                    //     sub.id,
+                    // );
                 }
             }
 
@@ -3144,31 +3144,31 @@ If you did not request this, you can safely ignore this email and you won't be s
                         subject,
                         text,
                     });
-                    console.log(
-                        "[POST /api/contact] sent newsletter verification email to",
-                        sub.email,
-                    );
+                    // console.log(
+                    //     "[POST /api/contact] sent newsletter verification email to",
+                    //     sub.email,
+                    // );
                 } catch (err) {
-                    console.error(
-                        "[POST /api/contact] failed to send newsletter verification email",
-                        err,
-                    );
+                    // console.error(
+                    //     "[POST /api/contact] failed to send newsletter verification email",
+                    //     err,
+                    // );
                 }
             } else {
-                console.log(
-                    "[POST /api/contact] subscriber already verified or unsubscribed; no verify email sent",
-                    emailLower,
-                );
+                // console.log(
+                //     "[POST /api/contact] subscriber already verified or unsubscribed; no verify email sent",
+                //     emailLower,
+                // );
             }
         }
     } catch (err) {
-        console.error(
-            "[POST /api/contact] failed to upsert/send newsletterSubscriber",
-            err,
-        );
+        // console.error(
+        //     "[POST /api/contact] failed to upsert/send newsletterSubscriber",
+        //     err,
+        // );
     }
 
-    console.log("========== [POST /api/contact] END (success) ==========");
+    // console.log("========== [POST /api/contact] END (success) ==========");
     return res.json({
         ok: true,
         message: "Thanks! We’ll be in touch soon.",
@@ -3178,18 +3178,18 @@ If you did not request this, you can safely ignore this email and you won't be s
 /* ------------------------------ Newsletter: subscribe / verify / unsubscribe ------------------------------ */
 
 app.post("/api/newsletter/subscribe", async (req, res) => {
-    console.log(
-        "========== [POST /api/newsletter/subscribe] BEGIN ==========",
-    );
-    console.log(
-        "[POST /api/newsletter/subscribe] raw body =",
-        JSON.stringify(req.body),
-    );
+    // console.log(
+    //     "========== [POST /api/newsletter/subscribe] BEGIN ==========",
+    // );
+    // console.log(
+    //     "[POST /api/newsletter/subscribe] raw body =",
+    //     JSON.stringify(req.body),
+    // );
 
     if (!prisma.newsletterSubscriber) {
-        console.warn(
-            "[POST /api/newsletter/subscribe] NewsletterSubscriber model not available",
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/subscribe] NewsletterSubscriber model not available",
+        // );
         return res.status(501).json({
             ok: false,
             error: "Newsletter feature not enabled on this server",
@@ -3199,10 +3199,10 @@ app.post("/api/newsletter/subscribe", async (req, res) => {
     // Additional per-IP rate limit to avoid abuse
     const ip = clientIp(req);
     if (!allowContactFromIp(ip)) {
-        console.warn(
-            "[POST /api/newsletter/subscribe] rate-limit hit for IP",
-            ip,
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/subscribe] rate-limit hit for IP",
+        //     ip,
+        // );
         return res.status(429).json({
             ok: false,
             error:
@@ -3212,13 +3212,13 @@ app.post("/api/newsletter/subscribe", async (req, res) => {
 
     const parsed = newsletterSubscribeSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[POST /api/newsletter/subscribe] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [POST /api/newsletter/subscribe] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/subscribe] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [POST /api/newsletter/subscribe] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -3237,9 +3237,9 @@ app.post("/api/newsletter/subscribe", async (req, res) => {
         : null;
 
     if (!email) {
-        console.warn(
-            "[POST /api/newsletter/subscribe] sanitized email invalid",
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/subscribe] sanitized email invalid",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid email address.",
@@ -3263,17 +3263,17 @@ app.post("/api/newsletter/subscribe", async (req, res) => {
                     verifiedAt: null,
                 },
             });
-            console.log(
-                "[POST /api/newsletter/subscribe] created subscriber id =",
-                sub.id,
-            );
+            // console.log(
+            //     "[POST /api/newsletter/subscribe] created subscriber id =",
+            //     sub.id,
+            // );
         } else {
             // If unsubscribed, *do not* auto-resub; require manual flow if you want that.
             if (sub.unsubscribedAt) {
-                console.log(
-                    "[POST /api/newsletter/subscribe] email previously unsubscribed; not auto-resubscribing",
-                    emailLower,
-                );
+                // console.log(
+                //     "[POST /api/newsletter/subscribe] email previously unsubscribed; not auto-resubscribing",
+                //     emailLower,
+                // );
             } else {
                 sub = await prisma.newsletterSubscriber.update({
                     where: { email: emailLower },
@@ -3283,10 +3283,10 @@ app.post("/api/newsletter/subscribe", async (req, res) => {
                             source || sub.lastSource || "newsletter-form",
                     },
                 });
-                console.log(
-                    "[POST /api/newsletter/subscribe] updated subscriber id =",
-                    sub.id,
-                );
+                // console.log(
+                //     "[POST /api/newsletter/subscribe] updated subscriber id =",
+                //     sub.id,
+                // );
             }
         }
 
@@ -3321,25 +3321,25 @@ If you did not request this, you can safely ignore this email and you won't be s
                     subject,
                     text,
                 });
-                console.log(
-                    "[POST /api/newsletter/subscribe] sent verification email to",
-                    sub.email,
-                );
+                // console.log(
+                //     "[POST /api/newsletter/subscribe] sent verification email to",
+                //     sub.email,
+                // );
             } catch (err) {
-                console.error(
-                    "[POST /api/newsletter/subscribe] failed to send verification email",
-                    err,
-                );
+                // console.error(
+                //     "[POST /api/newsletter/subscribe] failed to send verification email",
+                //     err,
+                // );
             }
         } else {
-            console.log(
-                "[POST /api/newsletter/subscribe] subscriber already verified or unsubscribed; no verify email sent",
-            );
+            // console.log(
+            //     "[POST /api/newsletter/subscribe] subscriber already verified or unsubscribed; no verify email sent",
+            // );
         }
 
-        console.log(
-            "========== [POST /api/newsletter/subscribe] END (success) ==========",
-        );
+        // console.log(
+        //     "========== [POST /api/newsletter/subscribe] END (success) ==========",
+        // );
         return res.json({
             ok: true,
             email: sub.email,
@@ -3348,13 +3348,13 @@ If you did not request this, you can safely ignore this email and you won't be s
                 : "pending-verification",
         });
     } catch (err) {
-        console.error(
-            "[POST /api/newsletter/subscribe] DB error during upsert",
-            err,
-        );
-        console.log(
-            "========== [POST /api/newsletter/subscribe] END (error) ==========",
-        );
+        // console.error(
+        //     "[POST /api/newsletter/subscribe] DB error during upsert",
+        //     err,
+        // );
+        // console.log(
+        //     "========== [POST /api/newsletter/subscribe] END (error) ==========",
+        // );
         return res.status(500).json({
             ok: false,
             error: "Failed to subscribe. Please try again later.",
@@ -3363,18 +3363,18 @@ If you did not request this, you can safely ignore this email and you won't be s
 });
 
 app.post("/api/newsletter/verify", async (req, res) => {
-    console.log(
-        "========== [POST /api/newsletter/verify] BEGIN ==========",
-    );
-    console.log(
-        "[POST /api/newsletter/verify] raw body =",
-        JSON.stringify(req.body),
-    );
+    // console.log(
+    //     "========== [POST /api/newsletter/verify] BEGIN ==========",
+    // );
+    // console.log(
+    //     "[POST /api/newsletter/verify] raw body =",
+    //     JSON.stringify(req.body),
+    // );
 
     if (!prisma.newsletterSubscriber) {
-        console.warn(
-            "[POST /api/newsletter/verify] NewsletterSubscriber model not available",
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/verify] NewsletterSubscriber model not available",
+        // );
         return res.status(501).json({
             ok: false,
             error: "Newsletter feature not enabled on this server",
@@ -3383,13 +3383,13 @@ app.post("/api/newsletter/verify", async (req, res) => {
 
     const parsed = newsletterVerifySchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[POST /api/newsletter/verify] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [POST /api/newsletter/verify] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/verify] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [POST /api/newsletter/verify] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid verification token.",
@@ -3405,16 +3405,16 @@ app.post("/api/newsletter/verify", async (req, res) => {
             algorithms: ["HS256"],
         });
     } catch (err) {
-        console.warn(
-            "[POST /api/newsletter/verify] token verify failed",
-            err?.name,
-            err?.message,
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/verify] token verify failed",
+        //     err?.name,
+        //     err?.message,
+        // );
 
         const isExpired = err && err.name === "TokenExpiredError";
-        console.log(
-            "========== [POST /api/newsletter/verify] END (invalid token) ==========",
-        );
+        // console.log(
+        //     "========== [POST /api/newsletter/verify] END (invalid token) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: isExpired
@@ -3425,13 +3425,13 @@ app.post("/api/newsletter/verify", async (req, res) => {
     }
 
     if (!decoded || decoded.scope !== "newsletter-verify") {
-        console.warn(
-            "[POST /api/newsletter/verify] token missing/invalid scope",
-            decoded,
-        );
-        console.log(
-            "========== [POST /api/newsletter/verify] END (bad scope) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/verify] token missing/invalid scope",
+        //     decoded,
+        // );
+        // console.log(
+        //     "========== [POST /api/newsletter/verify] END (bad scope) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "This link is not valid for newsletter verification.",
@@ -3448,13 +3448,13 @@ app.post("/api/newsletter/verify", async (req, res) => {
         });
 
         if (!subscriber) {
-            console.warn(
-                "[POST /api/newsletter/verify] subscriber not found for id",
-                subscriberId,
-            );
-            console.log(
-                "========== [POST /api/newsletter/verify] END (no subscriber) ==========",
-            );
+            // console.warn(
+            //     "[POST /api/newsletter/verify] subscriber not found for id",
+            //     subscriberId,
+            // );
+            // console.log(
+            //     "========== [POST /api/newsletter/verify] END (no subscriber) ==========",
+            // );
             return res.status(400).json({
                 ok: false,
                 error:
@@ -3465,12 +3465,12 @@ app.post("/api/newsletter/verify", async (req, res) => {
 
         const subEmailLower = (subscriber.email || "").toLowerCase();
         if (tokenEmail && tokenEmail !== subEmailLower) {
-            console.warn(
-                "[POST /api/newsletter/verify] token email mismatch",
-                tokenEmail,
-                "!=",
-                subEmailLower,
-            );
+            // console.warn(
+            //     "[POST /api/newsletter/verify] token email mismatch",
+            //     tokenEmail,
+            //     "!=",
+            //     subEmailLower,
+            // );
             return res.status(400).json({
                 ok: false,
                 error:
@@ -3481,13 +3481,13 @@ app.post("/api/newsletter/verify", async (req, res) => {
 
         // Idempotent: if already verified, just acknowledge.
         if (subscriber.verifiedAt) {
-            console.log(
-                "[POST /api/newsletter/verify] already verified for email",
-                subscriber.email,
-            );
-            console.log(
-                "========== [POST /api/newsletter/verify] END (already verified) ==========",
-            );
+            // console.log(
+            //     "[POST /api/newsletter/verify] already verified for email",
+            //     subscriber.email,
+            // );
+            // console.log(
+            //     "========== [POST /api/newsletter/verify] END (already verified) ==========",
+            // );
             return res.json({
                 ok: true,
                 status: "already-verified",
@@ -3497,10 +3497,10 @@ app.post("/api/newsletter/verify", async (req, res) => {
 
         // If unsubscribed, don't verify – treat as invalid.
         if (subscriber.unsubscribedAt) {
-            console.log(
-                "[POST /api/newsletter/verify] subscriber is unsubscribed; refusing verification",
-                subscriber.email,
-            );
+            // console.log(
+            //     "[POST /api/newsletter/verify] subscriber is unsubscribed; refusing verification",
+            //     subscriber.email,
+            // );
             return res.status(400).json({
                 ok: false,
                 error:
@@ -3517,13 +3517,13 @@ app.post("/api/newsletter/verify", async (req, res) => {
             },
         });
 
-        console.log(
-            "[POST /api/newsletter/verify] verified email",
-            updated.email,
-        );
-        console.log(
-            "========== [POST /api/newsletter/verify] END (success) ==========",
-        );
+        // console.log(
+        //     "[POST /api/newsletter/verify] verified email",
+        //     updated.email,
+        // );
+        // console.log(
+        //     "========== [POST /api/newsletter/verify] END (success) ==========",
+        // );
 
         return res.json({
             ok: true,
@@ -3531,13 +3531,13 @@ app.post("/api/newsletter/verify", async (req, res) => {
             email: updated.email,
         });
     } catch (err) {
-        console.error(
-            "[POST /api/newsletter/verify] error during verification",
-            err,
-        );
-        console.log(
-            "========== [POST /api/newsletter/verify] END (error) ==========",
-        );
+        // console.error(
+        //     "[POST /api/newsletter/verify] error during verification",
+        //     err,
+        // );
+        // console.log(
+        //     "========== [POST /api/newsletter/verify] END (error) ==========",
+        // );
         return res.status(500).json({
             ok: false,
             error:
@@ -3548,18 +3548,18 @@ app.post("/api/newsletter/verify", async (req, res) => {
 });
 
 app.post("/api/newsletter/unsubscribe", async (req, res) => {
-    console.log(
-        "========== [POST /api/newsletter/unsubscribe] BEGIN ==========",
-    );
-    console.log(
-        "[POST /api/newsletter/unsubscribe] raw body =",
-        JSON.stringify(req.body),
-    );
+    // console.log(
+    //     "========== [POST /api/newsletter/unsubscribe] BEGIN ==========",
+    // );
+    // console.log(
+    //     "[POST /api/newsletter/unsubscribe] raw body =",
+    //     JSON.stringify(req.body),
+    // );
 
     if (!prisma.newsletterSubscriber) {
-        console.warn(
-            "[POST /api/newsletter/unsubscribe] NewsletterSubscriber model not available",
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/unsubscribe] NewsletterSubscriber model not available",
+        // );
         return res.status(501).json({
             ok: false,
             error: "Newsletter feature not enabled on this server",
@@ -3568,13 +3568,13 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
 
     const parsed = newsletterUnsubscribeSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[POST /api/newsletter/unsubscribe] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [POST /api/newsletter/unsubscribe] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/unsubscribe] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [POST /api/newsletter/unsubscribe] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid unsubscribe token.",
@@ -3590,16 +3590,16 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
             algorithms: ["HS256"],
         });
     } catch (err) {
-        console.warn(
-            "[POST /api/newsletter/unsubscribe] token verify failed",
-            err?.name,
-            err?.message,
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/unsubscribe] token verify failed",
+        //     err?.name,
+        //     err?.message,
+        // );
 
         const isExpired = err && err.name === "TokenExpiredError";
-        console.log(
-            "========== [POST /api/newsletter/unsubscribe] END (invalid token) ==========",
-        );
+        // console.log(
+        //     "========== [POST /api/newsletter/unsubscribe] END (invalid token) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: isExpired
@@ -3610,13 +3610,13 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
     }
 
     if (!decoded || decoded.scope !== "newsletter-unsub") {
-        console.warn(
-            "[POST /api/newsletter/unsubscribe] token missing/invalid scope",
-            decoded,
-        );
-        console.log(
-            "========== [POST /api/newsletter/unsubscribe] END (bad scope) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/newsletter/unsubscribe] token missing/invalid scope",
+        //     decoded,
+        // );
+        // console.log(
+        //     "========== [POST /api/newsletter/unsubscribe] END (bad scope) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error:
@@ -3634,13 +3634,13 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
         });
 
         if (!subscriber) {
-            console.warn(
-                "[POST /api/newsletter/unsubscribe] subscriber not found for id",
-                subscriberId,
-            );
-            console.log(
-                "========== [POST /api/newsletter/unsubscribe] END (no subscriber) ==========",
-            );
+            // console.warn(
+            //     "[POST /api/newsletter/unsubscribe] subscriber not found for id",
+            //     subscriberId,
+            // );
+            // console.log(
+            //     "========== [POST /api/newsletter/unsubscribe] END (no subscriber) ==========",
+            // );
             return res.status(400).json({
                 ok: false,
                 error:
@@ -3651,12 +3651,12 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
 
         const subEmailLower = (subscriber.email || "").toLowerCase();
         if (tokenEmail && tokenEmail !== subEmailLower) {
-            console.warn(
-                "[POST /api/newsletter/unsubscribe] token email mismatch",
-                tokenEmail,
-                "!=",
-                subEmailLower,
-            );
+            // console.warn(
+            //     "[POST /api/newsletter/unsubscribe] token email mismatch",
+            //     tokenEmail,
+            //     "!=",
+            //     subEmailLower,
+            // );
             return res.status(400).json({
                 ok: false,
                 error:
@@ -3666,13 +3666,13 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
         }
 
         if (subscriber.unsubscribedAt) {
-            console.log(
-                "[POST /api/newsletter/unsubscribe] already unsubscribed for email",
-                subscriber.email,
-            );
-            console.log(
-                "========== [POST /api/newsletter/unsubscribe] END (already unsubscribed) ==========",
-            );
+            // console.log(
+            //     "[POST /api/newsletter/unsubscribe] already unsubscribed for email",
+            //     subscriber.email,
+            // );
+            // console.log(
+            //     "========== [POST /api/newsletter/unsubscribe] END (already unsubscribed) ==========",
+            // );
             return res.json({
                 ok: true,
                 status: "already-unsubscribed",
@@ -3688,13 +3688,13 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
             },
         });
 
-        console.log(
-            "[POST /api/newsletter/unsubscribe] unsubscribed email",
-            updated.email,
-        );
-        console.log(
-            "========== [POST /api/newsletter/unsubscribe] END (success) ==========",
-        );
+        // console.log(
+        //     "[POST /api/newsletter/unsubscribe] unsubscribed email",
+        //     updated.email,
+        // );
+        // console.log(
+        //     "========== [POST /api/newsletter/unsubscribe] END (success) ==========",
+        // );
 
         return res.json({
             ok: true,
@@ -3702,13 +3702,13 @@ app.post("/api/newsletter/unsubscribe", async (req, res) => {
             email: updated.email,
         });
     } catch (err) {
-        console.error(
-            "[POST /api/newsletter/unsubscribe] error during unsubscribe",
-            err,
-        );
-        console.log(
-            "========== [POST /api/newsletter/unsubscribe] END (error) ==========",
-        );
+        // console.error(
+        //     "[POST /api/newsletter/unsubscribe] error during unsubscribe",
+        //     err,
+        // );
+        // console.log(
+        //     "========== [POST /api/newsletter/unsubscribe] END (error) ==========",
+        // );
         return res.status(500).json({
             ok: false,
             error:
@@ -3977,15 +3977,15 @@ app.get("/api/blogs/:slug", async (req, res) => {
 });
 
 app.post("/api/blogs", async (req, res) => {
-    console.log("========== [POST /api/blogs] BEGIN ==========");
-    console.log("[POST /api/blogs] raw body =", JSON.stringify(req.body));
+    // console.log("========== [POST /api/blogs] BEGIN ==========");
+    // console.log("[POST /api/blogs] raw body =", JSON.stringify(req.body));
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn("[POST /api/blogs] blocked: unauthenticated");
-        console.log(
-            "========== [POST /api/blogs] END (unauthenticated) ==========",
-        );
+        // console.warn("[POST /api/blogs] blocked: unauthenticated");
+        // console.log(
+        //     "========== [POST /api/blogs] END (unauthenticated) ==========",
+        // );
         return;
     }
 
@@ -3994,12 +3994,12 @@ app.post("/api/blogs", async (req, res) => {
         ["ADMIN", "MODERATOR", "MEMBER"].includes(r),
     );
     if (!hasMemberRole) {
-        console.warn(
-            "[POST /api/blogs] blocked: insufficient permissions",
-        );
-        console.log(
-            "========== [POST /api/blogs] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/blogs] blocked: insufficient permissions",
+        // );
+        // console.log(
+        //     "========== [POST /api/blogs] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -4007,13 +4007,13 @@ app.post("/api/blogs", async (req, res) => {
 
     const parsed = blogCreateSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[POST /api/blogs] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [POST /api/blogs] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/blogs] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [POST /api/blogs] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -4022,29 +4022,29 @@ app.post("/api/blogs", async (req, res) => {
     }
 
     const d = parsed.data;
-    console.log("[POST /api/blogs] parsed data =", {
-        title: d.title,
-        hasSummary: !!d.summary,
-        hasContent: !!d.content,
-        publishedAt: d.publishedAt || null,
-        techStackCount: Array.isArray(d.techStack)
-            ? d.techStack.length
-            : 0,
-        tagsCount: Array.isArray(d.tags) ? d.tags.length : 0,
-        authorSlugsCount: Array.isArray(d.authorSlugs)
-            ? d.authorSlugs.length
-            : 0,
-        projectSlugsCount: Array.isArray(d.projectSlugs)
-            ? d.projectSlugs.length
-            : 0,
-        eventSlugsCount: Array.isArray(d.eventSlugs)
-            ? d.eventSlugs.length
-            : 0,
-        photosCount: Array.isArray(d.photos) ? d.photos.length : 0,
-    });
+    // console.log("[POST /api/blogs] parsed data =", {
+    //     title: d.title,
+    //     hasSummary: !!d.summary,
+    //     hasContent: !!d.content,
+    //     publishedAt: d.publishedAt || null,
+    //     techStackCount: Array.isArray(d.techStack)
+    //         ? d.techStack.length
+    //         : 0,
+    //     tagsCount: Array.isArray(d.tags) ? d.tags.length : 0,
+    //     authorSlugsCount: Array.isArray(d.authorSlugs)
+    //         ? d.authorSlugs.length
+    //         : 0,
+    //     projectSlugsCount: Array.isArray(d.projectSlugs)
+    //         ? d.projectSlugs.length
+    //         : 0,
+    //     eventSlugsCount: Array.isArray(d.eventSlugs)
+    //         ? d.eventSlugs.length
+    //         : 0,
+    //     photosCount: Array.isArray(d.photos) ? d.photos.length : 0,
+    // });
 
     const slug = await uniqueBlogSlug(d.title);
-    console.log("[POST /api/blogs] generated slug =", slug);
+    // console.log("[POST /api/blogs] generated slug =", slug);
 
     const photos = Array.isArray(d.photos) ? d.photos : [];
     const coverRel = photos.length ? photos[0] : null;
@@ -4071,7 +4071,7 @@ app.post("/api/blogs", async (req, res) => {
         },
     });
 
-    console.log("[POST /api/blogs] created blog id =", blog.id);
+    // console.log("[POST /api/blogs] created blog id =", blog.id);
 
     const techNames = Array.isArray(d.techStack) ? d.techStack : [];
     if (techNames.length) {
@@ -4146,11 +4146,11 @@ app.post("/api/blogs", async (req, res) => {
                         },
                     });
                 } catch (err) {
-                    console.error(
-                        "[POST /api/blogs] failed to upsert blogAuthor for memberId",
-                        m.id,
-                        err,
-                    );
+                    // console.error(
+                    //     "[POST /api/blogs] failed to upsert blogAuthor for memberId",
+                    //     m.id,
+                    //     err,
+                    // );
                 }
             }
         }
@@ -4173,10 +4173,10 @@ app.post("/api/blogs", async (req, res) => {
                 },
             });
         } catch (err) {
-            console.error(
-                "[POST /api/blogs] failed to upsert creator blogAuthor row",
-                err,
-            );
+            // console.error(
+            //     "[POST /api/blogs] failed to upsert creator blogAuthor row",
+            //     err,
+            // );
         }
     }
 
@@ -4269,60 +4269,60 @@ ${unsubscribeUrl}
                         subject,
                         text,
                     });
-                    console.log(
-                        "[POST /api/blogs] newsletter mail sent to subscriber",
-                        to,
-                    );
+                    // console.log(
+                    //     "[POST /api/blogs] newsletter mail sent to subscriber",
+                    //     to,
+                    // );
                 }
             } else {
-                console.log(
-                    "[POST /api/blogs] no newsletterSubscriber rows; skipping newsletter send",
-                );
+                // console.log(
+                //     "[POST /api/blogs] no newsletterSubscriber rows; skipping newsletter send",
+                // );
             }
         } else {
-            console.log(
-                "[POST /api/blogs] newsletter feature disabled (no newsletterSubscriber model or no SMTP)",
-            );
+            // console.log(
+            //     "[POST /api/blogs] newsletter feature disabled (no newsletterSubscriber model or no SMTP)",
+            // );
         }
     } catch (err) {
-        console.error(
-            "[POST /api/blogs] failed to send newsletter emails",
-            err,
-        );
+        // console.error(
+        //     "[POST /api/blogs] failed to send newsletter emails",
+        //     err,
+        // );
     }
 
-    console.log("========== [POST /api/blogs] END (success) ==========");
+    // console.log("========== [POST /api/blogs] END (success) ==========");
     return res
         .status(201)
         .json({ ok: true, slug: blog.slug, id: blog.id });
 });
 
 app.put("/api/blogs/:slug", async (req, res) => {
-    console.log("========== [PUT /api/blogs/:slug] BEGIN ==========");
-    console.log("[PUT /api/blogs/:slug] slug =", req.params.slug);
-    console.log(
-        "[PUT /api/blogs/:slug] raw body =",
-        JSON.stringify(req.body),
-    );
+    // console.log("========== [PUT /api/blogs/:slug] BEGIN ==========");
+    // console.log("[PUT /api/blogs/:slug] slug =", req.params.slug);
+    // console.log(
+    //     "[PUT /api/blogs/:slug] raw body =",
+    //     JSON.stringify(req.body),
+    // );
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn(
-            "[PUT /api/blogs/:slug] blocked: unauthenticated",
-        );
-        console.log(
-            "========== [PUT /api/blogs/:slug] END (unauthenticated) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/blogs/:slug] blocked: unauthenticated",
+        // );
+        // console.log(
+        //     "========== [PUT /api/blogs/:slug] END (unauthenticated) ==========",
+        // );
         return;
     }
 
     const roles = (user.roles || []).map((r) => r.role);
-    console.log(
-        "[PUT /api/blogs/:slug] authenticated user id =",
-        user.id,
-        "roles =",
-        roles,
-    );
+    // console.log(
+    //     "[PUT /api/blogs/:slug] authenticated user id =",
+    //     user.id,
+    //     "roles =",
+    //     roles,
+    // );
 
     const blog = await prisma.blog.findUnique({
         where: { slug: req.params.slug },
@@ -4336,13 +4336,13 @@ app.put("/api/blogs/:slug", async (req, res) => {
     });
 
     if (!blog) {
-        console.warn(
-            "[PUT /api/blogs/:slug] 404 for slug",
-            req.params.slug,
-        );
-        console.log(
-            "========== [PUT /api/blogs/:slug] END (not found) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/blogs/:slug] 404 for slug",
+        //     req.params.slug,
+        // );
+        // console.log(
+        //     "========== [PUT /api/blogs/:slug] END (not found) ==========",
+        // );
         return res
             .status(404)
             .json({ ok: false, error: "Not found" });
@@ -4374,13 +4374,13 @@ app.put("/api/blogs/:slug", async (req, res) => {
     }
 
     if (!canEdit) {
-        console.warn(
-            "[PUT /api/blogs/:slug] blocked: insufficient permissions for user",
-            user.id,
-        );
-        console.log(
-            "========== [PUT /api/blogs/:slug] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/blogs/:slug] blocked: insufficient permissions for user",
+        //     user.id,
+        // );
+        // console.log(
+        //     "========== [PUT /api/blogs/:slug] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -4388,13 +4388,13 @@ app.put("/api/blogs/:slug", async (req, res) => {
 
     const parsed = blogCreateSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[PUT /api/blogs/:slug] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [PUT /api/blogs/:slug] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/blogs/:slug] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [PUT /api/blogs/:slug] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -4425,31 +4425,31 @@ app.put("/api/blogs/:slug", async (req, res) => {
         "eventSlugs",
     );
 
-    console.log("[PUT /api/blogs/:slug] parsed data =", {
-        title: d.title,
-        hasSummary: !!d.summary,
-        hasContent: !!d.content,
-        publishedAt: d.publishedAt || null,
-        hasTechStack,
-        techStackCount: Array.isArray(d.techStack)
-            ? d.techStack.length
-            : 0,
-        hasTags,
-        tagsCount: Array.isArray(d.tags) ? d.tags.length : 0,
-        hasAuthorSlugs,
-        authorSlugsCount: Array.isArray(d.authorSlugs)
-            ? d.authorSlugs.length
-            : 0,
-        hasProjectSlugs,
-        projectSlugsCount: Array.isArray(d.projectSlugs)
-            ? d.projectSlugs.length
-            : 0,
-        hasEventSlugs,
-        eventSlugsCount: Array.isArray(d.eventSlugs)
-            ? d.eventSlugs.length
-            : 0,
-        photosCount: Array.isArray(d.photos) ? d.photos.length : 0,
-    });
+    // console.log("[PUT /api/blogs/:slug] parsed data =", {
+    //     title: d.title,
+    //     hasSummary: !!d.summary,
+    //     hasContent: !!d.content,
+    //     publishedAt: d.publishedAt || null,
+    //     hasTechStack,
+    //     techStackCount: Array.isArray(d.techStack)
+    //         ? d.techStack.length
+    //         : 0,
+    //     hasTags,
+    //     tagsCount: Array.isArray(d.tags) ? d.tags.length : 0,
+    //     hasAuthorSlugs,
+    //     authorSlugsCount: Array.isArray(d.authorSlugs)
+    //         ? d.authorSlugs.length
+    //         : 0,
+    //     hasProjectSlugs,
+    //     projectSlugsCount: Array.isArray(d.projectSlugs)
+    //         ? d.projectSlugs.length
+    //         : 0,
+    //     hasEventSlugs,
+    //     eventSlugsCount: Array.isArray(d.eventSlugs)
+    //         ? d.eventSlugs.length
+    //         : 0,
+    //     photosCount: Array.isArray(d.photos) ? d.photos.length : 0,
+    // });
 
     const photos = Array.isArray(d.photos)
         ? d.photos
@@ -4482,15 +4482,15 @@ app.put("/api/blogs/:slug", async (req, res) => {
         },
     });
 
-    console.log("[PUT /api/blogs/:slug] updated blog id =", updated.id);
+    // console.log("[PUT /api/blogs/:slug] updated blog id =", updated.id);
 
     // --- tech stack ---
     if (hasTechStack) {
         const techNames = Array.isArray(d.techStack) ? d.techStack : [];
-        console.log(
-            "[PUT /api/blogs/:slug] updating techStack =",
-            techNames,
-        );
+        // console.log(
+        //     "[PUT /api/blogs/:slug] updating techStack =",
+        //     techNames,
+        // );
         await prisma.blogTech.deleteMany({
             where: { blogId: updated.id },
         });
@@ -4511,10 +4511,10 @@ app.put("/api/blogs/:slug", async (req, res) => {
     // --- tags ---
     if (hasTags) {
         const tagNames = Array.isArray(d.tags) ? d.tags : [];
-        console.log(
-            "[PUT /api/blogs/:slug] updating tags =",
-            tagNames,
-        );
+        // console.log(
+        //     "[PUT /api/blogs/:slug] updating tags =",
+        //     tagNames,
+        // );
         await prisma.blogTag.deleteMany({
             where: { blogId: updated.id },
         });
@@ -4632,11 +4632,11 @@ app.put("/api/blogs/:slug", async (req, res) => {
                     },
                 });
             } catch (err) {
-                console.error(
-                    "[PUT /api/blogs/:slug] failed to upsert blogAuthor for memberId",
-                    m.id,
-                    err,
-                );
+                // console.error(
+                //     "[PUT /api/blogs/:slug] failed to upsert blogAuthor for memberId",
+                //     m.id,
+                //     err,
+                // );
             }
         }
     }
@@ -4646,10 +4646,10 @@ app.put("/api/blogs/:slug", async (req, res) => {
         const projectSlugs = Array.isArray(d.projectSlugs)
             ? d.projectSlugs
             : [];
-        console.log(
-            "[PUT /api/blogs/:slug] updating related projects, slugs =",
-            projectSlugs,
-        );
+        // console.log(
+        //     "[PUT /api/blogs/:slug] updating related projects, slugs =",
+        //     projectSlugs,
+        // );
 
         await prisma.projectBlog.deleteMany({
             where: { blogId: updated.id },
@@ -4677,10 +4677,10 @@ app.put("/api/blogs/:slug", async (req, res) => {
         const eventSlugs = Array.isArray(d.eventSlugs)
             ? d.eventSlugs
             : [];
-        console.log(
-            "[PUT /api/blogs/:slug] updating related events, slugs =",
-            eventSlugs,
-        );
+        // console.log(
+        //     "[PUT /api/blogs/:slug] updating related events, slugs =",
+        //     eventSlugs,
+        // );
 
         await prisma.eventBlog.deleteMany({
             where: { blogId: updated.id },
@@ -4703,34 +4703,34 @@ app.put("/api/blogs/:slug", async (req, res) => {
         }
     }
 
-    console.log("========== [PUT /api/blogs/:slug] END (success) ==========");
+    // console.log("========== [PUT /api/blogs/:slug] END (success) ==========");
     return res
         .status(200)
         .json({ ok: true, slug: updated.slug, id: updated.id });
 });
 
 app.delete("/api/blogs/:slug", async (req, res) => {
-    console.log("========== [DELETE /api/blogs/:slug] BEGIN ==========");
-    console.log("[DELETE /api/blogs/:slug] slug =", req.params.slug);
+    // console.log("========== [DELETE /api/blogs/:slug] BEGIN ==========");
+    // console.log("[DELETE /api/blogs/:slug] slug =", req.params.slug);
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn(
-            "[DELETE /api/blogs/:slug] blocked: unauthenticated",
-        );
-        console.log(
-            "========== [DELETE /api/blogs/:slug] END (unauthenticated) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/blogs/:slug] blocked: unauthenticated",
+        // );
+        // console.log(
+        //     "========== [DELETE /api/blogs/:slug] END (unauthenticated) ==========",
+        // );
         return;
     }
 
     const roles = (user.roles || []).map((r) => r.role);
-    console.log(
-        "[DELETE /api/blogs/:slug] authenticated user id =",
-        user.id,
-        "roles =",
-        roles,
-    );
+    // console.log(
+    //     "[DELETE /api/blogs/:slug] authenticated user id =",
+    //     user.id,
+    //     "roles =",
+    //     roles,
+    // );
 
     const blog = await prisma.blog.findUnique({
         where: { slug: req.params.slug },
@@ -4740,13 +4740,13 @@ app.delete("/api/blogs/:slug", async (req, res) => {
     });
 
     if (!blog) {
-        console.warn(
-            "[DELETE /api/blogs/:slug] 404 for slug",
-            req.params.slug,
-        );
-        console.log(
-            "========== [DELETE /api/blogs/:slug] END (not found) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/blogs/:slug] 404 for slug",
+        //     req.params.slug,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/blogs/:slug] END (not found) ==========",
+        // );
         return res
             .status(404)
             .json({ ok: false, error: "Not found" });
@@ -4767,13 +4767,13 @@ app.delete("/api/blogs/:slug", async (req, res) => {
     }
 
     if (!isAdminOrModerator && !isCreator) {
-        console.warn(
-            "[DELETE /api/blogs/:slug] blocked: insufficient permissions for user",
-            user.id,
-        );
-        console.log(
-            "========== [DELETE /api/blogs/:slug] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/blogs/:slug] blocked: insufficient permissions for user",
+        //     user.id,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/blogs/:slug] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -4781,13 +4781,13 @@ app.delete("/api/blogs/:slug", async (req, res) => {
 
     const parsed = deleteBySlugSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[DELETE /api/blogs/:slug] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [DELETE /api/blogs/:slug] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/blogs/:slug] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [DELETE /api/blogs/:slug] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -4797,15 +4797,15 @@ app.delete("/api/blogs/:slug", async (req, res) => {
 
     const { confirmSlug } = parsed.data;
     if (confirmSlug !== blog.slug) {
-        console.warn(
-            "[DELETE /api/blogs/:slug] slug confirmation mismatch, got",
-            confirmSlug,
-            "expected",
-            blog.slug,
-        );
-        console.log(
-            "========== [DELETE /api/blogs/:slug] END (slug mismatch) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/blogs/:slug] slug confirmation mismatch, got",
+        //     confirmSlug,
+        //     "expected",
+        //     blog.slug,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/blogs/:slug] END (slug mismatch) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Slug confirmation does not match",
@@ -4835,18 +4835,18 @@ app.delete("/api/blogs/:slug", async (req, res) => {
             });
         });
 
-        console.log(
-            "========== [DELETE /api/blogs/:slug] END (success) ==========",
-        );
+        // console.log(
+        //     "========== [DELETE /api/blogs/:slug] END (success) ==========",
+        // );
         return res.status(200).json({ ok: true });
     } catch (err) {
-        console.error(
-            "[DELETE /api/blogs/:slug] error during deletion",
-            err,
-        );
-        console.log(
-            "========== [DELETE /api/blogs/:slug] END (error) ==========",
-        );
+        // console.error(
+        //     "[DELETE /api/blogs/:slug] error during deletion",
+        //     err,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/blogs/:slug] END (error) ==========",
+        // );
         return res.status(500).json({
             ok: false,
             error: "Failed to delete blog",
@@ -5083,15 +5083,15 @@ async function uniqueEventSlug(base) {
 }
 
 app.post("/api/events", async (req, res) => {
-    console.log("========== [POST /api/events] BEGIN ==========");
-    console.log("[POST /api/events] raw body =", JSON.stringify(req.body));
+    // console.log("========== [POST /api/events] BEGIN ==========");
+    // console.log("[POST /api/events] raw body =", JSON.stringify(req.body));
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn("[POST /api/events] blocked: unauthenticated");
-        console.log(
-            "========== [POST /api/events] END (unauthenticated) ==========",
-        );
+        // console.warn("[POST /api/events] blocked: unauthenticated");
+        // console.log(
+        //     "========== [POST /api/events] END (unauthenticated) ==========",
+        // );
         return;
     }
 
@@ -5100,12 +5100,12 @@ app.post("/api/events", async (req, res) => {
         ["ADMIN", "MODERATOR", "MEMBER"].includes(r),
     );
     if (!hasMemberRole) {
-        console.warn(
-            "[POST /api/events] blocked: insufficient permissions",
-        );
-        console.log(
-            "========== [POST /api/events] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/events] blocked: insufficient permissions",
+        // );
+        // console.log(
+        //     "========== [POST /api/events] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -5123,13 +5123,13 @@ app.post("/api/events", async (req, res) => {
                 : req.body?.lng,
     });
     if (!parsed.success) {
-        console.warn(
-            "[POST /api/events] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [POST /api/events] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[POST /api/events] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [POST /api/events] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -5140,7 +5140,7 @@ app.post("/api/events", async (req, res) => {
     const d = parsed.data;
 
     const slug = await uniqueEventSlug(d.name);
-    console.log("[POST /api/events] generated slug =", slug);
+    // console.log("[POST /api/events] generated slug =", slug);
 
     const photos = Array.isArray(d.photos) ? d.photos : [];
     const coverRel = photos.length ? photos[0] : null;
@@ -5182,7 +5182,7 @@ app.post("/api/events", async (req, res) => {
         },
     });
 
-    console.log("[POST /api/events] created event id =", event.id);
+    // console.log("[POST /api/events] created event id =", event.id);
 
     if (creatorMemberId) {
         try {
@@ -5202,20 +5202,20 @@ app.post("/api/events", async (req, res) => {
                     role: "CREATOR",
                 },
             });
-            console.log(
-                "[POST /api/events] ensured creator memberEvent row for memberId",
-                creatorMemberId,
-            );
+            // console.log(
+            //     "[POST /api/events] ensured creator memberEvent row for memberId",
+            //     creatorMemberId,
+            // );
         } catch (err) {
-            console.error(
-                "[POST /api/events] failed to upsert creator memberEvent row",
-                err,
-            );
+            // console.error(
+            //     "[POST /api/events] failed to upsert creator memberEvent row",
+            //     err,
+            // );
         }
     } else {
-        console.warn(
-            "[POST /api/events] creator user has no member profile; cannot attach as attendee",
-        );
+        // console.warn(
+        //     "[POST /api/events] creator user has no member profile; cannot attach as attendee",
+        // );
     }
 
     const projectSlugs = Array.isArray(d.projectSlugs)
@@ -5262,9 +5262,9 @@ app.post("/api/events", async (req, res) => {
     for (const a of attendees) {
         if (a.type === "member" && a.memberId) {
             if (creatorMemberId && a.memberId === creatorMemberId) {
-                console.log(
-                    "[POST /api/events] skipping creator in attendee loop; already ensured as CREATOR",
-                );
+                // console.log(
+                //     "[POST /api/events] skipping creator in attendee loop; already ensured as CREATOR",
+                // );
                 continue;
             }
             try {
@@ -5276,10 +5276,10 @@ app.post("/api/events", async (req, res) => {
                     },
                 });
             } catch (err) {
-                console.error(
-                    "[POST /api/events] failed to create memberEvent",
-                    err,
-                );
+                // console.error(
+                //     "[POST /api/events] failed to create memberEvent",
+                //     err,
+                // );
             }
         }
     }
@@ -5320,7 +5320,7 @@ app.post("/api/events", async (req, res) => {
     }
 
     const eventInvites = Array.from(inviteMap.values());
-    console.log("[POST /api/events] eventInvites =", eventInvites);
+    // console.log("[POST /api/events] eventInvites =", eventInvites);
 
     if (eventInvites.length) {
         const webBase = WEB_ORIGIN.replace(/\/$/, "");
@@ -5328,10 +5328,10 @@ app.post("/api/events", async (req, res) => {
 
         for (const inv of eventInvites) {
             const email = inv.email;
-            console.log(
-                "[POST /api/events] creating invite for email =",
-                email,
-            );
+            // console.log(
+            //     "[POST /api/events] creating invite for email =",
+            //     email,
+            // );
             const { raw, hash } = genInviteToken();
 
             await prisma.eventInvite.create({
@@ -5365,26 +5365,26 @@ This invite was sent from ${MAIL_FROM}.
         }
     }
 
-    console.log("========== [POST /api/events] END (success) ==========");
+    // console.log("========== [POST /api/events] END (success) ==========");
     return res
         .status(201)
         .json({ ok: true, slug: event.slug, id: event.id });
 });
 
 app.put("/api/events/:slug", async (req, res) => {
-    console.log("========== [PUT /api/events/:slug] BEGIN ==========");
-    console.log("[PUT /api/events/:slug] slug =", req.params.slug);
-    console.log(
-        "[PUT /api/events/:slug] raw body =",
-        JSON.stringify(req.body),
-    );
+    // console.log("========== [PUT /api/events/:slug] BEGIN ==========");
+    // console.log("[PUT /api/events/:slug] slug =", req.params.slug);
+    // console.log(
+    //     "[PUT /api/events/:slug] raw body =",
+    //     JSON.stringify(req.body),
+    // );
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn("[PUT /api/events/:slug] blocked: unauthenticated");
-        console.log(
-            "========== [PUT /api/events/:slug] END (unauthenticated) ==========",
-        );
+        // console.warn("[PUT /api/events/:slug] blocked: unauthenticated");
+        // console.log(
+        //     "========== [PUT /api/events/:slug] END (unauthenticated) ==========",
+        // );
         return;
     }
 
@@ -5400,19 +5400,19 @@ app.put("/api/events/:slug", async (req, res) => {
     });
 
     if (!event) {
-        console.warn(
-            "[PUT /api/events/:slug] 404 for slug",
-            req.params.slug,
-        );
+        // console.warn(
+        //     "[PUT /api/events/:slug] 404 for slug",
+        //     req.params.slug,
+        // );
     }
     if (!event) {
-        console.warn(
-            "[PUT /api/events/:slug] 404 for slug",
-            req.params.slug,
-        );
-        console.log(
-            "========== [PUT /api/events/:slug] END (not found) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/events/:slug] 404 for slug",
+        //     req.params.slug,
+        // );
+        // console.log(
+        //     "========== [PUT /api/events/:slug] END (not found) ==========",
+        // );
         return res.status(404).json({ ok: false, error: "Not found" });
     }
 
@@ -5433,12 +5433,12 @@ app.put("/api/events/:slug", async (req, res) => {
     }
 
     if (!canEdit) {
-        console.warn(
-            "[PUT /api/events/:slug] blocked: insufficient permissions",
-        );
-        console.log(
-            "========== [PUT /api/events/:slug] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/events/:slug] blocked: insufficient permissions",
+        // );
+        // console.log(
+        //     "========== [PUT /api/events/:slug] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -5456,13 +5456,13 @@ app.put("/api/events/:slug", async (req, res) => {
                 : req.body?.lng,
     });
     if (!parsed.success) {
-        console.warn(
-            "[PUT /api/events/:slug] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [PUT /api/events/:slug] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[PUT /api/events/:slug] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [PUT /api/events/:slug] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -5472,21 +5472,21 @@ app.put("/api/events/:slug", async (req, res) => {
 
     const d = parsed.data;
 
-    console.log("[PUT /api/events/:slug] parsed data =", {
-        name: d.name,
-        hasDescription: !!d.description,
-        dateStart: d.dateStart || null,
-        dateEnd: d.dateEnd || null,
-        projectSlugsCount: Array.isArray(d.projectSlugs)
-            ? d.projectSlugs.length
-            : 0,
-        blogSlugsCount: Array.isArray(d.blogSlugs)
-            ? d.blogSlugs.length
-            : 0,
-        attendeesCount: Array.isArray(d.attendees)
-            ? d.attendees.length
-            : 0,
-    });
+    // console.log("[PUT /api/events/:slug] parsed data =", {
+    //     name: d.name,
+    //     hasDescription: !!d.description,
+    //     dateStart: d.dateStart || null,
+    //     dateEnd: d.dateEnd || null,
+    //     projectSlugsCount: Array.isArray(d.projectSlugs)
+    //         ? d.projectSlugs.length
+    //         : 0,
+    //     blogSlugsCount: Array.isArray(d.blogSlugs)
+    //         ? d.blogSlugs.length
+    //         : 0,
+    //     attendeesCount: Array.isArray(d.attendees)
+    //         ? d.attendees.length
+    //         : 0,
+    // });
 
     const photos = Array.isArray(d.photos)
         ? d.photos
@@ -5531,7 +5531,7 @@ app.put("/api/events/:slug", async (req, res) => {
         },
     });
 
-    console.log("[PUT /api/events/:slug] updated event id =", updated.id);
+    // console.log("[PUT /api/events/:slug] updated event id =", updated.id);
 
     const projectSlugs = Array.isArray(d.projectSlugs)
         ? d.projectSlugs
@@ -5623,14 +5623,14 @@ app.put("/api/events/:slug", async (req, res) => {
                     data: { role: "CREATOR" },
                 });
                 creatorMemberIdSet.add(userMemberId);
-                console.log(
-                    "[PUT /api/events/:slug] promoted editing user to CREATOR for legacy event",
-                );
+                // console.log(
+                //     "[PUT /api/events/:slug] promoted editing user to CREATOR for legacy event",
+                // );
             } catch (err) {
-                console.error(
-                    "[PUT /api/events/:slug] failed to promote user to CREATOR",
-                    err,
-                );
+                // console.error(
+                //     "[PUT /api/events/:slug] failed to promote user to CREATOR",
+                //     err,
+                // );
             }
         }
     }
@@ -5653,10 +5653,10 @@ app.put("/api/events/:slug", async (req, res) => {
     for (const a of attendees) {
         if (a.type === "member" && a.memberId) {
             if (creatorMemberIdSet.has(a.memberId)) {
-                console.log(
-                    "[PUT /api/events/:slug] skipping creator memberId in attendee loop; preserved as CREATOR",
-                    a.memberId,
-                );
+                // console.log(
+                //     "[PUT /api/events/:slug] skipping creator memberId in attendee loop; preserved as CREATOR",
+                //     a.memberId,
+                // );
                 continue;
             }
             try {
@@ -5668,10 +5668,10 @@ app.put("/api/events/:slug", async (req, res) => {
                     },
                 });
             } catch (err) {
-                console.error(
-                    "[PUT /api/events/:slug] failed to create memberEvent",
-                    err,
-                );
+                // console.error(
+                //     "[PUT /api/events/:slug] failed to create memberEvent",
+                //     err,
+                // );
             }
         }
     }
@@ -5714,10 +5714,10 @@ app.put("/api/events/:slug", async (req, res) => {
     }
 
     const newInvites = Array.from(inviteMap.values());
-    console.log(
-        "[PUT /api/events/:slug] new event invites =",
-        newInvites,
-    );
+    // console.log(
+    //     "[PUT /api/events/:slug] new event invites =",
+    //     newInvites,
+    // );
 
     if (newInvites.length) {
         const webBase = WEB_ORIGIN.replace(/\/$/, "");
@@ -5758,34 +5758,34 @@ This invite was sent from ${MAIL_FROM}.
         }
     }
 
-    console.log("========== [PUT /api/events/:slug] END (success) ==========");
+    // console.log("========== [PUT /api/events/:slug] END (success) ==========");
     return res
         .status(200)
         .json({ ok: true, slug: updated.slug, id: updated.id });
 });
 
 app.delete("/api/events/:slug", async (req, res) => {
-    console.log("========== [DELETE /api/events/:slug] BEGIN ==========");
-    console.log("[DELETE /api/events/:slug] slug =", req.params.slug);
+    // console.log("========== [DELETE /api/events/:slug] BEGIN ==========");
+    // console.log("[DELETE /api/events/:slug] slug =", req.params.slug);
 
     const user = await requireUser(req, res);
     if (!user) {
-        console.warn(
-            "[DELETE /api/events/:slug] blocked: unauthenticated",
-        );
-        console.log(
-            "========== [DELETE /api/events/:slug] END (unauthenticated) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/events/:slug] blocked: unauthenticated",
+        // );
+        // console.log(
+        //     "========== [DELETE /api/events/:slug] END (unauthenticated) ==========",
+        // );
         return;
     }
 
     const roles = (user.roles || []).map((r) => r.role);
-    console.log(
-        "[DELETE /api/events/:slug] authenticated user id =",
-        user.id,
-        "roles =",
-        roles,
-    );
+    // console.log(
+    //     "[DELETE /api/events/:slug] authenticated user id =",
+    //     user.id,
+    //     "roles =",
+    //     roles,
+    // );
 
     const event = await prisma.event.findUnique({
         where: { slug: req.params.slug },
@@ -5795,13 +5795,13 @@ app.delete("/api/events/:slug", async (req, res) => {
     });
 
     if (!event) {
-        console.warn(
-            "[DELETE /api/events/:slug] 404 for slug",
-            req.params.slug,
-        );
-        console.log(
-            "========== [DELETE /api/events/:slug] END (not found) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/events/:slug] 404 for slug",
+        //     req.params.slug,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/events/:slug] END (not found) ==========",
+        // );
         return res
             .status(404)
             .json({ ok: false, error: "Not found" });
@@ -5822,13 +5822,13 @@ app.delete("/api/events/:slug", async (req, res) => {
     }
 
     if (!isAdminOrModerator && !isCreator) {
-        console.warn(
-            "[DELETE /api/events/:slug] blocked: insufficient permissions for user",
-            user.id,
-        );
-        console.log(
-            "========== [DELETE /api/events/:slug] END (forbidden) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/events/:slug] blocked: insufficient permissions for user",
+        //     user.id,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/events/:slug] END (forbidden) ==========",
+        // );
         return res
             .status(403)
             .json({ ok: false, error: "Insufficient permissions" });
@@ -5836,13 +5836,13 @@ app.delete("/api/events/:slug", async (req, res) => {
 
     const parsed = deleteBySlugSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        console.warn(
-            "[DELETE /api/events/:slug] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [DELETE /api/events/:slug] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/events/:slug] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [DELETE /api/events/:slug] END (validation error) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Invalid input",
@@ -5852,15 +5852,15 @@ app.delete("/api/events/:slug", async (req, res) => {
 
     const { confirmSlug } = parsed.data;
     if (confirmSlug !== event.slug) {
-        console.warn(
-            "[DELETE /api/events/:slug] slug confirmation mismatch, got",
-            confirmSlug,
-            "expected",
-            event.slug,
-        );
-        console.log(
-            "========== [DELETE /api/events/:slug] END (slug mismatch) ==========",
-        );
+        // console.warn(
+        //     "[DELETE /api/events/:slug] slug confirmation mismatch, got",
+        //     confirmSlug,
+        //     "expected",
+        //     event.slug,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/events/:slug] END (slug mismatch) ==========",
+        // );
         return res.status(400).json({
             ok: false,
             error: "Slug confirmation does not match",
@@ -5895,18 +5895,18 @@ app.delete("/api/events/:slug", async (req, res) => {
             });
         });
 
-        console.log(
-            "========== [DELETE /api/events/:slug] END (success) ==========",
-        );
+        // console.log(
+        //     "========== [DELETE /api/events/:slug] END (success) ==========",
+        // );
         return res.status(200).json({ ok: true });
     } catch (err) {
-        console.error(
-            "[DELETE /api/events/:slug] error during deletion",
-            err,
-        );
-        console.log(
-            "========== [DELETE /api/events/:slug] END (error) ==========",
-        );
+        // console.error(
+        //     "[DELETE /api/events/:slug] error during deletion",
+        //     err,
+        // );
+        // console.log(
+        //     "========== [DELETE /api/events/:slug] END (error) ==========",
+        // );
         return res.status(500).json({
             ok: false,
             error: "Failed to delete event",
@@ -5924,23 +5924,23 @@ const inviteConsumeSchema = z.object({
 });
 
 app.post("/api/auth/invite/consume", async (req, res) => {
-    console.log(
-        "========== [POST /api/auth/invite/consume] BEGIN ==========",
-    );
-    console.log(
-        "[invite/consume] raw body =",
-        JSON.stringify(req.body),
-    );
+    // console.log(
+    //     "========== [POST /api/auth/invite/consume] BEGIN ==========",
+    // );
+    // console.log(
+    //     "[invite/consume] raw body =",
+    //     JSON.stringify(req.body),
+    // );
 
     const parsed = inviteConsumeSchema.safeParse(req.body);
     if (!parsed.success) {
-        console.warn(
-            "[invite/consume] validation error",
-            parsed.error.flatten(),
-        );
-        console.log(
-            "========== [POST /api/auth/invite/consume] END (validation error) ==========",
-        );
+        // console.warn(
+        //     "[invite/consume] validation error",
+        //     parsed.error.flatten(),
+        // );
+        // console.log(
+        //     "========== [POST /api/auth/invite/consume] END (validation error) ==========",
+        // );
         return res
             .status(400)
             .json({ ok: false, error: "Invalid token payload" });
@@ -5949,10 +5949,10 @@ app.post("/api/auth/invite/consume", async (req, res) => {
     const { token, name, password, passwordRepeat } = parsed.data;
     const tokenHash = hashInviteToken(token);
     if (!tokenHash) {
-        console.warn("[invite/consume] missing token hash");
-        console.log(
-            "========== [POST /api/auth/invite/consume] END (no token) ==========",
-        );
+        // console.warn("[invite/consume] missing token hash");
+        // console.log(
+        //     "========== [POST /api/auth/invite/consume] END (no token) ==========",
+        // );
         return res
             .status(400)
             .json({ ok: false, error: "Invite invalid or expired." });
@@ -5988,13 +5988,13 @@ app.post("/api/auth/invite/consume", async (req, res) => {
     }
 
     if (!projectInvite && !eventInvite) {
-        console.warn(
-            "[invite/consume] no invite found for tokenHash",
-            tokenHash,
-        );
-        console.log(
-            "========== [POST /api/auth/invite/consume] END (not found) ==========",
-        );
+        // console.warn(
+        //     "[invite/consume] no invite found for tokenHash",
+        //     tokenHash,
+        // );
+        // console.log(
+        //     "========== [POST /api/auth/invite/consume] END (not found) ==========",
+        // );
         return res
             .status(400)
             .json({ ok: false, error: "Invite invalid or expired." });
@@ -6012,13 +6012,13 @@ app.post("/api/auth/invite/consume", async (req, res) => {
 
     if (isNewUser) {
         if (!password || !passwordRepeat || password !== passwordRepeat) {
-            console.warn(
-                "[invite/consume] new-user password mismatch/empty for",
-                emailLower,
-            );
-            console.log(
-                "========== [POST /api/auth/invite/consume] END (password mismatch) ==========",
-            );
+            // console.warn(
+            //     "[invite/consume] new-user password mismatch/empty for",
+            //     emailLower,
+            // );
+            // console.log(
+            //     "========== [POST /api/auth/invite/consume] END (password mismatch) ==========",
+            // );
             return res.status(400).json({
                 ok: false,
                 error:
@@ -6027,13 +6027,13 @@ app.post("/api/auth/invite/consume", async (req, res) => {
             });
         }
         if (!name || !name.trim()) {
-            console.warn(
-                "[invite/consume] new-user missing name for",
-                emailLower,
-            );
-            console.log(
-                "========== [POST /api/auth/invite/consume] END (missing name) ==========",
-            );
+            // console.warn(
+            //     "[invite/consume] new-user missing name for",
+            //     emailLower,
+            // );
+            // console.log(
+            //     "========== [POST /api/auth/invite/consume] END (missing name) ==========",
+            // );
             return res.status(400).json({
                 ok: false,
                 error: "Please provide your name to complete the invite.",
@@ -6081,12 +6081,12 @@ app.post("/api/auth/invite/consume", async (req, res) => {
             include: { member: true, roles: true },
         });
 
-        console.log(
-            "[invite/consume] created new user from invite",
-            emailLower,
-            "userId =",
-            user.id,
-        );
+        // console.log(
+        //     "[invite/consume] created new user from invite",
+        //     emailLower,
+        //     "userId =",
+        //     user.id,
+        // );
     }
 
     let member = user.member;
@@ -6157,14 +6157,14 @@ app.post("/api/auth/invite/consume", async (req, res) => {
             },
         });
 
-        console.log(
-            "[invite/consume] accepted project invite for email",
-            emailLower,
-            "projectSlug =",
-            projectSlug,
-            "newUser =",
-            isNewUser,
-        );
+        // console.log(
+        //     "[invite/consume] accepted project invite for email",
+        //     emailLower,
+        //     "projectSlug =",
+        //     projectSlug,
+        //     "newUser =",
+        //     isNewUser,
+        // );
     }
 
     if (eventInvite && eventInvite.event) {
@@ -6198,19 +6198,19 @@ app.post("/api/auth/invite/consume", async (req, res) => {
             },
         });
 
-        console.log(
-            "[invite/consume] accepted event invite for email",
-            emailLower,
-            "eventSlug =",
-            eventSlug,
-            "newUser =",
-            isNewUser,
-        );
+        // console.log(
+        //     "[invite/consume] accepted event invite for email",
+        //     emailLower,
+        //     "eventSlug =",
+        //     eventSlug,
+        //     "newUser =",
+        //     isNewUser,
+        // );
     }
 
-    console.log(
-        "========== [POST /api/auth/invite/consume] END (success) ==========",
-    );
+    // console.log(
+    //     "========== [POST /api/auth/invite/consume] END (success) ==========",
+    // );
     return res.json({
         ok: true,
         newUser: isNewUser,
@@ -6226,13 +6226,13 @@ app.use("/api/account", accountRouter);
 
 /* ------------------------------ Error handler ------------------------------ */
 app.use((err, req, res, _next) => {
-    console.error(
-        "[error] during",
-        req.method,
-        req.originalUrl,
-        "\n",
-        err && err.stack ? err.stack : err,
-    );
+    // console.error(
+    //     "[error] during",
+    //     req.method,
+    //     req.originalUrl,
+    //     "\n",
+    //     err && err.stack ? err.stack : err,
+    // );
 
     // Handle multer-specific errors clearly so non-upload requests
     // don't accidentally show a file-type message
@@ -6266,12 +6266,12 @@ app.use((err, req, res, _next) => {
 
 /* ------------------------------ Start ------------------------------ */
 const PORT = Number(process.env.PORT || 3001);
-console.log("[config] PORT =", PORT);
+// console.log("[config] PORT =", PORT);
 
 app.listen(PORT, () =>
     console.log(
-        `API on :${PORT} (WEB_ORIGIN=${WEB_ORIGIN}, PUBLIC_API_BASE=${
-            PUBLIC_API_BASE || "n/a"
-        })`,
+        // `API on :${PORT} (WEB_ORIGIN=${WEB_ORIGIN}, PUBLIC_API_BASE=${
+        //     PUBLIC_API_BASE || "n/a"
+        // })`,
     ),
 );

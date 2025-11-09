@@ -272,7 +272,10 @@ async function main(){
         const br = blogMap.get(b.slug);
         for (const a of (b.authors||[])) {
             const mr = memMap.get(a.slug) || [...memMap.values()].find(x => x.id === a.memberId);
-            if (!mr) { console.warn('[seed] blog author missing:', a); continue; }
+            if (!mr) {
+                // console.warn('[seed] blog author missing:', a);
+                continue;
+            }
             await prisma.blogAuthor.upsert({
                 where:{ blogId_memberId:{ blogId:br.id, memberId:mr.id } },
                 create:{ blogId:br.id, memberId:mr.id, role:a.role||null },
@@ -399,15 +402,19 @@ async function main(){
         memberName: "Member Two",
     });
 
-    console.log("✅ Seeded users:");
-    console.table([
-        { email, role: "ADMIN+MEMBER", password: adminPassword },
-        { email: "mod1@pum.local", role: "MODERATOR+MEMBER", password: defaultPassword },
-        { email: "mod2@pum.local", role: "MODERATOR+MEMBER", password: defaultPassword },
-        { email: "mem1@pum.local", role: "MEMBER", password: defaultPassword },
-        { email: "mem2@pum.local", role: "MEMBER", password: defaultPassword },
-    ]);
-    console.log("   (change passwords in production via /api/auth/password/reset)");
+    // console.log("✅ Seeded users:");
+    // console.table([
+    //     { email, role: "ADMIN+MEMBER", password: adminPassword },
+    //     { email: "mod1@pum.local", role: "MODERATOR+MEMBER", password: defaultPassword },
+    //     { email: "mod2@pum.local", role: "MODERATOR+MEMBER", password: defaultPassword },
+    //     { email: "mem1@pum.local", role: "MEMBER", password: defaultPassword },
+    //     { email: "mem2@pum.local", role: "MEMBER", password: defaultPassword },
+    // ]);
+    // console.log("   (change passwords in production via /api/auth/password/reset)");
 }
 
-main().then(()=>prisma.$disconnect()).catch(async e=>{ console.error(e); await prisma.$disconnect(); process.exit(1); });
+main().then(()=>prisma.$disconnect()).catch(async e=>{
+    // console.error(e);
+    await prisma.$disconnect();
+    process.exit(1);
+});
