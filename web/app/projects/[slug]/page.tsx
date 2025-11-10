@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { API_BASE } from "@/lib/config";
 import EditProjectButton from "@/components/EditProjectButton";
+import { tServer } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 
@@ -212,7 +213,11 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
 
     const segments = splitFenced(src);
     if (!src.trim()) {
-        return <p className="text-white/60 text-sm">No description yet.</p>;
+        return (
+            <p className="text-white/60 text-sm">
+                {tServer("projectDetail.markdown.empty")}
+            </p>
+        );
     }
     return (
         <div className="space-y-3 leading-relaxed text-white/90">
@@ -221,7 +226,14 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                     <pre
                         key={`code-${i}`}
                         className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
-                        aria-label={seg.lang ? `Code block (${seg.lang})` : "Code block"}
+                        aria-label={
+                            seg.lang
+                                ? tServer("projectDetail.markdown.codeBlockWithLang").replace(
+                                    "{lang}",
+                                    seg.lang,
+                                )
+                                : tServer("projectDetail.markdown.codeBlock")
+                        }
                     >
                         <code>{seg.content}</code>
                     </pre>
@@ -317,10 +329,7 @@ function normalizeProjectDetail(p: any): Project {
 
     const events: ProjectEvent[] = eventsSource.map((e: any) => {
         const photos: string[] = Array.isArray(e.photos) ? e.photos : [];
-        const cover =
-            e.cover ??
-            e.imageUrl ??
-            (photos.length > 0 ? photos[0] : null);
+        const cover = e.cover ?? e.imageUrl ?? (photos.length > 0 ? photos[0] : null);
 
         return {
             slug: e.slug ?? e.id,
@@ -368,7 +377,6 @@ function normalizeProjectDetail(p: any): Project {
             name: m.name,
             avatarUrl: m.avatarUrl ?? m.avatar,
             role: m.role,
-            // IMPORTANT: carry through backend creator flag instead of inferring from role text
             isCreator: !!m.isCreator,
         })),
         imageUrl: p.imageUrl ?? p.cover,
@@ -390,11 +398,25 @@ function normalizeProjectDetail(p: any): Project {
 }
 
 /* ---------- Metadata ---------- */
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+export async function generateMetadata({
+                                           params,
+                                       }: {
+    params: { slug: string };
+}): Promise<Metadata> {
     const p = await getProjectBySlug(params.slug);
+    if (p) {
+        const pattern = tServer("projectDetail.metadata.title");
+        return {
+            title: pattern.replace("{title}", p.title),
+            description:
+                p.summary ||
+                p.description ||
+                tServer("projectDetail.metadata.fallbackDescription"),
+        };
+    }
     return {
-        title: p ? `${p.title} – PUM Projects` : "Project – PUM",
-        description: p?.summary || p?.description || "PUM project",
+        title: tServer("projectDetail.metadata.fallbackTitle"),
+        description: tServer("projectDetail.metadata.fallbackDescription"),
     };
 }
 
@@ -456,13 +478,16 @@ function labelForLink(label: string, href: string): string {
 }
 
 function formatInviteStatusLabel(status?: string | null): string {
-    if (!status) return "Pending";
+    if (!status) return tServer("projectDetail.invites.status.pending");
     const up = String(status).toUpperCase();
-    if (up === "PENDING") return "Pending";
-    if (up === "ACCEPTED") return "Accepted";
-    if (up === "CANCELLED" || up === "CANCELED") return "Cancelled";
-    if (up === "EXPIRED") return "Expired";
-    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+    if (up === "PENDING") return tServer("projectDetail.invites.status.pending");
+    if (up === "ACCEPTED") return tServer("projectDetail.invites.status.accepted");
+    if (up === "CANCELLED" || up === "CANCELED") {
+        return tServer("projectDetail.invites.status.cancelled");
+    }
+    if (up === "EXPIRED") return tServer("projectDetail.invites.status.expired");
+    const base = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+    return base;
 }
 
 function inviteStatusClasses(status?: string | null): string {
@@ -479,16 +504,25 @@ function inviteStatusClasses(status?: string | null): string {
 }
 
 /* ---------- Page ---------- */
-export default async function ProjectDetailPage({ params }: { params: { slug: string } }) {
+export default async function ProjectDetailPage({
+                                                    params,
+                                                }: {
+    params: { slug: string };
+}) {
     const project = await getProjectBySlug(params.slug);
 
     if (!project) {
         return (
             <section className="section">
-                <h1 className="display">Project not found</h1>
+                <h1 className="display">
+                    {tServer("projectDetail.notFound.title")}
+                </h1>
                 <p className="mt-4">
-                    <Link href="/projects" className="underline underline-offset-4">
-                        Back to projects
+                    <Link
+                        href="/projects"
+                        className="underline underline-offset-4"
+                    >
+                        {tServer("projectDetail.notFound.back")}
                     </Link>
                 </p>
             </section>
@@ -503,7 +537,6 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
     const gallery =
         (project.gallery || []).filter((src) => src && src !== cover) ?? [];
 
-    // CREATOR DETECTION: use backend isCreator flag instead of role label text
     const creatorSlug =
         project.members?.find((m) => m.slug && m.isCreator)?.slug ?? null;
 
@@ -516,7 +549,9 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
     return (
         <section className="section">
             <header className="mb-6">
-                <p className="kicker">PROJECT</p>
+                <p className="kicker">
+                    {tServer("projectDetail.kicker")}
+                </p>
                 <div className="flex items-center justify-between gap-4">
                     <div>
                         <h1 className="display">{project.title}</h1>
@@ -526,17 +561,24 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                     {project.status}
                                 </span>
                             )}
-                            {(project.year || (project.tags && project.tags.length)) && (
+                            {(project.year ||
+                                (project.tags && project.tags.length)) && (
                                 <span>
                                     {project.year ? `${project.year}` : ""}
-                                    {project.year && project.tags && project.tags.length ? " • " : ""}
+                                    {project.year &&
+                                    project.tags &&
+                                    project.tags.length
+                                        ? " • "
+                                        : ""}
                                     {(project.tags || []).join(" • ")}
                                 </span>
                             )}
                         </div>
                     </div>
-                    {/* Edit button at top-right; creatorSlug uses isCreator flag, not role text */}
-                    <EditProjectButton slug={project.slug} creatorSlug={creatorSlug} />
+                    <EditProjectButton
+                        slug={project.slug}
+                        creatorSlug={creatorSlug}
+                    />
                 </div>
             </header>
 
@@ -553,7 +595,9 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
             <div className="grid lg:grid-cols-5 gap-6">
                 <article className="lg:col-span-3 space-y-6">
                     <div className="card p-5">
-                        <h2 className="text-lg font-semibold mb-2">About</h2>
+                        <h2 className="text-lg font-semibold mb-2">
+                            {tServer("projectDetail.about.title")}
+                        </h2>
 
                         {project.summary && (
                             <p className="text-white/80 leading-relaxed mb-3">
@@ -564,13 +608,15 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                         {project.description ? (
                             <MarkdownPreview markdown={project.description} />
                         ) : !project.summary ? (
-                            <p className="text-white/60">No description yet.</p>
+                            <p className="text-white/60">
+                                {tServer("projectDetail.about.empty")}
+                            </p>
                         ) : null}
 
                         {project.techStack && project.techStack.length > 0 && (
                             <div className="mt-3">
                                 <div className="text-xs uppercase tracking-widest text-white/60 mb-2">
-                                    Tech stack
+                                    {tServer("projectDetail.techStack.label")}
                                 </div>
                                 <div className="flex flex-wrap gap-1.5">
                                     {project.techStack.map((t) => (
@@ -594,7 +640,9 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                         rel="noreferrer"
                                         className="btn-primary"
                                     >
-                                        Live demo
+                                        {tServer(
+                                            "projectDetail.links.demoButton",
+                                        )}
                                     </a>
                                 )}
                                 {project.repoUrl && (
@@ -604,7 +652,9 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                         rel="noreferrer"
                                         className="btn-secondary"
                                     >
-                                        Source code
+                                        {tServer(
+                                            "projectDetail.links.repoButton",
+                                        )}
                                     </a>
                                 )}
                             </div>
@@ -613,7 +663,11 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
 
                     {project.events && project.events.length > 0 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">Connected events</h2>
+                            <h2 className="text-lg font-semibold mb-3">
+                                {tServer(
+                                    "projectDetail.events.connectedEventsTitle",
+                                )}
+                            </h2>
                             <div className="grid sm:grid-cols-2 gap-4">
                                 {project.events.map((ev, i) => {
                                     const coverUrl =
@@ -632,12 +686,18 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                             {coverUrl ? (
                                                 <img
                                                     src={coverUrl}
-                                                    alt={ev.name || ev.slug}
+                                                    alt={
+                                                        ev.name ||
+                                                        ev.slug ||
+                                                        "Event"
+                                                    }
                                                     className="w-32 h-24 object-cover rounded-md ring-1 ring-white/10 flex-shrink-0"
                                                 />
                                             ) : (
                                                 <div className="w-32 h-24 rounded-md ring-1 ring-white/10 bg-white/5 flex items-center justify-center text-sm text-white/70 flex-shrink-0">
-                                                    {(ev.name || ev.slug || "Event")
+                                                    {(ev.name ||
+                                                        ev.slug ||
+                                                        "Event")
                                                         .charAt(0)
                                                         .toUpperCase()}
                                                 </div>
@@ -656,18 +716,21 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                                         {snippet}
                                                     </p>
                                                 )}
-                                                {ev.tags && ev.tags.length > 0 && (
-                                                    <div className="mt-1 flex flex-wrap gap-1.5">
-                                                        {ev.tags.slice(0, 4).map((t) => (
-                                                            <span
-                                                                key={t}
-                                                                className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
-                                                            >
-                                                                {t}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
+                                                {ev.tags &&
+                                                    ev.tags.length > 0 && (
+                                                        <div className="mt-1 flex flex-wrap gap-1.5">
+                                                            {ev.tags
+                                                                .slice(0, 4)
+                                                                .map((t) => (
+                                                                    <span
+                                                                        key={t}
+                                                                        className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
+                                                                    >
+                                                                        {t}
+                                                                    </span>
+                                                                ))}
+                                                        </div>
+                                                    )}
                                             </div>
                                         </Link>
                                     );
@@ -678,13 +741,25 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
 
                     {gallery && gallery.length > 0 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">Gallery</h2>
+                            <h2 className="text-lg font-semibold mb-3">
+                                {tServer("projectDetail.gallery.title")}
+                            </h2>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 {gallery.map((src, i) => (
                                     <img
                                         key={i}
                                         src={src}
-                                        alt={`${project.title} photo ${i + 1}`}
+                                        alt={tServer(
+                                            "projectDetail.gallery.photoAlt",
+                                        )
+                                            .replace(
+                                                "{title}",
+                                                project.title,
+                                            )
+                                            .replace(
+                                                "{index}",
+                                                String(i + 1),
+                                            )}
                                         className="w-full h-32 object-cover rounded-md ring-1 ring-white/10"
                                     />
                                 ))}
@@ -694,7 +769,11 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
 
                     {project.blogPosts && project.blogPosts.length > 0 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">Related blog posts</h2>
+                            <h2 className="text-lg font-semibold mb-3">
+                                {tServer(
+                                    "projectDetail.relatedBlog.title",
+                                )}
+                            </h2>
                             <div className="grid sm:grid-cols-2 gap-4">
                                 {project.blogPosts.map((b) => (
                                     <Link
@@ -710,7 +789,9 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                             />
                                         ) : (
                                             <div className="w-32 h-24 rounded-md ring-1 ring-white/10 bg-white/5 flex items-center justify-center text-sm text-white/70 flex-shrink-0">
-                                                {b.title.charAt(0).toUpperCase()}
+                                                {b.title
+                                                    .charAt(0)
+                                                    .toUpperCase()}
                                             </div>
                                         )}
                                         <div className="min-w-0">
@@ -719,7 +800,9 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                             </div>
                                             {b.publishedAt && (
                                                 <div className="text-xs text-white/60 mt-0.5">
-                                                    {new Date(b.publishedAt).toLocaleDateString()}
+                                                    {new Date(
+                                                        b.publishedAt,
+                                                    ).toLocaleDateString()}
                                                 </div>
                                             )}
                                             {b.summary && (
@@ -727,18 +810,21 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                                     {b.summary}
                                                 </p>
                                             )}
-                                            {b.tags && b.tags.length > 0 && (
-                                                <div className="mt-1 flex flex-wrap gap-1.5">
-                                                    {b.tags.slice(0, 4).map((t) => (
-                                                        <span
-                                                            key={t}
-                                                            className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
-                                                        >
-                                                            {t}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
+                                            {b.tags &&
+                                                b.tags.length > 0 && (
+                                                    <div className="mt-1 flex flex-wrap gap-1.5">
+                                                        {b.tags
+                                                            .slice(0, 4)
+                                                            .map((t) => (
+                                                                <span
+                                                                    key={t}
+                                                                    className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
+                                                                >
+                                                                    {t}
+                                                                </span>
+                                                            ))}
+                                                    </div>
+                                                )}
                                         </div>
                                     </Link>
                                 ))}
@@ -749,7 +835,9 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
 
                 <aside className="lg:col-span-2 space-y-6">
                     <div className="card p-5">
-                        <h2 className="text-lg font-semibold mb-2">Team</h2>
+                        <h2 className="text-lg font-semibold mb-2">
+                            {tServer("projectDetail.team.title")}
+                        </h2>
                         {project.members?.length ? (
                             <ul className="space-y-3">
                                 {project.members.map((m, i) => (
@@ -758,8 +846,17 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                         className="flex items-center gap-3"
                                     >
                                         <img
-                                            src={m.avatarUrl || "/avatars/default.png"}
-                                            alt={m.name || m.slug || "Member"}
+                                            src={
+                                                m.avatarUrl ||
+                                                "/avatars/default.png"
+                                            }
+                                            alt={
+                                                m.name ||
+                                                m.slug ||
+                                                tServer(
+                                                    "projectDetail.team.memberAlt",
+                                                )
+                                            }
                                             className="w-10 h-10 rounded-full object-cover ring-1 ring-white/10"
                                         />
                                         <div className="min-w-0">
@@ -772,7 +869,10 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                                 </Link>
                                             ) : (
                                                 <span className="font-medium">
-                                                    {m.name || "Unknown member"}
+                                                    {m.name ||
+                                                        tServer(
+                                                            "projectDetail.team.unknownMember",
+                                                        )}
                                                 </span>
                                             )}
                                             <div className="flex items-center gap-2 mt-0.5">
@@ -783,7 +883,9 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                                 )}
                                                 {m.isCreator && (
                                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/50">
-                                                        Creator
+                                                        {tServer(
+                                                            "projectDetail.team.creatorBadge",
+                                                        )}
                                                     </span>
                                                 )}
                                             </div>
@@ -792,18 +894,24 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                 ))}
                             </ul>
                         ) : (
-                            <p className="text-white/60">Team coming soon.</p>
+                            <p className="text-white/60">
+                                {tServer("projectDetail.team.empty")}
+                            </p>
                         )}
                     </div>
 
                     {hasInvites && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-2">Invitations</h2>
+                            <h2 className="text-lg font-semibold mb-2">
+                                {tServer("projectDetail.invites.title")}
+                            </h2>
                             <ul className="space-y-2 text-sm">
                                 {invites.map((inv) => {
                                     const sentAt = formatDate(inv.createdAt);
-                                    const statusLabel = formatInviteStatusLabel(inv.status);
-                                    const pillClass = inviteStatusClasses(inv.status);
+                                    const statusLabel =
+                                        formatInviteStatusLabel(inv.status);
+                                    const pillClass =
+                                        inviteStatusClasses(inv.status);
                                     return (
                                         <li
                                             key={inv.id}
@@ -814,11 +922,20 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                                                     {inv.email}
                                                 </div>
                                                 <div className="text-[11px] text-white/60">
-                                                    {inv.role || "Invite"}
-                                                    {sentAt ? ` • Sent ${sentAt}` : ""}
+                                                    {inv.role ||
+                                                        tServer(
+                                                            "projectDetail.invites.roleFallback",
+                                                        )}
+                                                    {sentAt
+                                                        ? ` • ${tServer(
+                                                            "projectDetail.invites.sentPrefix",
+                                                        )} ${sentAt}`
+                                                        : ""}
                                                 </div>
                                             </div>
-                                            <span className={pillClass}>{statusLabel}</span>
+                                            <span className={pillClass}>
+                                                {statusLabel}
+                                            </span>
                                         </li>
                                     );
                                 })}
@@ -831,30 +948,56 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
                         createdAt ||
                         updatedAt) && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-2">Project details</h2>
+                            <h2 className="text-lg font-semibold mb-2">
+                                {tServer("projectDetail.details.title")}
+                            </h2>
                             <dl className="space-y-1 text-sm text-white/80">
                                 {project.status && (
                                     <div className="flex justify-between gap-3">
-                                        <dt className="text-white/60">Status</dt>
-                                        <dd className="text-right">{project.status}</dd>
+                                        <dt className="text-white/60">
+                                            {tServer(
+                                                "projectDetail.details.status",
+                                            )}
+                                        </dt>
+                                        <dd className="text-right">
+                                            {project.status}
+                                        </dd>
                                     </div>
                                 )}
                                 {project.year && (
                                     <div className="flex justify-between gap-3">
-                                        <dt className="text-white/60">Year</dt>
-                                        <dd className="text-right">{project.year}</dd>
+                                        <dt className="text-white/60">
+                                            {tServer(
+                                                "projectDetail.details.year",
+                                            )}
+                                        </dt>
+                                        <dd className="text-right">
+                                            {project.year}
+                                        </dd>
                                     </div>
                                 )}
                                 {createdAt && (
                                     <div className="flex justify-between gap-3">
-                                        <dt className="text-white/60">Created</dt>
-                                        <dd className="text-right">{createdAt}</dd>
+                                        <dt className="text-white/60">
+                                            {tServer(
+                                                "projectDetail.details.created",
+                                            )}
+                                        </dt>
+                                        <dd className="text-right">
+                                            {createdAt}
+                                        </dd>
                                     </div>
                                 )}
                                 {updatedAt && (
                                     <div className="flex justify-between gap-3">
-                                        <dt className="text-white/60">Last updated</dt>
-                                        <dd className="text-right">{updatedAt}</dd>
+                                        <dt className="text-white/60">
+                                            {tServer(
+                                                "projectDetail.details.updated",
+                                            )}
+                                        </dt>
+                                        <dd className="text-right">
+                                            {updatedAt}
+                                        </dd>
                                     </div>
                                 )}
                             </dl>
@@ -863,30 +1006,39 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
 
                     {hasLinks && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-2">Links</h2>
+                            <h2 className="text-lg font-semibold mb-2">
+                                {tServer("projectDetail.links.title")}
+                            </h2>
                             <ul className="space-y-2 text-sm">
-                                {Object.entries(project.links || {}).map(([label, hrefRaw]) => {
-                                    const href =
-                                        typeof hrefRaw === "string" ? hrefRaw : "";
-                                    if (!href) return null;
-                                    const url = normalizeUrl(href);
-                                    const text = labelForLink(label, url);
-                                    return (
-                                        <li key={label}>
-                                            <a
-                                                href={url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="inline-flex items-center gap-1 text-white/80 hover:text-white underline underline-offset-4"
-                                            >
-                                                <span>{text}</span>
-                                                <span aria-hidden="true" className="text-xs">
-                                                    ↗
-                                                </span>
-                                            </a>
-                                        </li>
-                                    );
-                                })}
+                                {Object.entries(project.links || {}).map(
+                                    ([label, hrefRaw]) => {
+                                        const href =
+                                            typeof hrefRaw === "string"
+                                                ? hrefRaw
+                                                : "";
+                                        if (!href) return null;
+                                        const url = normalizeUrl(href);
+                                        const text = labelForLink(label, url);
+                                        return (
+                                            <li key={label}>
+                                                <a
+                                                    href={url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="inline-flex items-center gap-1 text-white/80 hover:text-white underline underline-offset-4"
+                                                >
+                                                    <span>{text}</span>
+                                                    <span
+                                                        aria-hidden="true"
+                                                        className="text-xs"
+                                                    >
+                                                        ↗
+                                                    </span>
+                                                </a>
+                                            </li>
+                                        );
+                                    },
+                                )}
                             </ul>
                         </div>
                     )}
@@ -894,8 +1046,11 @@ export default async function ProjectDetailPage({ params }: { params: { slug: st
             </div>
 
             <div className="mt-8">
-                <Link href="/projects" className="underline underline-offset-4">
-                    ← Back to all projects
+                <Link
+                    href="/projects"
+                    className="underline underline-offset-4"
+                >
+                    {tServer("projectDetail.backToAll")}
                 </Link>
             </div>
         </section>

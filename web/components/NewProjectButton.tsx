@@ -1,9 +1,9 @@
-// ./web/components/NewProjectButton.tsx
 "use client";
 
 import React from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthProvider";
+import { tClient } from "@/lib/i18n-client";
 
 export default function NewProjectButton() {
     let user: any = null;
@@ -15,10 +15,9 @@ export default function NewProjectButton() {
 
     if (!user) return null;
 
-    // Any logged-in member can create a project; backend enforces roles further.
     return (
         <Link href="/projects/new" className="btn-primary text-sm">
-            New project
+            {tClient("projects.actions.new")}
         </Link>
     );
 }

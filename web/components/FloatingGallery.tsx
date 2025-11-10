@@ -24,9 +24,8 @@ const baseLoop: Transition = {
 
 export default function FloatingGallery() {
     return (
-        /* Taller so the larger cards have breathing room, but positioned to overlap tightly */
         <div className="relative h-[500px] md:h-[620px]">
-            {/* LEFT — bigger and pulled inward; sits behind center */}
+            {/* LEFT */}
             <motion.div
                 className="absolute top-16 left-[-10px] w-[18rem] md:w-[24rem] z-20"
                 initial={{ opacity: 0, y: 14 }}
@@ -35,7 +34,6 @@ export default function FloatingGallery() {
                 transition={{ duration: 0.55, delay: 0.05, ease: EASE_IN_OUT }}
             >
                 <motion.div
-                    /* gentle float with tiny counter-tilt */
                     animate={{ y: [0, -8, 0], rotate: [0, -1, 0] }}
                     transition={{ ...baseLoop, duration: 11 }}
                     style={{ willChange: "transform" }}
@@ -51,7 +49,7 @@ export default function FloatingGallery() {
                 </motion.div>
             </motion.div>
 
-            {/* CENTER — largest, slightly higher, overlaps the other two on top */}
+            {/* CENTER */}
             <motion.div
                 className="absolute -top-8 left-1/2 -translate-x-1/2 w-[26rem] md:w-[34rem] z-30"
                 initial={{ opacity: 0, y: 16 }}
@@ -60,8 +58,11 @@ export default function FloatingGallery() {
                 transition={{ duration: 0.6, delay: 0.08, ease: EASE_IN_OUT }}
             >
                 <motion.div
-                    /* calm float + minimal scale pulse for presence */
-                    animate={{ y: [0, -10, 0], rotate: [0, 0.8, 0], scale: [1, 1.01, 1] }}
+                    animate={{
+                        y: [0, -10, 0],
+                        rotate: [0, 0.8, 0],
+                        scale: [1, 1.01, 1],
+                    }}
                     transition={{ ...baseLoop, duration: 12.5 }}
                     style={{ willChange: "transform" }}
                 >
@@ -76,7 +77,7 @@ export default function FloatingGallery() {
                 </motion.div>
             </motion.div>
 
-            {/* RIGHT — bigger and pulled inward; slightly under center to ensure overlap */}
+            {/* RIGHT */}
             <motion.div
                 className="absolute bottom-10 right-[-12px] w-[20rem] md:w-[28rem] z-10"
                 initial={{ opacity: 0, y: 12 }}

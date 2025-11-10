@@ -1,9 +1,11 @@
+// web/app/projects/page.tsx
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
 import MembersSearchBar from "@/components/MembersSearchBar";
 import { API_BASE } from "@/lib/config";
 import NewProjectButton from "@/components/NewProjectButton";
+import { tServer } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 
@@ -16,14 +18,13 @@ type Project = {
     techStack?: string[];
     members?: { memberId?: string; memberSlug?: string; role?: string }[];
     imageUrl?: string;
-    // detail (optional)
     summary?: string;
     description?: string;
     year?: number;
     cover?: string;
 };
 
-/* ---------- Helpers (same behavior) ---------- */
+/* ---------- Helpers ---------- */
 function uniq<T>(arr: T[]): T[] {
     return Array.from(new Set(arr));
 }
@@ -50,7 +51,10 @@ function highlight(text: string | undefined, q: string) {
     const parts = text.split(re);
     return parts.map((p, i) =>
         re.test(p) ? (
-            <mark key={i} className="px-0.5 rounded bg-yellow-300/30 text-yellow-200">
+            <mark
+                key={i}
+                className="px-0.5 rounded bg-yellow-300/30 text-yellow-200"
+            >
                 {p}
             </mark>
         ) : (
@@ -59,10 +63,12 @@ function highlight(text: string | undefined, q: string) {
     );
 }
 
-/* ---------- API (no seeds) ---------- */
+/* ---------- API ---------- */
 async function fetchApiProjects(): Promise<Project[]> {
     try {
-        const res = await fetch(`${API_BASE}/api/projects?size=999`, { cache: "no-store" });
+        const res = await fetch(`${API_BASE}/api/projects?size=999`, {
+            cache: "no-store",
+        });
         if (!res.ok) return [];
         const json = await res.json();
         const items: any[] = Array.isArray(json) ? json : json.items ?? [];
@@ -112,26 +118,30 @@ export default async function ProjectsPage({
         .filter((p) => includesAll(p.tags, tagsSel))
         .filter((p) => includesAll(p.techStack, techSel))
         .sort((a, b) => {
-            if (sort === "az") return (a.title || "").localeCompare(b.title || "");
+            if (sort === "az")
+                return (a.title || "").localeCompare(b.title || "");
             const ay = a.year ?? 0;
             const by = b.year ?? 0;
-            if (ay === by) return (a.title || "").localeCompare(b.title || "");
+            if (ay === by)
+                return (a.title || "").localeCompare(b.title || "");
             return by - ay;
         });
 
     return (
         <section className="section">
             <header className="mb-6">
-                <p className="kicker">PROJECTS</p>
+                <p className="kicker">
+                    {tServer("projects.list.kicker")}
+                </p>
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <h1 className="display">Things we’ve built</h1>
+                        <h1 className="display">
+                            {tServer("projects.list.title")}
+                        </h1>
                         <p className="mt-3 text-white/70 max-w-2xl">
-                            Explore hackathon winners, MVPs, and experiments. Filter by tags or tech, and open a project to see
-                            team, events, and a demo.
+                            {tServer("projects.list.subtitle")}
                         </p>
                     </div>
-                    {/* Visible only for logged-in users (same behavior as NewEventButton) */}
                     <NewProjectButton />
                 </div>
             </header>
@@ -139,7 +149,12 @@ export default async function ProjectsPage({
             {/* Controls */}
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
                 <div className="flex-1">
-                    <MembersSearchBar placeholder="Search projects by title, summary, tag, tech…" paramKey="q" />
+                    <MembersSearchBar
+                        placeholder={tServer(
+                            "projects.list.search.placeholder",
+                        )}
+                        paramKey="q"
+                    />
                 </div>
                 <div className="flex items-center gap-2">
                     {["newest", "az"].map((s) => {
@@ -147,15 +162,21 @@ export default async function ProjectsPage({
                         p.set("sort", s);
                         const href = `/projects?${p.toString()}`;
                         const active = sort === s;
+                        const label =
+                            s === "az"
+                                ? tServer("projects.list.sort.az")
+                                : tServer("projects.list.sort.newest");
                         return (
                             <Link
                                 key={s}
                                 href={href}
                                 className={`px-3 py-2 rounded-lg text-sm ring-1 ring-white/10 ${
-                                    active ? "bg-white text-black font-semibold" : "bg-white/5 hover:bg-white/10"
+                                    active
+                                        ? "bg-white text-black font-semibold"
+                                        : "bg-white/5 hover:bg-white/10"
                                 }`}
                             >
-                                {s === "az" ? "A–Z" : "Newest"}
+                                {label}
                             </Link>
                         );
                     })}
@@ -165,11 +186,17 @@ export default async function ProjectsPage({
             {/* Filters */}
             <div className="mb-8 grid md:grid-cols-2 gap-3">
                 <div className="card p-3">
-                    <div className="text-xs uppercase tracking-widest text-white/60 mb-2">Tags</div>
+                    <div className="text-xs uppercase tracking-widest text-white/60 mb-2">
+                        {tServer("projects.list.filter.tags.label")}
+                    </div>
                     <div className="flex flex-wrap gap-2">
                         <MultiFilterChips
                             base="/projects"
-                            params={{ q, tech: techSel.join(","), sort }}
+                            params={{
+                                q,
+                                tech: techSel.join(","),
+                                sort,
+                            }}
                             values={allTags}
                             selected={tagsSel}
                             name="tag"
@@ -177,11 +204,17 @@ export default async function ProjectsPage({
                     </div>
                 </div>
                 <div className="card p-3">
-                    <div className="text-xs uppercase tracking-widest text-white/60 mb-2">Tech stack</div>
+                    <div className="text-xs uppercase tracking-widest text-white/60 mb-2">
+                        {tServer("projects.list.filter.tech.label")}
+                    </div>
                     <div className="flex flex-wrap gap-2">
                         <MultiFilterChips
                             base="/projects"
-                            params={{ q, tag: tagsSel.join(","), sort }}
+                            params={{
+                                q,
+                                tag: tagsSel.join(","),
+                                sort,
+                            }}
                             values={allTech}
                             selected={techSel}
                             name="tech"
@@ -193,7 +226,11 @@ export default async function ProjectsPage({
             {/* List */}
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filtered.map((p) => (
-                    <Link key={p.slug} href={`/projects/${p.slug}`} className="card p-4 hover:bg-white/10 transition">
+                    <Link
+                        key={p.slug}
+                        href={`/projects/${p.slug}`}
+                        className="card p-4 hover:bg-white/10 transition"
+                    >
                         {p.imageUrl && (
                             <img
                                 src={p.imageUrl}
@@ -202,43 +239,52 @@ export default async function ProjectsPage({
                                 loading="lazy"
                             />
                         )}
-                        <div className="text-xs text-white/60">{p.year ?? ""}</div>
-                        <div className="font-semibold text-lg line-clamp-2">{highlight(p.title, q)}</div>
+                        <div className="text-xs text-white/60">
+                            {p.year ?? ""}
+                        </div>
+                        <div className="font-semibold text-lg line-clamp-2">
+                            {highlight(p.title, q)}
+                        </div>
                         {p.summary && (
                             <div className="mt-2 text-sm text-white/70 line-clamp-3">
                                 {highlight(p.summary, q)}
                             </div>
                         )}
                         <div className="mt-3 flex flex-wrap gap-1.5">
-                            {(p.tags || []).slice(0, 6).map((t) => (
-                                <span
-                                    key={t}
-                                    className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
-                                >
-                                    {highlight(t, q)}
-                                </span>
-                            ))}
+                            {(p.tags || [])
+                                .slice(0, 6)
+                                .map((t) => (
+                                    <span
+                                        key={t}
+                                        className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                    >
+                                        {highlight(t, q)}
+                                    </span>
+                                ))}
                         </div>
                     </Link>
                 ))}
             </div>
 
-            {/* CTA to contact page (aligned with /members) */}
+            {/* CTA */}
             <div className="mt-10">
                 <div className="card p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
-                        <h2 className="text-lg font-semibold">Have a project or idea in mind?</h2>
+                        <h2 className="text-lg font-semibold">
+                            {tServer("projects.list.cta.title")}
+                        </h2>
                         <p className="text-sm text-white/70 max-w-xl">
-                            Whether it’s a hackathon concept, an MVP you want to ship, or a product you’d like us to co-build,
-                            we’d love to talk.
+                            {tServer("projects.list.cta.body")}
                         </p>
                     </div>
                     <Link
                         href="/contact"
                         className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition"
                     >
-                        Contact the team
-                        <span aria-hidden className="ml-1">→</span>
+                        {tServer("projects.list.cta.button")}
+                        <span aria-hidden className="ml-1">
+                            →
+                        </span>
                     </Link>
                 </div>
             </div>
@@ -280,7 +326,7 @@ function MultiFilterChips({
                     href={makeHref([])}
                     className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10"
                 >
-                    Clear
+                    {tServer("projects.list.filter.clear")}
                 </Link>
             ) : null}
             {values.map((v) => (
@@ -288,7 +334,9 @@ function MultiFilterChips({
                     key={v}
                     href={toggle(v)}
                     className={`px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 ${
-                        selected.includes(v) ? "bg-white text-black font-semibold" : "bg-white/5 hover:bg-white/10"
+                        selected.includes(v)
+                            ? "bg-white text-black font-semibold"
+                            : "bg-white/5 hover:bg-white/10"
                     }`}
                 >
                     {v}

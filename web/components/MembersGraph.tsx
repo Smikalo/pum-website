@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { tClient } from "@/lib/i18n-client";
 
 type Member = {
     id: string;
@@ -46,7 +47,7 @@ const SKILL_COLORS: Record<string, string> = {
     ml: "#f59e0b",
     ai: "#f59e0b",
     business: "#f472b6",
-    management: "#9ca3af"
+    management: "#9ca3af",
 };
 
 function pickSkillColor(skills?: string[]): string {
@@ -59,31 +60,36 @@ function pickSkillColor(skills?: string[]): string {
 }
 
 function useSize(el: React.RefObject<HTMLElement>) {
-    const [size, setSize] = useState({w: 800, h: 500});
-    useEffect(()=>{
+    const [size, setSize] = useState({ w: 800, h: 500 });
+    useEffect(() => {
         const on = () => {
             if (!el.current) return;
             const rect = el.current.getBoundingClientRect();
-            setSize({w: Math.max(320, rect.width), h: Math.max(320, rect.height)});
+            setSize({
+                w: Math.max(320, rect.width),
+                h: Math.max(320, rect.height),
+            });
         };
         on();
         window.addEventListener("resize", on);
-        return ()=>window.removeEventListener("resize", on);
+        return () => window.removeEventListener("resize", on);
     }, [el]);
     return size;
 }
 
-function hexToRgba(hex: string, alpha=1) {
-    let r=0,g=0,b=0;
-    const clean = hex.replace("#","");
-    if (clean.length===3) {
-        r = parseInt(clean[0]+clean[0],16);
-        g = parseInt(clean[1]+clean[1],16);
-        b = parseInt(clean[2]+clean[2],16);
-    } else if (clean.length>=6) {
-        r = parseInt(clean.slice(0,2),16);
-        g = parseInt(clean.slice(2,4),16);
-        b = parseInt(clean.slice(4,6),16);
+function hexToRgba(hex: string, alpha = 1) {
+    let r = 0,
+        g = 0,
+        b = 0;
+    const clean = hex.replace("#", "");
+    if (clean.length === 3) {
+        r = parseInt(clean[0] + clean[0], 16);
+        g = parseInt(clean[1] + clean[1], 16);
+        b = parseInt(clean[2] + clean[2], 16);
+    } else if (clean.length >= 6) {
+        r = parseInt(clean.slice(0, 2), 16);
+        g = parseInt(clean.slice(2, 4), 16);
+        b = parseInt(clean.slice(4, 6), 16);
     }
     return `rgba(${r},${g},${b},${alpha})`;
 }
@@ -98,10 +104,15 @@ function highlight(text: string, q: string) {
         <>
             {parts.map((p, i) =>
                 re.test(p) ? (
-                    <mark key={i} className="px-0.5 rounded bg-yellow-300/30 text-yellow-200">{p}</mark>
+                    <mark
+                        key={i}
+                        className="px-0.5 rounded bg-yellow-300/30 text-yellow-200"
+                    >
+                        {p}
+                    </mark>
                 ) : (
                     <span key={i}>{p}</span>
-                )
+                ),
             )}
         </>
     );
@@ -121,18 +132,17 @@ export default function MembersGraph({
     const { w, h } = useSize(containerRef);
 
     // Pointer state
-    const [hoverId, setHoverId] = useState<string|null>(null);
-    const [hoverLock, setHoverLock] = useState(false); // keep tooltip when cursor moves into it
-    const draggingIdRef = useRef<string|null>(null);
-    const mouseRef = useRef({x: 0, y: 0}); // last mouse position
+    const [hoverId, setHoverId] = useState<string | null>(null);
+    const [hoverLock, setHoverLock] = useState(false);
+    const draggingIdRef = useRef<string | null>(null);
+    const mouseRef = useRef({ x: 0, y: 0 });
 
-    // Build nodes+links for a bipartite graph (members <-> projects)
-    const { nodes, links, nodeById } = useMemo(()=>{
+    const { nodes, links, nodeById } = useMemo(() => {
         const nodes: Node[] = [];
         const links: LinkEdge[] = [];
         const nodeById = new Map<string, Node>();
 
-        // Projects (smaller, neutral color)
+        // Projects
         for (const p of projects) {
             const n: Node = {
                 id: `p:${p.slug}`,
@@ -140,17 +150,18 @@ export default function MembersGraph({
                 label: p.title,
                 slug: p.slug,
                 color: "#ffffff",
-                x: (Math.random()*2 - 1) * 200,
-                y: (Math.random()*2 - 1) * 200,
-                vx: 0, vy: 0,
+                x: (Math.random() * 2 - 1) * 200,
+                y: (Math.random() * 2 - 1) * 200,
+                vx: 0,
+                vy: 0,
                 radius: 6,
-                imageUrl: p.imageUrl
+                imageUrl: p.imageUrl,
             };
             nodeById.set(n.id, n);
             nodes.push(n);
         }
 
-        // Members (bigger, colored by skill)
+        // Members
         for (const m of members) {
             const n: Node = {
                 id: `m:${m.slug}`,
@@ -158,26 +169,31 @@ export default function MembersGraph({
                 label: m.name,
                 slug: m.slug,
                 color: pickSkillColor(m.skills),
-                x: (Math.random()*2 - 1) * 240,
-                y: (Math.random()*2 - 1) * 240,
-                vx: 0, vy: 0,
+                x: (Math.random() * 2 - 1) * 240,
+                y: (Math.random() * 2 - 1) * 240,
+                vx: 0,
+                vy: 0,
                 radius: 10,
-                imageUrl: m.avatarUrl
+                imageUrl: m.avatarUrl,
             };
             nodeById.set(n.id, n);
             nodes.push(n);
         }
 
-        // Edges (only between visible members and provided projects)
+        // Edges
         for (const p of projects) {
             const pNodeId = `p:${p.slug}`;
-            for (const r of (p.members||[])) {
-                // r.memberSlug is preferred; otherwise find by id among visible members
-                const memberSlug = r.memberSlug || members.find(mm=>mm.id===r.memberId)?.slug;
+            for (const r of p.members || []) {
+                const memberSlug =
+                    r.memberSlug || members.find((mm) => mm.id === r.memberId)?.slug;
                 if (!memberSlug) continue;
                 const mNodeId = `m:${memberSlug}`;
                 if (nodeById.has(mNodeId) && nodeById.has(pNodeId)) {
-                    links.push({ source: mNodeId, target: pNodeId, strength: 0.08 });
+                    links.push({
+                        source: mNodeId,
+                        target: pNodeId,
+                        strength: 0.08,
+                    });
                 }
             }
         }
@@ -186,7 +202,7 @@ export default function MembersGraph({
     }, [members, projects]);
 
     // Force simulation
-    useEffect(()=>{
+    useEffect(() => {
         let raf = 0;
         const canvas = canvasRef.current!;
         const ctx = canvas.getContext("2d")!;
@@ -197,7 +213,7 @@ export default function MembersGraph({
         canvas.style.height = `${h}px`;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        const center = { x: w/2, y: h/2 };
+        const center = { x: w / 2, y: h / 2 };
 
         function step() {
             const repulsion = 2000;
@@ -207,18 +223,25 @@ export default function MembersGraph({
             const centerPull = 0.02;
 
             // Repulsion
-            for (let i=0;i<nodes.length;i++) {
+            for (let i = 0; i < nodes.length; i++) {
                 const a = nodes[i];
-                for (let j=i+1;j<nodes.length;j++) {
+                for (let j = i + 1; j < nodes.length; j++) {
                     const b = nodes[j];
-                    let dx = (a.x - b.x);
-                    let dy = (a.y - b.y);
-                    let dist2 = dx*dx + dy*dy + 0.01;
+                    let dx = a.x - b.x;
+                    let dy = a.y - b.y;
+                    let dist2 = dx * dx + dy * dy + 0.01;
                     let f = repulsion / dist2;
-                    let invDist = 1/Math.sqrt(dist2);
-                    dx *= invDist; dy *= invDist;
-                    if (draggingIdRef.current !== a.id) { a.vx += dx * f; a.vy += dy * f; }
-                    if (draggingIdRef.current !== b.id) { b.vx -= dx * f; b.vy -= dy * f; }
+                    let invDist = 1 / Math.sqrt(dist2);
+                    dx *= invDist;
+                    dy *= invDist;
+                    if (draggingIdRef.current !== a.id) {
+                        a.vx += dx * f;
+                        a.vy += dy * f;
+                    }
+                    if (draggingIdRef.current !== b.id) {
+                        b.vx -= dx * f;
+                        b.vy -= dy * f;
+                    }
                 }
             }
 
@@ -226,25 +249,29 @@ export default function MembersGraph({
             for (const e of links) {
                 const a = nodeById.get(e.source)!;
                 const b = nodeById.get(e.target)!;
-                let dx = (b.x - a.x);
-                let dy = (b.y - a.y);
-                const dist = Math.sqrt(dx*dx + dy*dy) || 0.001;
+                let dx = b.x - a.x;
+                let dy = b.y - a.y;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
                 const force = (dist - springLen) * (springK * e.strength);
-                dx /= dist; dy /= dist;
+                dx /= dist;
+                dy /= dist;
                 if (draggingIdRef.current !== a.id) {
-                    a.vx += dx * force; a.vy += dy * force;
+                    a.vx += dx * force;
+                    a.vy += dy * force;
                 }
                 if (draggingIdRef.current !== b.id) {
-                    b.vx -= dx * force; b.vy -= dy * force;
+                    b.vx -= dx * force;
+                    b.vy -= dy * force;
                 }
             }
 
             // Integrate + center pull + damping + bounds
             for (const n of nodes) {
                 if (draggingIdRef.current === n.id) {
-                    // when dragging, keep node at cursor, zero velocity
-                    n.x = mouseRef.current.x; n.y = mouseRef.current.y;
-                    n.vx = 0; n.vy = 0;
+                    n.x = mouseRef.current.x;
+                    n.y = mouseRef.current.y;
+                    n.vx = 0;
+                    n.vy = 0;
                     continue;
                 }
                 n.vx += (center.x - n.x) * centerPull;
@@ -253,28 +280,32 @@ export default function MembersGraph({
                 n.y += n.vy * 0.016;
                 n.vx *= damping;
                 n.vy *= damping;
-                n.x = Math.max(16, Math.min(w-16, n.x));
-                n.y = Math.max(16, Math.min(h-16, n.y));
+                n.x = Math.max(16, Math.min(w - 16, n.x));
+                n.y = Math.max(16, Math.min(h - 16, n.y));
             }
 
-            // Draw
-            ctx.clearRect(0,0,w,h);
+            ctx.clearRect(0, 0, w, h);
 
-            // Neon background glow for hovered node
             if (hoverId) {
                 const n = nodeById.get(hoverId);
                 if (n) {
-                    const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, 160);
-                    grad.addColorStop(0, `${hexToRgba(n.color, 0.25)}`);
+                    const grad = ctx.createRadialGradient(
+                        n.x,
+                        n.y,
+                        0,
+                        n.x,
+                        n.y,
+                        160,
+                    );
+                    grad.addColorStop(0, hexToRgba(n.color, 0.25));
                     grad.addColorStop(1, "rgba(0,0,0,0)");
                     ctx.fillStyle = grad;
                     ctx.beginPath();
-                    ctx.arc(n.x, n.y, 160, 0, Math.PI*2);
+                    ctx.arc(n.x, n.y, 160, 0, Math.PI * 2);
                     ctx.fill();
                 }
             }
 
-            // Edges
             ctx.lineWidth = 1;
             for (const e of links) {
                 const a = nodeById.get(e.source)!;
@@ -286,36 +317,32 @@ export default function MembersGraph({
                 ctx.stroke();
             }
 
-            // Nodes
             for (const n of nodes) {
-                // soft outer glow
                 ctx.beginPath();
                 ctx.fillStyle = hexToRgba(n.color, 0.22);
-                ctx.arc(n.x, n.y, n.radius*3, 0, Math.PI*2);
+                ctx.arc(n.x, n.y, n.radius * 3, 0, Math.PI * 2);
                 ctx.fill();
 
-                // core
                 ctx.beginPath();
                 ctx.fillStyle = n.color;
-                ctx.arc(n.x, n.y, n.radius, 0, Math.PI*2);
+                ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
                 ctx.fill();
             }
 
             raf = requestAnimationFrame(step);
         }
         raf = requestAnimationFrame(step);
-        return ()=>cancelAnimationFrame(raf);
+        return () => cancelAnimationFrame(raf);
     }, [w, h, nodes, links, nodeById, hoverId]);
 
-    // Hit testing helper
     function hitNode(x: number, y: number): string | null {
-        let hit: string|null = null;
+        let hit: string | null = null;
         let best = Infinity;
         for (const n of nodes) {
             const dx = n.x - x;
             const dy = n.y - y;
-            const d2 = dx*dx + dy*dy;
-            const thresh = (n.radius*2.5) ** 2;
+            const d2 = dx * dx + dy * dy;
+            const thresh = (n.radius * 2.5) ** 2;
             if (d2 < thresh && d2 < best) {
                 best = d2;
                 hit = n.id;
@@ -324,27 +351,22 @@ export default function MembersGraph({
         return hit;
     }
 
-    // Mouse interactions (hover, drag). Similar UX to Sigma's drag example.
-    // (We hand-roll it on <canvas>, but the idea mirrors Sigma.) :contentReference[oaicite:3]{index=3}
-    useEffect(()=>{
+    useEffect(() => {
         const container = containerRef.current!;
         const canvas = canvasRef.current!;
 
         function getPos(evt: MouseEvent) {
             const rect = canvas.getBoundingClientRect();
-            const x = (evt.clientX - rect.left);
-            const y = (evt.clientY - rect.top);
+            const x = evt.clientX - rect.left;
+            const y = evt.clientY - rect.top;
             mouseRef.current = { x, y };
             return { x, y };
         }
 
         function onMove(evt: MouseEvent) {
             const { x, y } = getPos(evt);
-            if (draggingIdRef.current) {
-                // drag: position handled in the simulation step via mouseRef
-                return;
-            }
-            if (hoverLock) return; // keep tooltip alive when hovered
+            if (draggingIdRef.current) return;
+            if (hoverLock) return;
             setHoverId(hitNode(x, y));
         }
 
@@ -353,7 +375,6 @@ export default function MembersGraph({
             const hit = hitNode(x, y);
             if (hit) {
                 draggingIdRef.current = hit;
-                // keep tooltip on dragged node
                 setHoverId(hit);
             }
         }
@@ -372,13 +393,12 @@ export default function MembersGraph({
         window.addEventListener("mouseup", onUp);
         container.addEventListener("mouseleave", onLeave);
 
-        // Touch support
         function onTouchMove(evt: TouchEvent) {
             const t = evt.touches[0];
             if (!t) return;
             const rect = canvas.getBoundingClientRect();
-            const x = (t.clientX - rect.left);
-            const y = (t.clientY - rect.top);
+            const x = t.clientX - rect.left;
+            const y = t.clientY - rect.top;
             mouseRef.current = { x, y };
             if (draggingIdRef.current) return;
             if (hoverLock) return;
@@ -388,8 +408,8 @@ export default function MembersGraph({
             const t = evt.touches[0];
             if (!t) return;
             const rect = canvas.getBoundingClientRect();
-            const x = (t.clientX - rect.left);
-            const y = (t.clientY - rect.top);
+            const x = t.clientX - rect.left;
+            const y = t.clientY - rect.top;
             const hit = hitNode(x, y);
             if (hit) {
                 draggingIdRef.current = hit;
@@ -401,10 +421,12 @@ export default function MembersGraph({
         }
 
         container.addEventListener("touchmove", onTouchMove, { passive: true });
-        container.addEventListener("touchstart", onTouchStart, { passive: true });
+        container.addEventListener("touchstart", onTouchStart, {
+            passive: true,
+        });
         container.addEventListener("touchend", onTouchEnd);
 
-        return ()=>{
+        return () => {
             container.removeEventListener("mousemove", onMove);
             container.removeEventListener("mousedown", onDown);
             window.removeEventListener("mouseup", onUp);
@@ -418,43 +440,64 @@ export default function MembersGraph({
     const hoverNode = hoverId ? nodeById.get(hoverId) : null;
 
     return (
-        <div ref={containerRef} className="relative h-[560px] w-full rounded-2xl bg-black/50 ring-1 ring-white/10 overflow-hidden">
+        <div
+            ref={containerRef}
+            className="relative h-[560px] w-full rounded-2xl bg-black/50 ring-1 ring-white/10 overflow-hidden"
+            aria-label={tClient("members.graph.ariaLabel")}
+        >
             <canvas ref={canvasRef} className="absolute inset-0" />
 
             {/* Legend */}
             <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-2">
-                {Object.entries(SKILL_COLORS).map(([k,c])=>(
-                    <span key={k} className="inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full ring-1 ring-white/10 bg-white/5">
-            <span className="inline-block w-2 h-2 rounded-full" style={{backgroundColor:c}} />
-                        {k.toUpperCase()}
-          </span>
+                {Object.entries(SKILL_COLORS).map(([k, c]) => (
+                    <span
+                        key={k}
+                        className="inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full ring-1 ring-white/10 bg-white/5"
+                    >
+                        <span
+                            className="inline-block w-2 h-2 rounded-full"
+                            style={{ backgroundColor: c }}
+                        />
+                        {tClient(`members.graph.legend.${k}`)}
+                    </span>
                 ))}
             </div>
 
-            {/* Tooltip (sticky on hover) */}
+            {/* Tooltip */}
             {hoverNode && (
                 <div
                     className="absolute z-20 -translate-y-8 translate-x-4"
                     style={{ left: hoverNode.x, top: hoverNode.y }}
-                    onMouseEnter={()=>setHoverLock(true)}
-                    onMouseLeave={()=>setHoverLock(false)}
+                    onMouseEnter={() => setHoverLock(true)}
+                    onMouseLeave={() => setHoverLock(false)}
                 >
                     <div className="rounded-xl px-3 py-2 text-sm bg-black/80 ring-1 ring-white/20 backdrop-blur pointer-events-auto max-w-xs">
                         <div className="flex items-center gap-2">
-                            <Thumb name={hoverNode.label} src={hoverNode.imageUrl} />
+                            <Thumb
+                                name={hoverNode.label}
+                                src={hoverNode.imageUrl}
+                            />
                             <div className="min-w-0">
                                 <div className="font-semibold truncate">
                                     {highlight(hoverNode.label, query)}
                                 </div>
-                                <div className="text-xs text-white/60">{hoverNode.type === "member" ? "Member" : "Project"}</div>
+                                <div className="text-xs text-white/60">
+                                    {hoverNode.type === "member"
+                                        ? tClient("members.graph.type.member")
+                                        : tClient("members.graph.type.project")}
+                                </div>
                             </div>
                         </div>
                         <div className="mt-2">
                             <Link
-                                href={hoverNode.type === "member" ? `/members/${hoverNode.slug}` : `/projects/${hoverNode.slug}`}
+                                href={
+                                    hoverNode.type === "member"
+                                        ? `/members/${hoverNode.slug}`
+                                        : `/projects/${hoverNode.slug}`
+                                }
                                 className="text-xs underline underline-offset-4"
                             >
-                                Open page →
+                                {tClient("members.graph.openPage")}
                             </Link>
                         </div>
                     </div>
@@ -464,9 +507,23 @@ export default function MembersGraph({
     );
 }
 
-function Thumb({ name, src, size=40 }: { name: string; src?: string; size?: number }) {
-    const initials = name.split(" ").map(s=>s[0]).slice(0,2).join("").toUpperCase();
+function Thumb({
+                   name,
+                   src,
+                   size = 40,
+               }: {
+    name: string;
+    src?: string;
+    size?: number;
+}) {
+    const initials = name
+        .split(" ")
+        .map((s) => s[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase();
     return src ? (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
             src={src}
             alt={name}

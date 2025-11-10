@@ -3,6 +3,7 @@
 import React from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import type { ContactState } from "@/types/contact";
+import { tClient } from "@/lib/i18n-client";
 
 export default function ContactForm({
                                         action,
@@ -22,7 +23,11 @@ export default function ContactForm({
             {/* Accessible error/status area */}
             <div id="form-status" aria-live="polite" className="text-sm">
                 {state.message ? (
-                    <p className={state.ok ? "text-emerald-300" : "text-rose-300"}>
+                    <p
+                        className={
+                            state.ok ? "text-emerald-300" : "text-rose-300"
+                        }
+                    >
                         {state.message}
                     </p>
                 ) : null}
@@ -30,7 +35,7 @@ export default function ContactForm({
 
             <div>
                 <label htmlFor="name" className="block text-sm mb-1">
-                    Your name
+                    {tClient("contact.form.name.label")}
                 </label>
                 <input
                     id="name"
@@ -39,7 +44,9 @@ export default function ContactForm({
                     required
                     defaultValue={state.fields?.name}
                     className={`w-full rounded-lg bg-white/5 ring-1 ${
-                        state.errors?.name ? "ring-rose-400/50" : "ring-white/10"
+                        state.errors?.name
+                            ? "ring-rose-400/50"
+                            : "ring-white/10"
                     } px-3 py-2`}
                 />
                 {state.errors?.name && (
@@ -51,7 +58,7 @@ export default function ContactForm({
 
             <div>
                 <label htmlFor="email" className="block text-sm mb-1">
-                    Email
+                    {tClient("contact.form.email.label")}
                 </label>
                 <input
                     id="email"
@@ -62,7 +69,9 @@ export default function ContactForm({
                     autoComplete="email"
                     defaultValue={state.fields?.email}
                     className={`w-full rounded-lg bg-white/5 ring-1 ${
-                        state.errors?.email ? "ring-rose-400/50" : "ring-white/10"
+                        state.errors?.email
+                            ? "ring-rose-400/50"
+                            : "ring-white/10"
                     } px-3 py-2`}
                 />
                 {state.errors?.email && (
@@ -75,7 +84,7 @@ export default function ContactForm({
             <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                     <label htmlFor="role" className="block text-sm mb-1">
-                        You are
+                        {tClient("contact.form.role.label")}
                     </label>
                     <select
                         id="role"
@@ -83,16 +92,26 @@ export default function ContactForm({
                         required
                         defaultValue={state.fields?.role || ""}
                         className={`w-full rounded-lg bg-white/5 ring-1 ${
-                            state.errors?.role ? "ring-rose-400/50" : "ring-white/10"
+                            state.errors?.role
+                                ? "ring-rose-400/50"
+                                : "ring-white/10"
                         } px-3 py-2`}
                     >
                         <option value="" disabled>
-                            Select
+                            {tClient("contact.form.role.placeholder")}
                         </option>
-                        <option value="recruiter">Recruiter</option>
-                        <option value="new-member">New member</option>
-                        <option value="sponsor-client">Sponsor / Client</option>
-                        <option value="other">Other</option>
+                        <option value="recruiter">
+                            {tClient("contact.form.role.recruiter")}
+                        </option>
+                        <option value="new-member">
+                            {tClient("contact.form.role.newMember")}
+                        </option>
+                        <option value="sponsor-client">
+                            {tClient("contact.form.role.sponsorClient")}
+                        </option>
+                        <option value="other">
+                            {tClient("contact.form.role.other")}
+                        </option>
                     </select>
                     {state.errors?.role && (
                         <p className="mt-1 text-xs text-rose-300">
@@ -103,7 +122,7 @@ export default function ContactForm({
 
                 <div>
                     <label htmlFor="topic" className="block text-sm mb-1">
-                        Interested in
+                        {tClient("contact.form.topic.label")}
                     </label>
                     <select
                         id="topic"
@@ -111,16 +130,26 @@ export default function ContactForm({
                         required
                         defaultValue={state.fields?.topic || ""}
                         className={`w-full rounded-lg bg-white/5 ring-1 ${
-                            state.errors?.topic ? "ring-rose-400/50" : "ring-white/10"
+                            state.errors?.topic
+                                ? "ring-rose-400/50"
+                                : "ring-white/10"
                         } px-3 py-2`}
                     >
                         <option value="" disabled>
-                            Select
+                            {tClient("contact.form.topic.placeholder")}
                         </option>
-                        <option value="join">Joining PUM</option>
-                        <option value="collaborate">Collaboration / project</option>
-                        <option value="recruit">Recruiting our members</option>
-                        <option value="press">Press / speaking</option>
+                        <option value="join">
+                            {tClient("contact.form.topic.join")}
+                        </option>
+                        <option value="collaborate">
+                            {tClient("contact.form.topic.collaborate")}
+                        </option>
+                        <option value="recruit">
+                            {tClient("contact.form.topic.recruit")}
+                        </option>
+                        <option value="press">
+                            {tClient("contact.form.topic.press")}
+                        </option>
                     </select>
                     {state.errors?.topic && (
                         <p className="mt-1 text-xs text-rose-300">
@@ -132,7 +161,7 @@ export default function ContactForm({
 
             <div>
                 <label htmlFor="message" className="block text-sm mb-1">
-                    Message
+                    {tClient("contact.form.message.label")}
                 </label>
                 <textarea
                     id="message"
@@ -141,7 +170,9 @@ export default function ContactForm({
                     required
                     defaultValue={state.fields?.message}
                     className={`w-full rounded-lg bg-white/5 ring-1 ${
-                        state.errors?.message ? "ring-rose-400/50" : "ring-white/10"
+                        state.errors?.message
+                            ? "ring-rose-400/50"
+                            : "ring-white/10"
                     } px-3 py-2`}
                 />
                 {state.errors?.message && (
@@ -161,19 +192,18 @@ export default function ContactForm({
                         className="accent-cyan-300 emoji-stable"
                     />
                     <label htmlFor="subscribe" className="text-sm">
-                        Subscribe to blog updates
+                        {tClient("contact.form.subscribe.label")}
                     </label>
                 </div>
                 <p className="text-xs text-white/50">
-                    We’ll send you a verification email first (double opt-in) so this
-                    form can’t be used to spam other people.
+                    {tClient("contact.form.subscribe.helper")}
                 </p>
             </div>
 
             {/* Hidden honeypot field (bots tend to fill this) */}
             <div aria-hidden className="hidden">
                 <label>
-                    Website{" "}
+                    {tClient("contact.form.honeypot.label")}{" "}
                     <input
                         type="text"
                         name="website"
@@ -223,10 +253,10 @@ function SubmitButton() {
                             fill="none"
                         />
                     </svg>
-                    Sending…
+                    {tClient("contact.form.submit.sending")}
                 </>
             ) : (
-                <>Send message</>
+                <>{tClient("contact.form.submit.label")}</>
             )}
         </button>
     );

@@ -1,3 +1,4 @@
+// app/members/[slug]/page.tsx
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
@@ -5,6 +6,7 @@ import { API_BASE } from "@/lib/config";
 import type { Metadata } from "next";
 import { toImageSrc } from "@/lib/images";
 import EditMemberButton from "@/components/EditMemberButton";
+import { tServer } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 
@@ -171,9 +173,16 @@ export async function generateMetadata({
 }): Promise<Metadata> {
     const member = await getMemberBySlug(params.slug);
     return {
-        title: member ? `${member.name} – PUM` : "Member – PUM",
+        title: member
+            ? tServer("memberDetail.metadata.title").replace(
+                "{name}",
+                member.name,
+            )
+            : tServer("memberDetail.metadata.fallbackTitle"),
         description:
-            member?.headline || member?.bio || "PUM member profile",
+            member?.headline ||
+            member?.bio ||
+            tServer("memberDetail.metadata.fallbackDescription"),
     };
 }
 
@@ -188,13 +197,15 @@ export default async function MemberDetailPage({
     if (!member) {
         return (
             <section className="section">
-                <h1 className="display">Member not found</h1>
+                <h1 className="display">
+                    {tServer("memberDetail.notFound.title")}
+                </h1>
                 <p className="mt-4">
                     <Link
                         href="/members"
                         className="underline underline-offset-4"
                     >
-                        Back to members
+                        {tServer("memberDetail.notFound.back")}
                     </Link>
                 </p>
             </section>
@@ -213,7 +224,9 @@ export default async function MemberDetailPage({
                     className="w-28 h-28 rounded-full object-cover ring-2 ring-white/10"
                 />
                 <div className="flex-1">
-                    <p className="kicker">MEMBER</p>
+                    <p className="kicker">
+                        {tServer("memberDetail.kicker")}
+                    </p>
                     <h1 className="display">{member.name}</h1>
                     {member.headline && (
                         <p className="text-white/70 mt-1">
@@ -256,7 +269,7 @@ export default async function MemberDetailPage({
                                 className="btn-primary"
                                 href="/contact"
                             >
-                                Contact
+                                {tServer("memberDetail.cta.contact")}
                             </Link>
                         )}
                     </div>
@@ -269,7 +282,7 @@ export default async function MemberDetailPage({
                     {(member.bio || member.shortBio) && (
                         <div className="card p-5">
                             <h2 className="text-lg font-semibold mb-3">
-                                About
+                                {tServer("memberDetail.about.title")}
                             </h2>
                             <MarkdownView
                                 markdown={
@@ -284,7 +297,7 @@ export default async function MemberDetailPage({
                     {member.projects.length > 0 && (
                         <div className="card p-5">
                             <h2 className="text-lg font-semibold mb-3">
-                                Projects
+                                {tServer("memberDetail.projects.title")}
                             </h2>
                             <div className="space-y-4">
                                 {member.projects.map((p) => (
@@ -306,14 +319,26 @@ export default async function MemberDetailPage({
                                             {(p.role || p.year) && (
                                                 <div className="text-xs text-white/60">
                                                     {p.role
-                                                        ? `Role: ${p.role}`
+                                                        ? tServer(
+                                                            "memberDetail.projects.roleLabel",
+                                                        ).replace(
+                                                            "{role}",
+                                                            p.role || "",
+                                                        )
                                                         : ""}
                                                     {p.role &&
                                                     p.year
                                                         ? " • "
                                                         : ""}
                                                     {p.year
-                                                        ? `Year: ${p.year}`
+                                                        ? tServer(
+                                                            "memberDetail.projects.yearLabel",
+                                                        ).replace(
+                                                            "{year}",
+                                                            String(
+                                                                p.year,
+                                                            ),
+                                                        )
                                                         : ""}
                                                 </div>
                                             )}
@@ -344,8 +369,9 @@ export default async function MemberDetailPage({
                                                         href={`/projects/${p.slug}`}
                                                         className="text-xs underline underline-offset-4"
                                                     >
-                                                        Open project
-                                                        →
+                                                        {tServer(
+                                                            "memberDetail.projects.openProject",
+                                                        )}
                                                     </Link>
                                                 </div>
                                             )}
@@ -359,16 +385,24 @@ export default async function MemberDetailPage({
                     {member.photos.length > 0 && (
                         <div className="card p-5">
                             <h2 className="text-lg font-semibold mb-3">
-                                Gallery
+                                {tServer("memberDetail.gallery.title")}
                             </h2>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 {member.photos.map((src, i) => (
                                     <img
                                         key={i}
                                         src={src}
-                                        alt={`${member.name} photo ${
-                                            i + 1
-                                        }`}
+                                        alt={tServer(
+                                            "memberDetail.gallery.photoAlt",
+                                        )
+                                            .replace(
+                                                "{name}",
+                                                member.name,
+                                            )
+                                            .replace(
+                                                "{index}",
+                                                String(i + 1),
+                                            )}
                                         className="w-full h-32 object-cover rounded-md ring-1 ring-white/10"
                                     />
                                 ))}
@@ -380,7 +414,7 @@ export default async function MemberDetailPage({
                     {member.cvUrl && (
                         <div className="card p-5">
                             <h2 className="text-lg font-semibold mb-3">
-                                Curriculum Vitae
+                                {tServer("memberDetail.cv.title")}
                             </h2>
                             <div className="mb-3">
                                 <a
@@ -389,14 +423,16 @@ export default async function MemberDetailPage({
                                     target="_blank"
                                     rel="noreferrer"
                                 >
-                                    Download CV (PDF)
+                                    {tServer(
+                                        "memberDetail.cv.downloadLabel",
+                                    )}
                                 </a>
                             </div>
                             <div className="w-full rounded-md ring-1 ring-white/10 overflow-hidden bg-white/5">
                                 <iframe
                                     src={`${member.cvUrl}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`}
                                     className="w-full h-[70vh] bg-black"
-                                    title="CV PDF"
+                                    title={tServer("memberDetail.cv.iframeTitle")}
                                 />
                             </div>
                         </div>
@@ -408,7 +444,7 @@ export default async function MemberDetailPage({
                     {member.location && (
                         <div className="card p-5">
                             <h2 className="text-lg font-semibold mb-2">
-                                Location
+                                {tServer("memberDetail.location.title")}
                             </h2>
                             <div className="text-white/80">
                                 {member.location}
@@ -419,7 +455,7 @@ export default async function MemberDetailPage({
                     {member.skills.length > 0 && (
                         <div className="card p-5">
                             <h2 className="text-lg font-semibold mb-2">
-                                Skills
+                                {tServer("memberDetail.skills.title")}
                             </h2>
                             <div className="flex flex-wrap gap-1.5">
                                 {member.skills.map((s) => (
@@ -437,7 +473,9 @@ export default async function MemberDetailPage({
                     {member.techStack.length > 0 && (
                         <div className="card p-5">
                             <h2 className="text-lg font-semibold mb-2">
-                                Tech stack
+                                {tServer(
+                                    "memberDetail.techStack.title",
+                                )}
                             </h2>
                             <div className="flex flex-wrap gap-1.5">
                                 {member.techStack.map((s) => (
@@ -455,7 +493,7 @@ export default async function MemberDetailPage({
                     {member.events.length > 0 && (
                         <div className="card p-5">
                             <h2 className="text-lg font-semibold mb-2">
-                                Events
+                                {tServer("memberDetail.events.title")}
                             </h2>
                             <ul className="space-y-2">
                                 {member.events.map((ev) => (
@@ -492,7 +530,12 @@ export default async function MemberDetailPage({
                                             )}
                                             {ev.role && (
                                                 <div className="text-xs text-white/70">
-                                                    Role: {ev.role}
+                                                    {tServer(
+                                                        "memberDetail.events.roleLabel",
+                                                    ).replace(
+                                                        "{role}",
+                                                        ev.role,
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -509,7 +552,7 @@ export default async function MemberDetailPage({
                     href="/members"
                     className="underline underline-offset-4"
                 >
-                    ← Back to all members
+                    {tServer("memberDetail.backToAll")}
                 </Link>
             </div>
         </section>
@@ -540,8 +583,12 @@ function MarkdownView({ markdown }: { markdown: string }) {
                         className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
                         aria-label={
                             seg.lang
-                                ? `Code block (${seg.lang})`
-                                : "Code block"
+                                ? tServer(
+                                    "memberDetail.markdown.codeBlockWithLang",
+                                ).replace("{lang}", seg.lang)
+                                : tServer(
+                                    "memberDetail.markdown.codeBlock",
+                                )
                         }
                     >
                         <code>{seg.content}</code>
@@ -828,7 +875,8 @@ function makeLinkItems(links: Record<string, string>) {
     const normalized = entries.map(([k, v]) => {
         const key = k.toLowerCase();
         let href = v.trim();
-        let label = labelForKey(key);
+        let label =
+            labelForKey(key); // localized below where appropriate
         let external = true;
 
         if (key === "email" || href.startsWith("mailto:")) {
@@ -836,7 +884,7 @@ function makeLinkItems(links: Record<string, string>) {
                 ? href
                 : `mailto:${href}`;
             external = false;
-            label = "Email";
+            label = tServer("memberDetail.links.email");
         } else if (!/^https?:\/\//i.test(href)) {
             href = `https://${href}`;
         }
@@ -860,16 +908,16 @@ function makeLinkItems(links: Record<string, string>) {
 function labelForKey(key: string) {
     switch (key) {
         case "github":
-            return "GitHub";
+            return "GitHub"; // brand names usually stay as-is
         case "linkedin":
             return "LinkedIn";
         case "website":
-            return "Website";
+            return tServer("memberDetail.links.website");
         case "twitter":
         case "x":
             return "Twitter";
         case "email":
-            return "Email";
+            return tServer("memberDetail.links.email");
         default:
             return key[0].toUpperCase() + key.slice(1);
     }

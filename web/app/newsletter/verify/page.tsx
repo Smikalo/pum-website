@@ -2,6 +2,7 @@
 import React from "react";
 import { redirect } from "next/navigation";
 import { API_BASE } from "@/lib/config";
+import { tServer } from "@/lib/i18n-server";
 
 type VerifyResult = {
     ok: boolean;
@@ -24,7 +25,9 @@ async function verifyToken(token: string): Promise<VerifyResult> {
         if (!res.ok) {
             return {
                 ok: false,
-                error: json.error || "Verification failed.",
+                error:
+                    (json.error as string | undefined) ||
+                    tServer("newsletter.verify.error.generic"),
                 code: json.code,
             };
         }
@@ -33,11 +36,10 @@ async function verifyToken(token: string): Promise<VerifyResult> {
             status: json.status,
             email: json.email,
         };
-    } catch (err) {
-        // console.error("[newsletter/verify] request failed", err);
+    } catch {
         return {
             ok: false,
-            error: "Unable to reach verification server. Please try again later.",
+            error: tServer("newsletter.verify.error.network"),
         };
     }
 }
@@ -49,7 +51,6 @@ export default async function NewsletterVerifyPage({
 }) {
     const token = searchParams?.token;
     if (!token) {
-        // no token – redirect to home or show a friendly error
         return redirect("/");
     }
 
@@ -57,22 +58,26 @@ export default async function NewsletterVerifyPage({
 
     const title = result.ok
         ? result.status === "already-verified"
-            ? "You’re already subscribed ✨"
-            : "Subscription confirmed 🎉"
-        : "Couldn’t verify your subscription";
+            ? tServer("newsletter.verify.title.alreadyVerified")
+            : tServer("newsletter.verify.title.verified")
+        : tServer("newsletter.verify.title.error");
 
     const message = result.ok
         ? result.status === "already-verified"
-            ? `Looks like you’ve already confirmed ${result.email || "your email"}. You’re all set!`
-            : `Thanks${
-                result.email ? `, ${result.email}` : ""
-            }! Your subscription is now confirmed.`
-        : result.error || "Something went wrong with the verification link.";
+            ? tServer("newsletter.verify.message.alreadyVerified").replace(
+                "{email}",
+                result.email || tServer("newsletter.verify.message.emailFallback"),
+            )
+            : tServer("newsletter.verify.message.verified").replace(
+                "{email}",
+                result.email || tServer("newsletter.verify.message.emailFallback"),
+            )
+        : result.error || tServer("newsletter.verify.error.generic");
 
     return (
         <section className="section">
             <header className="mb-6">
-                <p className="kicker">NEWSLETTER</p>
+                <p className="kicker">{tServer("newsletter.kicker")}</p>
                 <h1 className="display">{title}</h1>
                 <p className="mt-3 text-white/70 max-w-2xl">{message}</p>
             </header>
@@ -81,18 +86,18 @@ export default async function NewsletterVerifyPage({
                 {result.ok ? (
                     <>
                         <p className="text-sm text-white/70">
-                            You’ll receive occasional updates from PUM about new projects, events, and posts.
+                            {tServer("newsletter.verify.body.success")}
                         </p>
                     </>
                 ) : (
                     <>
                         {result.code === "TOKEN_EXPIRED" ? (
                             <p className="text-sm text-white/70">
-                                This verification link has expired. Try subscribing again so we can send you a fresh link.
+                                {tServer("newsletter.verify.body.expired")}
                             </p>
                         ) : (
                             <p className="text-sm text-white/70">
-                                The link might be invalid or already used. If you copied it manually, double-check the URL.
+                                {tServer("newsletter.verify.body.invalid")}
                             </p>
                         )}
                     </>

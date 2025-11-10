@@ -1,4 +1,3 @@
-// web/context/I18nProvider.tsx
 "use client";
 
 import React from "react";
@@ -25,35 +24,86 @@ const I18nContext = React.createContext<I18nContextValue | undefined>(
 );
 
 const STORAGE_KEY = "lang";
+const COOKIE_KEY = "lang";
+
+function readLangCookie(): Lang | null {
+    if (typeof document === "undefined") return null;
+
+    try {
+        const match = document.cookie.match(
+            /(?:^|;\s*)lang=([^;]+)/i,
+        );
+        const raw = match ? decodeURIComponent(match[1]) : null;
+        if (raw === "en" || raw === "de") return raw;
+    } catch {
+        // ignore
+    }
+    return null;
+}
+
+function writeLangCookie(lang: Lang) {
+    if (typeof document === "undefined") return;
+    try {
+        const maxAge = 60 * 60 * 24 * 365; // 1 year
+        document.cookie = `${COOKIE_KEY}=${encodeURIComponent(
+            lang,
+        )}; path=/; max-age=${maxAge}; samesite=lax`;
+    } catch {
+        // ignore
+    }
+}
 
 function detectInitialLang(): Lang {
+    // On the server we can't read cookies or navigator reliably, so default to English.
     if (typeof window === "undefined") {
         return "en";
     }
 
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored === "en" || stored === "de") return stored;
+    // 1) Cookie
+    const cookieLang = readLangCookie();
+    if (cookieLang) return cookieLang;
 
-    const navLang =
-        (window.navigator.languages && window.navigator.languages[0]) ||
-        window.navigator.language;
-
-    if (navLang && navLang.toLowerCase().startsWith("de")) {
-        return "de";
+    // 2) localStorage
+    try {
+        const stored = window.localStorage.getItem(STORAGE_KEY);
+        if (stored === "en" || stored === "de") return stored;
+    } catch {
+        // ignore
     }
 
+    // 3) Browser UI language
+    try {
+        const navLang =
+            (window.navigator.languages &&
+                window.navigator.languages[0]) ||
+            window.navigator.language;
+
+        if (navLang && navLang.toLowerCase().startsWith("de")) {
+            return "de";
+        }
+    } catch {
+        // ignore
+    }
+
+    // 4) Fallback
     return "en";
 }
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
     const [lang, setLang] = React.useState<Lang>(detectInitialLang);
 
-    // Keep DOM + localStorage + legacy event in sync with current language
+    // Keep cookie, localStorage, <html lang> and legacy event in sync
     React.useEffect(() => {
         if (typeof window !== "undefined") {
-            window.localStorage.setItem(STORAGE_KEY, lang);
+            try {
+                window.localStorage.setItem(STORAGE_KEY, lang);
+            } catch {
+                // ignore
+            }
 
-            // Keep compatibility with the existing custom event
+            writeLangCookie(lang);
+
+            // Legacy custom event for any existing listeners
             window.dispatchEvent(
                 new CustomEvent("pum:lang", { detail: { lang } }),
             );
@@ -78,11 +128,13 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
 
     const value = React.useMemo(
         () => ({ lang, setLang, t }),
-        [lang, setLang, t],
+        [lang, t],
     );
 
     return (
-        <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
+        <I18nContext.Provider value={value}>
+            {children}
+        </I18nContext.Provider>
     );
 }
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "@/context/AuthProvider";
+import { tClient } from "@/lib/i18n-client";
 
 type Props = {
     slug: string;
@@ -13,10 +14,6 @@ export function EditBlogButton({ slug, authorSlugs, className }: Props) {
     const { user } = useAuth();
 
     if (!user) {
-        // console.log("[EditBlogButton] rendering (no user)", {
-        //     slug,
-        //     authorSlugs,
-        // });
         return null;
     }
 
@@ -42,32 +39,10 @@ export function EditBlogButton({ slug, authorSlugs, className }: Props) {
 
     const shouldShow = isAdminOrModerator || isAuthor;
 
-    // console.log("[EditBlogButton] rendering", {
-    //     slug,
-    //     rawUser: user,
-    //     rawUserRoles: rawRoles,
-    //     authorSlugs,
-    // });
-
-    // console.log("[EditBlogButton] permission check", {
-    //     slug,
-    //     currentMemberSlug,
-    //     authorSlugsNorm,
-    //     rawRoles,
-    //     upperRoles,
-    //     isAdminOrModerator,
-    //     isAuthor,
-    //     shouldShow,
-    // });
-
     if (!shouldShow) return null;
 
     const handleClick = () => {
-        // console.log("[EditBlogButton] clicked", {
-        //     slug,
-        //     currentMemberSlug,
-        //     upperRoles,
-        // });
+        // logging if needed
     };
 
     return (
@@ -79,7 +54,7 @@ export function EditBlogButton({ slug, authorSlugs, className }: Props) {
                 "inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted"
             }
         >
-            Edit
+            {tClient("common.edit")}
         </Link>
     );
 }

@@ -1,6 +1,7 @@
 // app/newsletter/unsubscribe/page.tsx
 import React from "react";
 import { API_BASE } from "@/lib/config";
+import { tServer } from "@/lib/i18n-server";
 
 type UnsubResult =
     | { state: "idle" | "missing-token" }
@@ -23,10 +24,12 @@ async function unsubscribeWithToken(token: string | null): Promise<UnsubResult> 
         });
 
         if (!res.ok) {
-            let msg = "Unsubscribe failed.";
+            let msg = tServer("newsletter.unsubscribe.error.generic");
             try {
                 const body = await res.json();
-                if (body?.error) msg = body.error;
+                if (body?.error && typeof body.error === "string") {
+                    msg = body.error;
+                }
             } catch {
                 // ignore JSON error, keep default message
             }
@@ -36,13 +39,14 @@ async function unsubscribeWithToken(token: string | null): Promise<UnsubResult> 
         const body = await res.json().catch(() => null);
         return {
             state: "success",
-            message: body?.message || "You’ve been unsubscribed from updates.",
+            message:
+                (body?.message as string | undefined) ||
+                tServer("newsletter.unsubscribe.success.defaultMessage"),
         };
-    } catch (err) {
-        // console.error("[unsubscribe] request failed", err);
+    } catch {
         return {
             state: "error",
-            message: "We couldn’t reach the server. Please try again later.",
+            message: tServer("newsletter.unsubscribe.error.network"),
         };
     }
 }
@@ -54,56 +58,58 @@ export default async function NewsletterUnsubscribePage({
 }) {
     const tokenParam = searchParams.token;
     const token =
-        typeof tokenParam === "string" ? tokenParam : Array.isArray(tokenParam) ? tokenParam[0] : null;
+        typeof tokenParam === "string"
+            ? tokenParam
+            : Array.isArray(tokenParam)
+                ? tokenParam[0]
+                : null;
 
     const result = await unsubscribeWithToken(token);
 
-    let title = "Unsubscribe from updates";
+    let title = tServer("newsletter.unsubscribe.title.default");
     let description = "";
     let toneClass = "text-white/70";
-    let badge = null as React.ReactNode;
+    let badge: React.ReactNode = null;
 
     if (result.state === "missing-token") {
-        title = "Missing unsubscribe token";
-        description =
-            "The link you used is missing a token. Please open the latest email from us and click the unsubscribe link again.";
+        title = tServer("newsletter.unsubscribe.missingToken.title");
+        description = tServer("newsletter.unsubscribe.missingToken.description");
         toneClass = "text-amber-300";
         badge = (
             <span className="inline-flex items-center rounded-full bg-amber-500/10 border border-amber-500/40 px-2 py-0.5 text-xs text-amber-200 mb-3">
-        Action needed
-      </span>
+                {tServer("newsletter.unsubscribe.missingToken.badge")}
+            </span>
         );
     } else if (result.state === "success") {
-        title = "You’re unsubscribed";
+        title = tServer("newsletter.unsubscribe.success.title");
         description = result.message;
         toneClass = "text-emerald-300";
         badge = (
             <span className="inline-flex items-center rounded-full bg-emerald-500/10 border border-emerald-500/40 px-2 py-0.5 text-xs text-emerald-200 mb-3">
-        Success
-      </span>
+                {tServer("newsletter.unsubscribe.success.badge")}
+            </span>
         );
     } else if (result.state === "error") {
-        title = "We couldn’t unsubscribe you";
+        title = tServer("newsletter.unsubscribe.error.title");
         description = result.message;
         toneClass = "text-rose-300";
         badge = (
             <span className="inline-flex items-center rounded-full bg-rose-500/10 border border-rose-500/40 px-2 py-0.5 text-xs text-rose-200 mb-3">
-        Error
-      </span>
+                {tServer("newsletter.unsubscribe.error.badge")}
+            </span>
         );
     }
 
     return (
         <section className="section">
             <div className="max-w-xl">
-                <p className="kicker">NEWSLETTER</p>
+                <p className="kicker">{tServer("newsletter.kicker")}</p>
                 <h1 className="display mb-3">{title}</h1>
                 {badge}
                 <p className={`${toneClass} mb-6`}>{description}</p>
 
                 <p className="text-sm text-white/50">
-                    If this wasn’t you, you can ignore this page. You’ll only stop receiving emails sent to the
-                    address that clicked this link.
+                    {tServer("newsletter.unsubscribe.footer.note")}
                 </p>
             </div>
         </section>

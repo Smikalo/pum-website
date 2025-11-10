@@ -9,6 +9,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { API_BASE } from "@/lib/config";
 import { EditBlogButton } from "@/components/EditBlogButton";
+import { tServer } from "@/lib/i18n-server";
 
 type BlogAuthor = {
     slug: string;
@@ -32,7 +33,7 @@ type Blog = {
     techStack?: string[];
     authors?: BlogAuthor[];
     projectSlugs?: string[];
-    eventSlugs?: string[]; // ✅ NEW
+    eventSlugs?: string[];
 };
 
 type ProjectCard = {
@@ -64,7 +65,6 @@ function normalizeBlog(raw: any): Blog | null {
     if (!raw) return null;
     const b = raw.item ?? raw.data ?? raw;
 
-    // Accept either images[] or photos[] from the backend
     const images: string[] = Array.isArray(b.images)
         ? b.images
         : Array.isArray(b.photos)
@@ -91,12 +91,14 @@ function normalizeBlog(raw: any): Blog | null {
             ? b.author
             : [];
 
-    // 🔗 events
     let eventSlugs: string[] = normArr(b.eventSlugs);
     if (!eventSlugs.length && Array.isArray(b.events)) {
         eventSlugs = (b.events as any[])
             .map((e) => e?.slug)
-            .filter((s): s is string => ((typeof s) === "string") && (s.trim().length>0))
+            .filter(
+                (s): s is string =>
+                    typeof s === "string" && s.trim().length > 0,
+            )
             .map((s) => s.trim());
     }
 
@@ -114,7 +116,7 @@ function normalizeBlog(raw: any): Blog | null {
         techStack: normArr(b.techStack ?? b.tech),
         authors: authorsInput.map(normalizeAuthor),
         projectSlugs: normArr(b.projectSlugs),
-        eventSlugs, // ✅
+        eventSlugs,
     };
 }
 
@@ -165,7 +167,6 @@ async function fetchRelatedBlogs(blog: Blog): Promise<Blog[]> {
     }
 }
 
-// 🔍 Fetch project cards for related projects
 async function fetchProjectsForSlugs(slugs: string[]): Promise<ProjectCard[]> {
     if (!slugs.length) return [];
 
@@ -208,7 +209,6 @@ async function fetchProjectsForSlugs(slugs: string[]): Promise<ProjectCard[]> {
     }
 }
 
-// 🔍 Fetch event cards for related events
 async function fetchEventsForSlugs(slugs: string[]): Promise<EventCard[]> {
     if (!slugs.length) return [];
 
@@ -258,7 +258,9 @@ export async function generateMetadata({
         title: b ? `${b.title} – PUM Blog` : "Blog – PUM",
         description:
             b?.summary ||
-            (b?.content ? String(b.content).slice(0, 140) : "PUM blog post"),
+            (b?.content
+                ? String(b.content).slice(0, 140)
+                : "PUM blog post"),
     };
 }
 
@@ -272,10 +274,15 @@ export default async function BlogDetailPage({
     if (!b) {
         return (
             <section className="section">
-                <h1 className="display">Post not found</h1>
+                <h1 className="display">
+                    {tServer("blog.detail.notFound.title")}
+                </h1>
                 <p className="mt-4">
-                    <Link href="/blog" className="underline underline-offset-4">
-                        Back to blog
+                    <Link
+                        href="/blog"
+                        className="underline underline-offset-4"
+                    >
+                        {tServer("blog.detail.notFound.back")}
                     </Link>
                 </p>
             </section>
@@ -289,13 +296,11 @@ export default async function BlogDetailPage({
     const relatedProjectSlugs = b.projectSlugs ?? [];
     const relatedEventSlugs = b.eventSlugs ?? [];
 
-    // ✅ Load related projects & events metadata
     const [relatedProjects, relatedEvents] = await Promise.all([
         fetchProjectsForSlugs(relatedProjectSlugs),
         fetchEventsForSlugs(relatedEventSlugs),
     ]);
 
-    // Fallback slugs with no card data returned
     const slugsWithProjectCards = new Set(relatedProjects.map((p) => p.slug));
     const slugsWithEventCards = new Set(relatedEvents.map((e) => e.slug));
     const fallbackProjectSlugs = relatedProjectSlugs.filter(
@@ -308,28 +313,30 @@ export default async function BlogDetailPage({
     return (
         <section className="section">
             <header className="mb-6">
-                <p className="kicker">BLOG</p>
+                <p className="kicker">{tServer("blog.detail.kicker")}</p>
                 <h1 className="display">{b.title}</h1>
-                <div className="mt-2 text-white/70 text-sm flex flex-wrap gap-3 items-center">
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-white/70">
                     {b.publishedAt && (
-                        <span>{new Date(b.publishedAt).toLocaleDateString()}</span>
+                        <span>
+                            {new Date(b.publishedAt).toLocaleDateString()}
+                        </span>
                     )}
                     {b.tags && b.tags.length > 0 && (
                         <span className="flex flex-wrap gap-1">
-              {b.tags.map((t) => (
-                  <span
-                      key={t}
-                      className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
-                  >
-                  {t}
-                </span>
-              ))}
-            </span>
+                            {b.tags.map((t) => (
+                                <span
+                                    key={t}
+                                    className="rounded-full bg-white/5 px-2 py-1 text-[11px] ring-1 ring-white/10"
+                                >
+                                    {t}
+                                </span>
+                            ))}
+                        </span>
                     )}
                 </div>
 
                 {b.authors && b.authors.length > 0 && (
-                    <div className="mt-4 flex flex-wrap gap-3 items-center">
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
                         {b.authors.map((m, idx) => (
                             <Link
                                 key={`${m.slug}-${idx}`}
@@ -338,14 +345,25 @@ export default async function BlogDetailPage({
                             >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                    src={m.avatarUrl || "/avatars/default.png"}
+                                    src={
+                                        m.avatarUrl ||
+                                        "/avatars/default.png"
+                                    }
                                     alt={m.name}
-                                    className="w-7 h-7 rounded-full object-cover ring-1 ring-white/10"
+                                    className="h-7 w-7 rounded-full object-cover ring-1 ring-white/10"
                                 />
                                 <div className="min-w-0">
-                                    <div className="text-xs font-medium">{m.name}</div>
-                                    <div className="text-[11px] text-white/60 truncate">
-                                        {m.role === "CREATOR" ? "Creator" : m.headline || m.role || ""}
+                                    <div className="text-xs font-medium">
+                                        {m.name}
+                                    </div>
+                                    <div className="truncate text-[11px] text-white/60">
+                                        {m.role === "CREATOR"
+                                            ? tServer(
+                                                "blog.detail.author.creatorRole",
+                                            )
+                                            : m.headline ||
+                                            m.role ||
+                                            ""}
                                     </div>
                                 </div>
                             </Link>
@@ -360,16 +378,18 @@ export default async function BlogDetailPage({
                     <img
                         src={cover}
                         alt={b.title}
-                        className="w-full h-80 object-cover rounded-xl ring-1 ring-white/10"
+                        className="h-80 w-full rounded-xl object-cover ring-1 ring-white/10"
                     />
                 </div>
             )}
 
-            <div className="grid lg:grid-cols-5 gap-6">
-                <article className="lg:col-span-3 space-y-6">
+            <div className="grid gap-6 lg:grid-cols-5">
+                <article className="space-y-6 lg:col-span-3">
                     <div className="card p-5">
                         {b.summary && (
-                            <p className="text-white/80 text-sm mb-4">{b.summary}</p>
+                            <p className="mb-4 text-sm text-white/80">
+                                {b.summary}
+                            </p>
                         )}
 
                         {b.content ? (
@@ -379,22 +399,28 @@ export default async function BlogDetailPage({
                                 </ReactMarkdown>
                             </div>
                         ) : (
-                            <p className="text-white/60">No content yet.</p>
+                            <p className="text-white/60">
+                                {tServer(
+                                    "blog.detail.noContentFallback",
+                                )}
+                            </p>
                         )}
 
                         {b.techStack && b.techStack.length > 0 && (
                             <div className="mt-6">
-                                <div className="text-xs uppercase tracking-widest text-white/60 mb-2">
-                                    Tech stack
+                                <div className="mb-2 text-xs uppercase tracking-widest text-white/60">
+                                    {tServer(
+                                        "blog.detail.techStack.label",
+                                    )}
                                 </div>
                                 <div className="flex flex-wrap gap-1.5">
                                     {b.techStack.map((t) => (
                                         <span
                                             key={t}
-                                            className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                            className="rounded-full bg-white/5 px-2 py-1 text-[11px] ring-1 ring-white/10"
                                         >
-                      {t}
-                    </span>
+                                            {t}
+                                        </span>
                                     ))}
                                 </div>
                             </div>
@@ -403,15 +429,17 @@ export default async function BlogDetailPage({
 
                     {images.length > 1 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">Gallery</h2>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            <h2 className="mb-3 text-lg font-semibold">
+                                {tServer("blog.detail.gallery.title")}
+                            </h2>
+                            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
                                 {images.map((src, i) => (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img
                                         key={i}
                                         src={src}
                                         alt={`${b.title} photo ${i + 1}`}
-                                        className="w-full h-32 object-cover rounded-md ring-1 ring-white/10"
+                                        className="h-32 w-full rounded-md object-cover ring-1 ring-white/10"
                                     />
                                 ))}
                             </div>
@@ -419,18 +447,26 @@ export default async function BlogDetailPage({
                     )}
                 </article>
 
-                <aside className="lg:col-span-2 space-y-6">
+                <aside className="space-y-6 lg:col-span-2">
                     <div className="card p-5">
-                        <h2 className="text-lg font-semibold mb-2">Authors</h2>
+                        <h2 className="mb-2 text-lg font-semibold">
+                            {tServer("blog.detail.authors.title")}
+                        </h2>
                         {b.authors && b.authors.length ? (
                             <ul className="space-y-3">
                                 {b.authors.map((m, i) => (
-                                    <li key={`${m.slug}-${i}`} className="flex items-center gap-3">
+                                    <li
+                                        key={`${m.slug}-${i}`}
+                                        className="flex items-center gap-3"
+                                    >
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img
-                                            src={m.avatarUrl || "/avatars/default.png"}
+                                            src={
+                                                m.avatarUrl ||
+                                                "/avatars/default.png"
+                                            }
                                             alt={m.name}
-                                            className="w-10 h-10 rounded-full object-cover ring-1 ring-white/10"
+                                            className="h-10 w-10 rounded-full object-cover ring-1 ring-white/10"
                                         />
                                         <div className="min-w-0">
                                             <Link
@@ -441,11 +477,15 @@ export default async function BlogDetailPage({
                                             </Link>
                                             {m.role && (
                                                 <div className="text-xs text-white/60">
-                                                    {m.role === "CREATOR" ? "Creator" : m.role}
+                                                    {m.role === "CREATOR"
+                                                        ? tServer(
+                                                            "blog.detail.author.creatorRole",
+                                                        )
+                                                        : m.role}
                                                 </div>
                                             )}
                                             {m.headline && (
-                                                <div className="text-xs text-white/60 truncate">
+                                                <div className="truncate text-xs text-white/60">
                                                     {m.headline}
                                                 </div>
                                             )}
@@ -454,46 +494,61 @@ export default async function BlogDetailPage({
                                 ))}
                             </ul>
                         ) : (
-                            <p className="text-white/60">No authors listed.</p>
+                            <p className="text-white/60">
+                                {tServer(
+                                    "blog.detail.authors.empty",
+                                )}
+                            </p>
                         )}
                     </div>
 
-                    {/* ⭐ Related projects */}
-                    {(relatedProjects.length > 0 || fallbackProjectSlugs.length > 0) && (
+                    {(relatedProjects.length > 0 ||
+                        fallbackProjectSlugs.length > 0) && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-2">Related projects</h2>
+                            <h2 className="mb-2 text-lg font-semibold">
+                                {tServer(
+                                    "blog.detail.relatedProjects.title",
+                                )}
+                            </h2>
                             <div className="grid gap-3">
                                 {relatedProjects.map((proj) => (
                                     <Link
                                         key={proj.slug}
                                         href={`/projects/${proj.slug}`}
-                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 hover:border-white/20 transition"
+                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition hover:border-white/20 hover:bg-white/10"
                                     >
                                         {proj.cover ? (
-                                            <div className="h-10 w-10 rounded-md overflow-hidden ring-1 ring-white/10 flex-shrink-0">
+                                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-md ring-1 ring-white/10">
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                                 <img
                                                     src={proj.cover}
                                                     alt={proj.title}
-                                                    className="w-full h-full object-cover"
+                                                    className="h-full w-full object-cover"
                                                 />
                                             </div>
                                         ) : (
-                                            <div className="h-10 w-10 rounded-md bg-black/40 ring-1 ring-white/10 flex items-center justify-center text-[11px] text-white/60 flex-shrink-0">
-                                                PRJ
+                                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-black/40 text-[11px] text-white/60 ring-1 ring-white/10">
+                                                {tServer(
+                                                    "blog.detail.relatedProjects.projectBadge",
+                                                )}
                                             </div>
                                         )}
                                         <div className="min-w-0">
-                                            <div className="text-xs font-medium truncate">
+                                            <div className="truncate text-xs font-medium">
                                                 {proj.title}
                                             </div>
-                                            <div className="text-[11px] text-white/60 truncate">
-                                                {proj.year ? `${proj.year} · ${proj.slug}` : proj.slug}
+                                            <div className="truncate text-[11px] text-white/60">
+                                                {proj.year
+                                                    ? `${proj.year} · ${proj.slug}`
+                                                    : proj.slug}
                                             </div>
                                         </div>
                                         <span className="ml-auto text-[11px] text-white/60">
-                      View →
-                    </span>
+                                            {tServer(
+                                                "blog.detail.relatedProjects.viewLabel",
+                                            )}{" "}
+                                            →
+                                        </span>
                                     </Link>
                                 ))}
 
@@ -501,62 +556,84 @@ export default async function BlogDetailPage({
                                     <Link
                                         key={slug}
                                         href={`/projects/${slug}`}
-                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 hover:border-white/20 transition"
+                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition hover:border-white/20 hover:bg-white/10"
                                     >
-                                        <div className="h-10 w-10 rounded-md bg-black/40 ring-1 ring-white/10 flex items-center justify-center text-[11px] text-white/60 flex-shrink-0">
-                                            PRJ
+                                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-black/40 text-[11px] text-white/60 ring-1 ring-white/10">
+                                            {tServer(
+                                                "blog.detail.relatedProjects.projectBadge",
+                                            )}
                                         </div>
                                         <div className="min-w-0">
-                                            <div className="text-xs font-medium truncate">{slug}</div>
-                                            <div className="text-[11px] text-white/60 truncate">
-                                                View project
+                                            <div className="truncate text-xs font-medium">
+                                                {slug}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white/60">
+                                                {tServer(
+                                                    "blog.detail.relatedProjects.viewProjectFallback",
+                                                )}
                                             </div>
                                         </div>
                                         <span className="ml-auto text-[11px] text-white/60">
-                      View →
-                    </span>
+                                            {tServer(
+                                                "blog.detail.relatedProjects.viewLabel",
+                                            )}{" "}
+                                            →
+                                        </span>
                                     </Link>
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {/* 🗓️ Related events */}
-                    {(relatedEvents.length > 0 || fallbackEventSlugs.length > 0) && (
+                    {(relatedEvents.length > 0 ||
+                        fallbackEventSlugs.length > 0) && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-2">Related events</h2>
+                            <h2 className="mb-2 text-lg font-semibold">
+                                {tServer(
+                                    "blog.detail.relatedEvents.title",
+                                )}
+                            </h2>
                             <div className="grid gap-3">
                                 {relatedEvents.map((ev) => (
                                     <Link
                                         key={ev.slug}
                                         href={`/events/${ev.slug}`}
-                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 hover:border-white/20 transition"
+                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition hover:border-white/20 hover:bg-white/10"
                                     >
                                         {ev.cover ? (
-                                            <div className="h-10 w-10 rounded-md overflow-hidden ring-1 ring-white/10 flex-shrink-0">
+                                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-md ring-1 ring-white/10">
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                                 <img
                                                     src={ev.cover}
                                                     alt={ev.title}
-                                                    className="w-full h-full object-cover"
+                                                    className="h-full w-full object-cover"
                                                 />
                                             </div>
                                         ) : (
-                                            <div className="h-10 w-10 rounded-md bg-black/40 ring-1 ring-white/10 flex items-center justify-center text-[11px] text-white/60 flex-shrink-0">
-                                                EVT
+                                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-black/40 text-[11px] text-white/60 ring-1 ring-white/10">
+                                                {tServer(
+                                                    "blog.detail.relatedEvents.eventBadge",
+                                                )}
                                             </div>
                                         )}
                                         <div className="min-w-0">
-                                            <div className="text-xs font-medium truncate">
+                                            <div className="truncate text-xs font-medium">
                                                 {ev.title}
                                             </div>
-                                            <div className="text-[11px] text-white/60 truncate">
-                                                {ev.date ? new Date(ev.date).toLocaleDateString() : ev.slug}
+                                            <div className="truncate text-[11px] text-white/60">
+                                                {ev.date
+                                                    ? new Date(
+                                                        ev.date,
+                                                    ).toLocaleDateString()
+                                                    : ev.slug}
                                             </div>
                                         </div>
                                         <span className="ml-auto text-[11px] text-white/60">
-                      View →
-                    </span>
+                                            {tServer(
+                                                "blog.detail.relatedEvents.viewLabel",
+                                            )}{" "}
+                                            →
+                                        </span>
                                     </Link>
                                 ))}
 
@@ -564,20 +641,29 @@ export default async function BlogDetailPage({
                                     <Link
                                         key={slug}
                                         href={`/events/${slug}`}
-                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 hover:border-white/20 transition"
+                                        className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition hover:border-white/20 hover:bg-white/10"
                                     >
-                                        <div className="h-10 w-10 rounded-md bg-black/40 ring-1 ring-white/10 flex items-center justify-center text-[11px] text-white/60 flex-shrink-0">
-                                            EVT
+                                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-black/40 text-[11px] text-white/60 ring-1 ring-white/10">
+                                            {tServer(
+                                                "blog.detail.relatedEvents.eventBadge",
+                                            )}
                                         </div>
                                         <div className="min-w-0">
-                                            <div className="text-xs font-medium truncate">{slug}</div>
-                                            <div className="text-[11px] text-white/60 truncate">
-                                                View event
+                                            <div className="truncate text-xs font-medium">
+                                                {slug}
+                                            </div>
+                                            <div className="truncate text-[11px] text-white/60">
+                                                {tServer(
+                                                    "blog.detail.relatedEvents.viewEventFallback",
+                                                )}
                                             </div>
                                         </div>
                                         <span className="ml-auto text-[11px] text-white/60">
-                      View →
-                    </span>
+                                            {tServer(
+                                                "blog.detail.relatedEvents.viewLabel",
+                                            )}{" "}
+                                            →
+                                        </span>
                                     </Link>
                                 ))}
                             </div>
@@ -588,38 +674,46 @@ export default async function BlogDetailPage({
 
             {relatedPosts.length > 0 && (
                 <section className="mt-10 border-t border-white/10 pt-6">
-                    <h2 className="text-lg font-semibold mb-4">More like this</h2>
+                    <h2 className="mb-4 text-lg font-semibold">
+                        {tServer("blog.detail.moreLikeThis.title")}
+                    </h2>
                     <div className="grid gap-4 md:grid-cols-3">
                         {relatedPosts.map((post) => (
                             <Link
                                 key={post.slug}
                                 href={`/blog/${post.slug}`}
-                                className="card p-4 flex flex-col hover:ring-1 hover:ring-white/20"
+                                className="card flex flex-col p-4 hover:ring-1 hover:ring-white/20"
                             >
                                 {post.cover && (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img
                                         src={post.cover}
                                         alt={post.title}
-                                        className="w-full h-28 object-cover rounded-md mb-3 ring-1 ring-white/10"
+                                        className="mb-3 h-28 w-full rounded-md object-cover ring-1 ring-white/10"
                                     />
                                 )}
-                                <h3 className="text-sm font-semibold mb-1">{post.title}</h3>
+                                <h3 className="mb-1 text-sm font-semibold">
+                                    {post.title}
+                                </h3>
                                 {post.publishedAt && (
                                     <p className="text-[11px] text-white/60">
-                                        {new Date(post.publishedAt).toLocaleDateString()}
+                                        {new Date(
+                                            post.publishedAt,
+                                        ).toLocaleDateString()}
                                     </p>
                                 )}
                                 {post.tags && post.tags.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-2">
-                                        {post.tags.slice(0, 3).map((t) => (
-                                            <span
-                                                key={t}
-                                                className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
-                                            >
-                        {t}
-                      </span>
-                                        ))}
+                                    <div className="mt-2 flex flex-wrap gap-1">
+                                        {post.tags
+                                            .slice(0, 3)
+                                            .map((t) => (
+                                                <span
+                                                    key={t}
+                                                    className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] ring-1 ring-white/10"
+                                                >
+                                                    {t}
+                                                </span>
+                                            ))}
                                     </div>
                                 )}
                             </Link>
@@ -628,12 +722,14 @@ export default async function BlogDetailPage({
                 </section>
             )}
 
-            <div className="mt-8 flex justify-between items-center">
-                <Link href="/blog" className="underline underline-offset-4">
-                    ← Back to all posts
+            <div className="mt-8 flex items-center justify-between">
+                <Link
+                    href="/blog"
+                    className="underline underline-offset-4"
+                >
+                    {tServer("blog.detail.backToAll")}
                 </Link>
 
-                {/* Only shows if user is an author, moderator, or admin */}
                 <EditBlogButton slug={b.slug} authorSlugs={authorSlugs} />
             </div>
         </section>

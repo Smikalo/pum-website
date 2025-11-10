@@ -6,8 +6,9 @@ import remarkGfm from "remark-gfm";
 import { useAuth } from "@/context/AuthProvider";
 import * as api from "@/lib/api";
 import { toImageSrc } from "@/lib/images";
+import { tClient } from "@/lib/i18n-client";
 
-const AREAS = ["FRONTEND","BACKEND","ML","DATA","DEVOPS","DESIGN","PM","OTHER"] as const;
+const AREAS = ["FRONTEND", "BACKEND", "ML", "DATA", "DEVOPS", "DESIGN", "PM", "OTHER"] as const;
 type Area = (typeof AREAS)[number];
 
 type Profile = {
@@ -29,6 +30,28 @@ function mergeCsv(existingCsv: string, adds: string[]) {
     const set = new Set(existingCsv.split(",").map(s => s.trim()).filter(Boolean));
     for (const a of adds) if (a && !set.has(a)) set.add(a);
     return Array.from(set).join(", ");
+}
+
+function focusAreaLabel(a: Area) {
+    switch (a) {
+        case "FRONTEND":
+            return tClient("account.editor.focusArea.frontend");
+        case "BACKEND":
+            return tClient("account.editor.focusArea.backend");
+        case "ML":
+            return tClient("account.editor.focusArea.ml");
+        case "DATA":
+            return tClient("account.editor.focusArea.data");
+        case "DEVOPS":
+            return tClient("account.editor.focusArea.devops");
+        case "DESIGN":
+            return tClient("account.editor.focusArea.design");
+        case "PM":
+            return tClient("account.editor.focusArea.pm");
+        case "OTHER":
+        default:
+            return tClient("account.editor.focusArea.other");
+    }
 }
 
 export default function AccountEditor() {
@@ -77,12 +100,17 @@ export default function AccountEditor() {
                 setFocusArea((normalized.focusArea as Area) || "");
                 setCvUrl(normalized.cvUrl || null);
             } catch (e: any) {
-                setError(e.message || "Failed to load profile");
+                setError(
+                    e?.message ||
+                    tClient("account.editor.error.loadProfile"),
+                );
             } finally {
                 setLoading(false);
             }
         })();
-        return () => { active = false; };
+        return () => {
+            active = false;
+        };
     }, [accessToken]);
 
     async function save() {
@@ -95,19 +123,29 @@ export default function AccountEditor() {
                 headline: headline || null,
                 shortBio: shortBio || null,
                 markdown,
-                links: Object.fromEntries(links.filter(x => x.label && x.url).map(x => [x.label.trim(), x.url.trim()])),
+                links: Object.fromEntries(
+                    links
+                        .filter(x => x.label && x.url)
+                        .map(x => [x.label.trim(), x.url.trim()]),
+                ),
                 skills: skills.split(",").map(s => s.trim()).filter(Boolean),
                 techStack: tech.split(",").map(s => s.trim()).filter(Boolean),
             };
             if (focusArea) body.focusArea = focusArea;
             const res = await api.updateMyProfile(accessToken, body);
-            const updated: Profile = { ...res.profile, avatarUrl: toImageSrc(res.profile?.avatarUrl) };
+            const updated: Profile = {
+                ...res.profile,
+                avatarUrl: toImageSrc(res.profile?.avatarUrl),
+            };
             setProfile(updated);
             setCvUrl(updated.cvUrl || null);
             setJustSaved(true);
             setTimeout(() => setJustSaved(false), 1600);
         } catch (e: any) {
-            setError(e.message || "Failed to save profile");
+            setError(
+                e?.message ||
+                tClient("account.editor.error.saveProfile"),
+            );
         } finally {
             setSaving(false);
         }
@@ -122,11 +160,14 @@ export default function AccountEditor() {
         try {
             const { url } = await api.uploadAvatar(accessToken, file);
             const absolute = toImageSrc(url);
-            setProfile((p) => (p ? { ...p, avatarUrl: absolute } : p));
+            setProfile(p => (p ? { ...p, avatarUrl: absolute } : p));
             setJustSaved(true);
             setTimeout(() => setJustSaved(false), 1600);
         } catch (e: any) {
-            setError(e.message || "Avatar upload failed");
+            setError(
+                e?.message ||
+                tClient("account.editor.error.avatarUpload"),
+            );
         } finally {
             setSaving(false);
             e.target.value = "";
@@ -142,19 +183,48 @@ export default function AccountEditor() {
         try {
             const res = await api.uploadCv(accessToken, file);
             setCvUrl(res.url || null);
-            setFoundSkills(Array.isArray(res.extractedSkills) ? res.extractedSkills : []);
-            setFoundTech(Array.isArray(res.extractedTech) ? res.extractedTech : []);
+            setFoundSkills(
+                Array.isArray(res.extractedSkills)
+                    ? res.extractedSkills
+                    : [],
+            );
+            setFoundTech(
+                Array.isArray(res.extractedTech)
+                    ? res.extractedTech
+                    : [],
+            );
         } catch (e: any) {
-            setError(e.message || "CV upload failed");
+            setError(
+                e?.message ||
+                tClient("account.editor.error.cvUpload"),
+            );
         } finally {
             setSaving(false);
             e.target.value = "";
         }
     }
 
-    if (!user) return <p className="text-white/70 px-4 py-10">Please log in to edit your profile.</p>;
-    if (loading) return <p className="text-white/70 px-4 py-10">Loading your profile…</p>;
-    if (error) return <p className="text-red-400 px-4 py-10">{error}</p>;
+    if (!user) {
+        return (
+            <p className="text-white/70 px-4 py-10">
+                {tClient("account.editor.loginToEdit")}
+            </p>
+        );
+    }
+    if (loading) {
+        return (
+            <p className="text-white/70 px-4 py-10">
+                {tClient("account.editor.loading")}
+            </p>
+        );
+    }
+    if (error) {
+        return (
+            <p className="text-red-400 px-4 py-10">
+                {error}
+            </p>
+        );
+    }
     if (!profile) return null;
 
     const avatarSrc = toImageSrc(profile.avatarUrl);
@@ -166,48 +236,83 @@ export default function AccountEditor() {
                     <div className="w-16 h-16 rounded-full bg-white text-black font-bold grid place-items-center overflow-hidden">
                         {avatarSrc ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={avatarSrc} alt={profile.name || "avatar"} className="w-full h-full object-cover" />
+                            <img
+                                src={avatarSrc}
+                                alt={profile.name || tClient("account.editor.avatar.altFallback")}
+                                className="w-full h-full object-cover"
+                            />
                         ) : (
                             (profile.name || "U").slice(0, 2).toUpperCase()
                         )}
                     </div>
                     <div>
-                        <label className="block text-sm text-white/70 mb-1">Change avatar</label>
-                        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onAvatarChange} />
-                        <p className="text-xs text-white/50">PNG/JPEG/WebP, up to 5MB.</p>
+                        <label className="block text-sm text-white/70 mb-1">
+                            {tClient("account.editor.avatar.changeLabel")}
+                        </label>
+                        <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            onChange={onAvatarChange}
+                        />
+                        <p className="text-xs text-white/50">
+                            {tClient("account.editor.avatar.helper")}
+                        </p>
                     </div>
                 </div>
 
-                {/* CV upload + link (minimal UI) */}
+                {/* CV upload + link */}
                 <div>
-                    <label className="block text-sm text-white/70 mb-1">Curriculum Vitae (PDF)</label>
+                    <label className="block text-sm text-white/70 mb-1">
+                        {tClient("account.editor.cv.label")}
+                    </label>
                     <div className="flex items-center gap-3">
-                        <input type="file" accept="application/pdf" onChange={onCvChange} />
+                        <input
+                            type="file"
+                            accept="application/pdf"
+                            onChange={onCvChange}
+                        />
                         {cvUrl ? (
-                            <a href={cvUrl} className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10 text-sm" target="_blank" rel="noopener noreferrer" download>
-                                Download CV
+                            <a
+                                href={cvUrl}
+                                className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10 text-sm"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                download
+                            >
+                                {tClient("account.editor.cv.download")}
                             </a>
                         ) : null}
                     </div>
 
-                    {/* Clickable suggestions */}
                     {(foundSkills.length || foundTech.length) ? (
                         <div className="mt-2 space-y-2">
                             {foundSkills.length ? (
                                 <div className="text-xs">
-                                    <span className="text-white/70 mr-2">Skills found:</span>
+                                    <span className="text-white/70 mr-2">
+                                        {tClient("account.editor.cv.skillsFound")}
+                                    </span>
                                     <button
                                         className="mr-2 px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
-                                        onClick={() => setSkills(s => mergeCsv(s, foundSkills))}
+                                        onClick={() =>
+                                            setSkills(s =>
+                                                mergeCsv(s, foundSkills),
+                                            )
+                                        }
+                                        type="button"
                                     >
-                                        + Add all
+                                        {tClient("account.editor.cv.addAll")}
                                     </button>
-                                    {foundSkills.map((s) => (
+                                    {foundSkills.map(s => (
                                         <button
                                             key={`sk-${s}`}
                                             className="mr-1 mb-1 inline-flex px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
-                                            onClick={() => setSkills(v => mergeCsv(v, [s]))}
-                                            title="Add to Skills"
+                                            onClick={() =>
+                                                setSkills(v => mergeCsv(v, [s]))
+                                            }
+                                            title={tClient(
+                                                "account.editor.cv.addSkillTitle",
+                                            )}
+                                            type="button"
                                         >
                                             + {s}
                                         </button>
@@ -216,19 +321,31 @@ export default function AccountEditor() {
                             ) : null}
                             {foundTech.length ? (
                                 <div className="text-xs">
-                                    <span className="text-white/70 mr-2">Tech found:</span>
+                                    <span className="text-white/70 mr-2">
+                                        {tClient("account.editor.cv.techFound")}
+                                    </span>
                                     <button
                                         className="mr-2 px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
-                                        onClick={() => setTech(t => mergeCsv(t, foundTech))}
+                                        onClick={() =>
+                                            setTech(t =>
+                                                mergeCsv(t, foundTech),
+                                            )
+                                        }
+                                        type="button"
                                     >
-                                        + Add all
+                                        {tClient("account.editor.cv.addAll")}
                                     </button>
-                                    {foundTech.map((t) => (
+                                    {foundTech.map(t => (
                                         <button
                                             key={`te-${t}`}
                                             className="mr-1 mb-1 inline-flex px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
-                                            onClick={() => setTech(v => mergeCsv(v, [t]))}
-                                            title="Add to Tech stack"
+                                            onClick={() =>
+                                                setTech(v => mergeCsv(v, [t]))
+                                            }
+                                            title={tClient(
+                                                "account.editor.cv.addTechTitle",
+                                            )}
+                                            type="button"
                                         >
                                             + {t}
                                         </button>
@@ -240,67 +357,206 @@ export default function AccountEditor() {
                 </div>
 
                 <div>
-                    <label className="block text-sm text-white/70 mb-1">Name</label>
-                    <input value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2" />
+                    <label className="block text-sm text-white/70 mb-1">
+                        {tClient("account.editor.name.label")}
+                    </label>
+                    <input
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
+                    />
                 </div>
 
                 <div>
-                    <label className="block text-sm text-white/70 mb-1">Headline</label>
-                    <input value={headline} onChange={(e) => setHeadline(e.target.value)} className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2" />
+                    <label className="block text-sm text-white/70 mb-1">
+                        {tClient("account.editor.headline.label")}
+                    </label>
+                    <input
+                        value={headline}
+                        onChange={e => setHeadline(e.target.value)}
+                        className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
+                    />
                 </div>
 
                 <div>
-                    <label className="block text-sm text-white/70 mb-1">Short bio</label>
-                    <textarea value={shortBio} onChange={(e) => setShortBio(e.target.value)} rows={3} className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2" />
+                    <label className="block text-sm text-white/70 mb-1">
+                        {tClient("account.editor.shortBio.label")}
+                    </label>
+                    <textarea
+                        value={shortBio}
+                        onChange={e => setShortBio(e.target.value)}
+                        rows={3}
+                        className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
+                    />
                 </div>
 
                 <div>
-                    <label className="block text-sm text-white/70 mb-1">Primary area</label>
-                    <select value={focusArea} onChange={(e) => setFocusArea(e.target.value as Area)} className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2">
-                        <option value="">(Choose…)</option>
-                        {AREAS.map(a => <option key={a} value={a}>{a}</option>)}
+                    <label className="block text-sm text-white/70 mb-1">
+                        {tClient("account.editor.focusArea.label")}
+                    </label>
+                    <select
+                        value={focusArea}
+                        onChange={e =>
+                            setFocusArea(e.target.value as Area)
+                        }
+                        className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
+                    >
+                        <option value="">
+                            {tClient("account.editor.focusArea.placeholder")}
+                        </option>
+                        {AREAS.map(a => (
+                            <option key={a} value={a}>
+                                {focusAreaLabel(a)}
+                            </option>
+                        ))}
                     </select>
-                    <p className="text-xs text-white/50 mt-1">This drives categorization on the Members graph & filters.</p>
+                    <p className="text-xs text-white/50 mt-1">
+                        {tClient("account.editor.focusArea.helper")}
+                    </p>
                 </div>
 
                 <div>
-                    <label className="block text-sm text-white/70 mb-1">Links</label>
+                    <label className="block text-sm text-white/70 mb-1">
+                        {tClient("account.editor.links.label")}
+                    </label>
                     <div className="space-y-2">
                         {links.map((row, i) => (
-                            <div key={i} className="flex gap-2">
-                                <input placeholder="Label (e.g., GitHub)" value={row.label} onChange={(e) => setLinks((v) => v.map((r, idx) => (idx === i ? { ...r, label: e.target.value } : r)))} className="flex-1 rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2" />
-                                <input placeholder="https://…" value={row.url} onChange={(e) => setLinks((v) => v.map((r, idx) => (idx === i ? { ...r, url: e.target.value } : r)))} className="flex-[2] rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2" />
-                                <button type="button" onClick={() => setLinks((v) => v.filter((_r, idx) => idx !== i))} className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10">✕</button>
+                            <div
+                                key={i}
+                                className="flex gap-2"
+                            >
+                                <input
+                                    placeholder={tClient(
+                                        "account.editor.links.labelPlaceholder",
+                                    )}
+                                    value={row.label}
+                                    onChange={e =>
+                                        setLinks(v =>
+                                            v.map((r, idx) =>
+                                                idx === i
+                                                    ? {
+                                                        ...r,
+                                                        label: e.target
+                                                            .value,
+                                                    }
+                                                    : r,
+                                            ),
+                                        )
+                                    }
+                                    className="flex-1 rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
+                                />
+                                <input
+                                    placeholder="https://…"
+                                    value={row.url}
+                                    onChange={e =>
+                                        setLinks(v =>
+                                            v.map((r, idx) =>
+                                                idx === i
+                                                    ? {
+                                                        ...r,
+                                                        url: e.target.value,
+                                                    }
+                                                    : r,
+                                            ),
+                                        )
+                                    }
+                                    className="flex-[2] rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setLinks(v =>
+                                            v.filter(
+                                                (_r, idx) => idx !== i,
+                                            ),
+                                        )
+                                    }
+                                    className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10"
+                                    aria-label={tClient(
+                                        "account.editor.links.remove",
+                                    )}
+                                >
+                                    ✕
+                                </button>
                             </div>
                         ))}
-                        <button type="button" onClick={() => setLinks((v) => [...v, { label: "", url: "" }])} className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10">+ Add link</button>
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setLinks(v => [
+                                    ...v,
+                                    { label: "", url: "" },
+                                ])
+                            }
+                            className="px-3 py-2 rounded-md ring-1 ring-white/10 hover:bg-white/10"
+                        >
+                            {tClient("account.editor.links.add")}
+                        </button>
                     </div>
                 </div>
 
                 <div>
-                    <label className="block text-sm text-white/70 mb-1">Skills (comma-separated)</label>
-                    <input value={skills} onChange={(e) => setSkills(e.target.value)} className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2" />
+                    <label className="block text-sm text-white/70 mb-1">
+                        {tClient("account.editor.skills.label")}
+                    </label>
+                    <input
+                        value={skills}
+                        onChange={e => setSkills(e.target.value)}
+                        className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
+                    />
                 </div>
 
                 <div>
-                    <label className="block text-sm text-white/70 mb-1">Tech stack (comma-separated)</label>
-                    <input value={tech} onChange={(e) => setTech(e.target.value)} className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2" />
+                    <label className="block text-sm text-white/70 mb-1">
+                        {tClient("account.editor.tech.label")}
+                    </label>
+                    <input
+                        value={tech}
+                        onChange={e => setTech(e.target.value)}
+                        className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
+                    />
                 </div>
 
                 <div className="pt-2 flex items-center gap-3">
-                    <button onClick={save} disabled={saving} className="px-4 py-2 rounded-md bg-white text-black font-semibold disabled:opacity-50">
-                        {saving ? "Saving…" : "Save changes"}
+                    <button
+                        onClick={save}
+                        disabled={saving}
+                        className="px-4 py-2 rounded-md bg-white text-black font-semibold disabled:opacity-50"
+                        type="button"
+                    >
+                        {saving
+                            ? tClient("common.saving")
+                            : tClient("common.saveChanges")}
                     </button>
-                    {justSaved ? <span className="text-sm text-emerald-300">Saved ✓</span> : null}
+                    {justSaved ? (
+                        <span className="text-sm text-emerald-300">
+                            {tClient("common.savedCheck")}
+                        </span>
+                    ) : null}
                 </div>
             </section>
 
             <section className="space-y-3">
-                <label className="block text-sm text-white/70">Profile Markdown</label>
-                <textarea value={markdown} onChange={(e) => setMarkdown(e.target.value)} rows={14} className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 font-mono text-sm" placeholder="### About me" />
-                <div className="text-sm text-white/60">Preview</div>
+                <label className="block text-sm text-white/70">
+                    {tClient("account.editor.markdown.label")}
+                </label>
+                <textarea
+                    value={markdown}
+                    onChange={e => setMarkdown(e.target.value)}
+                    rows={14}
+                    className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 font-mono text-sm"
+                    placeholder={tClient(
+                        "account.editor.markdown.placeholder",
+                    )}
+                />
+                <div className="text-sm text-white/60">
+                    {tClient("account.editor.markdown.previewLabel")}
+                </div>
                 <div className="prose prose-invert max-w-none rounded-md border border-white/10 p-4 bg-white/5">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown || "_Nothing yet…_"}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {markdown ||
+                            tClient("account.editor.markdown.empty")}
+                    </ReactMarkdown>
                 </div>
             </section>
         </div>

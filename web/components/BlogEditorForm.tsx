@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { API_BASE } from "@/lib/config";
+import { tClient } from "@/lib/i18n-client";
 
 type BlogEditorFormProps = {
     mode: "create" | "edit";
@@ -178,8 +179,8 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                         })),
                     );
                 }
-            } catch (err) {
-                // console.error("[BlogEditorForm] failed to load members", err);
+            } catch {
+                // ignore
             }
         })();
         return () => {
@@ -206,12 +207,13 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                             slug: p.slug,
                             title: p.title,
                             cover: p.cover || null,
-                            year: typeof p.year === "number" ? p.year : null,
+                            year:
+                                typeof p.year === "number" ? p.year : null,
                         })),
                     );
                 }
-            } catch (err) {
-                // console.error("[BlogEditorForm] failed to load projects", err);
+            } catch {
+                // ignore
             }
         })();
         return () => {
@@ -242,8 +244,8 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                         })),
                     );
                 }
-            } catch (err) {
-                // console.error("[BlogEditorForm] failed to load events", err);
+            } catch {
+                // ignore
             }
         })();
         return () => {
@@ -270,7 +272,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         const unsupported = arr.filter((f) => !isAllowedImage(f));
         if (unsupported.length) {
             setPhotosError(
-                "Some files were skipped: only PNG, JPG/JPEG, WEBP, and GIF are supported.",
+                tClient("blog.editor.photos.error.type"),
             );
         } else {
             setPhotosError(null);
@@ -284,7 +286,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
 
         const combined = [...newPhotos, ...allowed];
         if (combined.length + existingPhotos.length > 20) {
-            setPhotosError("Please keep to 20 images max.");
+            setPhotosError(
+                tClient("blog.editor.photos.error.tooMany"),
+            );
             if (fileInputRef.current) fileInputRef.current.value = "";
             return;
         }
@@ -419,13 +423,16 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
             {/* Title */}
             <div>
                 <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                    Title<span className="text-red-400">*</span>
+                    {tClient("blog.editor.title.label")}
+                    <span className="text-red-400">*</span>
                 </label>
                 <input
                     name="title"
                     required
                     defaultValue={initialTitle}
-                    placeholder="e.g. Building side projects with the PUM community"
+                    placeholder={tClient(
+                        "blog.editor.title.placeholder",
+                    )}
                     className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
                 />
             </div>
@@ -433,13 +440,15 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
             {/* Summary */}
             <div>
                 <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                    Summary
+                    {tClient("blog.editor.summary.label")}
                 </label>
                 <textarea
                     name="summary"
                     rows={3}
                     defaultValue={initialSummary}
-                    placeholder="Short teaser shown in lists and social previews."
+                    placeholder={tClient(
+                        "blog.editor.summary.placeholder",
+                    )}
                     className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
                 />
             </div>
@@ -448,10 +457,11 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
             <div>
                 <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-semibold uppercase tracking-widest text-white/60">
-                        Content (Markdown supported)
+                        {tClient("blog.editor.content.label")}
                     </label>
                     <span className="text-[11px] text-white/50">
-                        {content.length} characters
+                        {content.length}{" "}
+                        {tClient("blog.editor.content.charCountSuffix")}
                     </span>
                 </div>
                 <textarea
@@ -459,13 +469,15 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     rows={10}
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
-                    placeholder="Write your story here in Markdown or plain text."
+                    placeholder={tClient(
+                        "blog.editor.content.placeholder",
+                    )}
                     className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-white/30"
                 />
 
                 <div className="mt-3">
                     <div className="text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                        Live preview
+                        {tClient("blog.editor.preview.label")}
                     </div>
                     <div className="rounded-lg border border-white/10 bg-black/30 p-3 max-h-80 overflow-y-auto prose prose-sm prose-invert">
                         {content ? (
@@ -474,7 +486,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                             </ReactMarkdown>
                         ) : (
                             <p className="text-xs text-white/50">
-                                Start typing above to see rendered Markdown.
+                                {tClient(
+                                    "blog.editor.preview.empty",
+                                )}
                             </p>
                         )}
                     </div>
@@ -485,31 +499,35 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
             <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                     <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                        Tags
+                        {tClient("blog.editor.tags.label")}
                     </label>
                     <input
                         name="tags"
                         defaultValue={tagsCsvDefault}
-                        placeholder="hackathon, ai, community"
+                        placeholder={tClient(
+                            "blog.editor.tags.placeholder",
+                        )}
                         className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
                     />
                     <p className="mt-1 text-xs text-white/50">
-                        Comma-separated.
+                        {tClient("blog.editor.tags.helper")}
                     </p>
                 </div>
 
                 <div>
                     <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                        Tech stack
+                        {tClient("blog.editor.tech.label")}
                     </label>
                     <input
                         name="techStack"
                         defaultValue={techCsvDefault}
-                        placeholder="TypeScript, Next.js, PostgreSQL"
+                        placeholder={tClient(
+                            "blog.editor.tech.placeholder",
+                        )}
                         className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
                     />
                     <p className="mt-1 text-xs text-white/50">
-                        Comma-separated.
+                        {tClient("blog.editor.tech.helper")}
                     </p>
                 </div>
             </div>
@@ -518,7 +536,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
             <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                     <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                        Published date
+                        {tClient("blog.editor.publishedAt.label")}
                     </label>
                     <input
                         type="date"
@@ -527,20 +545,22 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                         className="w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
                     />
                     <p className="mt-1 text-xs text-white/50">
-                        Leave empty to keep it as a draft / unpublished.
+                        {tClient("blog.editor.publishedAt.helper")}
                     </p>
                 </div>
 
                 {/* Authors selection */}
                 <div>
                     <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                        Authors
+                        {tClient("blog.editor.authors.label")}
                     </label>
                     <input
                         type="text"
                         value={memberQ}
                         onChange={(e) => setMemberQ(e.target.value)}
-                        placeholder="Search members by name or slug…"
+                        placeholder={tClient(
+                            "blog.editor.authors.searchPlaceholder",
+                        )}
                         className={searchInputCls()}
                     />
                     {memberSuggestions.length > 0 && memberQ.trim() && (
@@ -554,7 +574,10 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                 >
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                        src={m.avatarUrl || "/avatars/default.png"}
+                                        src={
+                                            m.avatarUrl ||
+                                            "/avatars/default.png"
+                                        }
                                         alt={m.name}
                                         className="w-6 h-6 rounded-full object-cover ring-1 ring-white/10"
                                     />
@@ -574,8 +597,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     <div className="mt-2 flex flex-wrap gap-2">
                         {selectedAuthors.length === 0 ? (
                             <p className="text-xs text-white/50">
-                                No authors selected yet. The post creator will
-                                be added on the backend.
+                                {tClient(
+                                    "blog.editor.authors.empty",
+                                )}
                             </p>
                         ) : (
                             selectedAuthors.map((a) => (
@@ -585,7 +609,10 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                 >
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                        src={a.avatarUrl || "/avatars/default.png"}
+                                        src={
+                                            a.avatarUrl ||
+                                            "/avatars/default.png"
+                                        }
                                         alt={a.name}
                                         className="w-6 h-6 rounded-full object-cover ring-1 ring-white/10"
                                     />
@@ -596,7 +623,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                         type="button"
                                         onClick={() => removeAuthor(a.slug)}
                                         className="text-white/60 hover:text-red-300"
-                                        aria-label={`Remove ${a.name}`}
+                                        aria-label={tClient(
+                                            "blog.editor.authors.remove",
+                                        )}
                                     >
                                         ✕
                                     </button>
@@ -606,7 +635,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     </div>
 
                     <p className="mt-1 text-xs text-white/50">
-                        The post creator is always kept as an author.
+                        {tClient("blog.editor.authors.helper")}
                     </p>
                 </div>
             </div>
@@ -618,49 +647,58 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     {/* Related projects */}
                     <div>
                         <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                            Related projects
+                            {tClient("blog.editor.projects.label")}
                         </label>
                         <input
                             type="text"
                             value={projectQ}
                             onChange={(e) => setProjectQ(e.target.value)}
-                            placeholder="Search projects by title or slug…"
+                            placeholder={tClient(
+                                "blog.editor.projects.searchPlaceholder",
+                            )}
                             className={searchInputCls()}
                         />
-                        {projectSuggestions.length > 0 && projectQ.trim() && (
-                            <div className="mt-1 rounded-md bg-black/80 border border-white/15 max-h-52 overflow-y-auto text-sm">
-                                {projectSuggestions.map((p) => (
-                                    <button
-                                        key={p.slug}
-                                        type="button"
-                                        onClick={() => toggleProject(p.slug)}
-                                        className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-white/5 text-left"
-                                    >
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        {p.cover && (
-                                            <img
-                                                src={p.cover}
-                                                alt={p.title}
-                                                className="w-8 h-8 rounded-md object-cover ring-1 ring-white/10"
-                                            />
-                                        )}
-                                        <div className="min-w-0">
-                                            <div className="text-xs font-medium truncate">
-                                                {p.title}
+                        {projectSuggestions.length > 0 &&
+                            projectQ.trim() && (
+                                <div className="mt-1 rounded-md bg-black/80 border border-white/15 max-h-52 overflow-y-auto text-sm">
+                                    {projectSuggestions.map((p) => (
+                                        <button
+                                            key={p.slug}
+                                            type="button"
+                                            onClick={() =>
+                                                toggleProject(p.slug)
+                                            }
+                                            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-white/5 text-left"
+                                        >
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            {p.cover && (
+                                                <img
+                                                    src={p.cover}
+                                                    alt={p.title}
+                                                    className="w-8 h-8 rounded-md object-cover ring-1 ring-white/10"
+                                                />
+                                            )}
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-medium truncate">
+                                                    {p.title}
+                                                </div>
+                                                <div className="text-[11px] text-white/50">
+                                                    {p.year
+                                                        ? p.year
+                                                        : p.slug}
+                                                </div>
                                             </div>
-                                            <div className="text-[11px] text-white/50">
-                                                {p.year ? p.year : p.slug}
-                                            </div>
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
 
                         <div className="mt-2 flex flex-wrap gap-1.5">
                             {selectedProjectSlugs.length === 0 ? (
                                 <p className="text-xs text-white/50">
-                                    No projects linked yet. Optional.
+                                    {tClient(
+                                        "blog.editor.projects.empty",
+                                    )}
                                 </p>
                             ) : (
                                 selectedProjectSlugs.map((slug) => {
@@ -672,7 +710,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                         <button
                                             key={slug}
                                             type="button"
-                                            onClick={() => toggleProject(slug)}
+                                            onClick={() =>
+                                                toggleProject(slug)
+                                            }
                                             className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10"
                                         >
                                             <span>{label}</span>
@@ -689,13 +729,15 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     {/* Related events */}
                     <div>
                         <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                            Related events
+                            {tClient("blog.editor.events.label")}
                         </label>
                         <input
                             type="text"
                             value={eventQ}
                             onChange={(e) => setEventQ(e.target.value)}
-                            placeholder="Search events by name or slug…"
+                            placeholder={tClient(
+                                "blog.editor.events.searchPlaceholder",
+                            )}
                             className={searchInputCls()}
                         />
                         {eventSuggestions.length > 0 && eventQ.trim() && (
@@ -735,7 +777,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                         <div className="mt-2 flex flex-wrap gap-1.5">
                             {selectedEventSlugs.length === 0 ? (
                                 <p className="text-xs text-white/50">
-                                    No events linked yet. Optional.
+                                    {tClient(
+                                        "blog.editor.events.empty",
+                                    )}
                                 </p>
                             ) : (
                                 selectedEventSlugs.map((slug) => {
@@ -747,7 +791,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                         <button
                                             key={slug}
                                             type="button"
-                                            onClick={() => toggleEvent(slug)}
+                                            onClick={() =>
+                                                toggleEvent(slug)
+                                            }
                                             className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10"
                                         >
                                             <span>{label}</span>
@@ -765,16 +811,15 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                 {/* Photos UI */}
                 <div>
                     <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
-                        Photos
+                        {tClient("blog.editor.photos.label")}
                     </label>
 
                     <div className="flex items-center justify-between gap-2 mb-2">
                         <p className="text-xs text-white/50">
-                            Add a cover image and gallery shots. These will be
-                            reused on the blog page.
+                            {tClient("blog.editor.photos.helper")}
                         </p>
                         <label className="inline-flex items-center px-3 py-1.5 rounded-md bg-white/5 hover:bg-white/10 text-xs ring-1 ring-white/10 cursor-pointer">
-                            <span>Upload</span>
+                            <span>{tClient("blog.editor.photos.upload")}</span>
                             <input
                                 ref={fileInputRef}
                                 type="file"
@@ -782,7 +827,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                 multiple
                                 accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
                                 className="hidden"
-                                onChange={(e) => handleNewPhotos(e.target.files)}
+                                onChange={(e) =>
+                                    handleNewPhotos(e.target.files)
+                                }
                             />
                         </label>
                     </div>
@@ -798,7 +845,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                         {existingPhotos.length > 0 && (
                             <div className="space-y-1">
                                 <div className="text-[11px] uppercase tracking-widest text-white/60">
-                                    Existing
+                                    {tClient(
+                                        "blog.editor.photos.existingSection",
+                                    )}
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     {existingPhotos.map((src, idx) => {
@@ -817,7 +866,12 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                                 <img
                                                     src={src}
-                                                    alt={`Existing image ${idx + 1}`}
+                                                    alt={tClient(
+                                                        "blog.editor.photos.existingAlt",
+                                                    ).replace(
+                                                        "{index}",
+                                                        String(idx + 1),
+                                                    )}
                                                     className="w-full h-20 object-cover"
                                                 />
                                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex flex-col justify-between p-1 text-[10px]">
@@ -831,8 +885,12 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                         className="rounded bg-black/70 px-1 py-0.5 border border-white/30"
                                                     >
                                                         {isHeader
-                                                            ? "Cover image"
-                                                            : "Set as cover"}
+                                                            ? tClient(
+                                                                "blog.editor.photos.coverLabel",
+                                                            )
+                                                            : tClient(
+                                                                "blog.editor.photos.setCover",
+                                                            )}
                                                     </button>
                                                     <button
                                                         type="button"
@@ -843,7 +901,12 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                         }
                                                         className="rounded bg-black/70 px-1 py-0.5 border border-red-400/70 text-red-200"
                                                     >
-                                                        Remove
+                                                        {tClient(
+                                                            "blog.editor.photos.removeExisting",
+                                                        ).replace(
+                                                            "{index}",
+                                                            String(idx + 1),
+                                                        )}
                                                     </button>
                                                 </div>
                                             </div>
@@ -857,11 +920,14 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                         {newPhotos.length > 0 && (
                             <div className="space-y-1">
                                 <div className="text-[11px] uppercase tracking-widest text-white/60">
-                                    New uploads (not saved yet)
+                                    {tClient(
+                                        "blog.editor.photos.newSection",
+                                    )}
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     {newPhotos.map((file, idx) => {
-                                        const url = URL.createObjectURL(file);
+                                        const url =
+                                            URL.createObjectURL(file);
                                         const isHeader =
                                             headerNewIndex === idx &&
                                             headerExistingIndex === null;
@@ -891,8 +957,12 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                         className="rounded bg-black/70 px-1 py-0.5 border border-white/30"
                                                     >
                                                         {isHeader
-                                                            ? "Cover image"
-                                                            : "Set as cover"}
+                                                            ? tClient(
+                                                                "blog.editor.photos.coverLabel",
+                                                            )
+                                                            : tClient(
+                                                                "blog.editor.photos.setCover",
+                                                            )}
                                                     </button>
                                                     <button
                                                         type="button"
@@ -901,7 +971,13 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                         }
                                                         className="rounded bg-black/70 px-1 py-0.5 border border-red-400/70 text-red-200"
                                                     >
-                                                        Remove
+                                                        {tClient(
+                                                            "blog.editor.photos.removeNew",
+                                                        )
+                                                            .replace(
+                                                                "{name}",
+                                                                file.name,
+                                                            )}
                                                     </button>
                                                 </div>
                                             </div>
@@ -912,12 +988,12 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                         )}
                     </div>
 
-                    {existingPhotos.length === 0 && newPhotos.length === 0 && (
-                        <p className="mt-1 text-xs text-white/50">
-                            No images yet. The cover image will be used at the
-                            top of the post and in lists.
-                        </p>
-                    )}
+                    {existingPhotos.length === 0 &&
+                        newPhotos.length === 0 && (
+                            <p className="mt-1 text-xs text-white/50">
+                                {tClient("blog.editor.photos.empty")}
+                            </p>
+                        )}
 
                     {/* Hidden fields for server actions */}
                     <input
@@ -965,7 +1041,9 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
 
             <div className="pt-2 border-t border-white/10 mt-4 flex items-center justify-end gap-3">
                 <button type="submit" className="btn-primary">
-                    {mode === "edit" ? "Save changes" : "Create post"}
+                    {mode === "edit"
+                        ? tClient("blog.editor.submit.save")
+                        : tClient("blog.editor.submit.create")}
                 </button>
             </div>
         </form>

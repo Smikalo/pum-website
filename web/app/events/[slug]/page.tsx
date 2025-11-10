@@ -8,6 +8,7 @@ import { SEED_PROJECTS, type Project as SeedProject } from "@/data/projects.seed
 import { API_BASE } from "@/lib/config";
 import EventsMap from "@/components/EventsMap";
 import EditEventButton from "@/components/EditEventButton";
+import { tServer } from "@/lib/i18n-server";
 
 /* ----------------------- Tiny Markdown renderer ----------------------- */
 
@@ -219,7 +220,11 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                     <pre
                         key={`code-${i}`}
                         className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
-                        aria-label={seg.lang ? `Code block (${seg.lang})` : "Code block"}
+                        aria-label={
+                            seg.lang
+                                ? tServer("events.edit.markdown.codeBlockWithLang").replace("{lang}", seg.lang)
+                                : tServer("events.edit.markdown.codeBlock")
+                        }
                     >
                         <code>{seg.content}</code>
                     </pre>
@@ -537,10 +542,10 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
     if (!baseEvent) {
         return (
             <section className="section">
-                <h1 className="display">Event not found</h1>
+                <h1 className="display">{tServer("events.edit.notFound.title")}</h1>
                 <p className="mt-4">
                     <Link href="/events" className="underline underline-offset-4">
-                        Back to events
+                        {tServer("events.edit.notFound.back")}
                     </Link>
                 </p>
             </section>
@@ -644,10 +649,13 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
     const photos = baseEvent.photos || [];
     const cover = photos[0];
 
+    const pendingLabel = tServer("events.detail.attendees.pendingInvite");
+    const unknownLabel = tServer("events.detail.attendees.unknown");
+
     return (
         <section className="section">
             <header className="mb-6">
-                <p className="kicker">EVENT</p>
+                <p className="kicker">{tServer("events.detail.kicker")}</p>
                 <div className="flex items-center justify-between gap-4">
                     <h1 className="display">{baseEvent.name}</h1>
                     <EditEventButton slug={baseEvent.slug} creatorSlug={creatorSlug} />
@@ -672,11 +680,15 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
             <div className="grid lg:grid-cols-5 gap-6">
                 <article className="lg:col-span-3 space-y-6">
                     <div className="card p-5">
-                        <h2 className="text-lg font-semibold mb-2">About</h2>
+                        <h2 className="text-lg font-semibold mb-2">
+                            {tServer("events.detail.about.title")}
+                        </h2>
                         {baseEvent.description ? (
                             <MarkdownPreview markdown={baseEvent.description} />
                         ) : (
-                            <p className="text-white/60">No description yet.</p>
+                            <p className="text-white/60">
+                                {tServer("events.detail.about.empty")}
+                            </p>
                         )}
 
                         {baseEvent.tags && baseEvent.tags.length > 0 && (
@@ -703,7 +715,9 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                     {/* Projects at this event */}
                     {projectsForEvent.length > 0 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">Projects at this event</h2>
+                            <h2 className="text-lg font-semibold mb-3">
+                                {tServer("events.detail.projects.title")}
+                            </h2>
                             <div className="grid sm:grid-cols-2 gap-4">
                                 {projectsForEvent.map((p) => (
                                     <Link
@@ -778,7 +792,9 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                     {/* Blog posts about this event */}
                     {blogsForEvent.length > 0 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">Blog posts about this event</h2>
+                            <h2 className="text-lg font-semibold mb-3">
+                                {tServer("events.detail.blogs.title")}
+                            </h2>
                             <div className="grid sm:grid-cols-2 gap-4">
                                 {blogsForEvent.map((post) => (
                                     <Link
@@ -828,13 +844,17 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
 
                     {photos.length > 1 && (
                         <div className="card p-5">
-                            <h2 className="text-lg font-semibold mb-3">Gallery</h2>
+                            <h2 className="text-lg font-semibold mb-3">
+                                {tServer("events.detail.gallery.title")}
+                            </h2>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 {photos.slice(1).map((src, i) => (
                                     <img
                                         key={i}
                                         src={src}
-                                        alt={`${baseEvent.name} photo ${i + 2}`}
+                                        alt={tServer("events.detail.gallery.photoAlt")
+                                            .replace("{name}", baseEvent.name)
+                                            .replace("{index}", String(i + 2))}
                                         className="w-full h-32 object-cover rounded-md ring-1 ring-white/10"
                                     />
                                 ))}
@@ -845,16 +865,23 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
 
                 <aside className="lg:col-span-2 space-y-6">
                     <div className="card p-5">
-                        <h2 className="text-lg font-semibold mb-2">Attendees</h2>
+                        <h2 className="text-lg font-semibold mb-2">
+                            {tServer("events.detail.attendees.title")}
+                        </h2>
                         {attendees.length === 0 ? (
-                            <p className="text-white/60">No attendees listed yet.</p>
+                            <p className="text-white/60">
+                                {tServer("events.detail.attendees.empty")}
+                            </p>
                         ) : (
                             <ul className="space-y-3">
                                 {attendees.map((m, idx) => {
                                     const key = m.slug || m.email || String(idx);
-                                    const displayName = m.slug
-                                        ? m.name || m.email || "Unknown"
-                                        : m.name || m.email || "Pending invite";
+                                    const hasSlug = !!m.slug;
+                                    const fallbackName = hasSlug ? unknownLabel : pendingLabel;
+                                    const displayName =
+                                        m.slug
+                                            ? m.name || m.email || fallbackName
+                                            : m.name || m.email || pendingLabel;
                                     const avatar = m.avatarUrl || m.avatar || "/avatars/default.png";
                                     return (
                                         <li key={key} className="flex items-center gap-3">
@@ -875,7 +902,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
                                                     <span className="font-medium">{displayName}</span>
                                                 )}
                                                 <div className="text-xs text-white/60 truncate">
-                                                    {m.pending ? "Pending invite" : m.headline || ""}
+                                                    {m.pending ? pendingLabel : m.headline || ""}
                                                 </div>
                                             </div>
                                         </li>
@@ -889,7 +916,7 @@ export default async function EventDetailPage({ params }: { params: { slug: stri
 
             <div className="mt-8">
                 <Link href="/events" className="underline underline-offset-4">
-                    ← Back to all events
+                    {tServer("events.detail.backToAll")}
                 </Link>
             </div>
         </section>

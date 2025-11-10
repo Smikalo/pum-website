@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthProvider";
 import * as api from "@/lib/api";
 import EventsMap from "@/components/EventsMap";
+import { tClient } from "@/lib/i18n-client";
 
 /* ---------------- Tiny markdown previewer ---------------- */
 
@@ -254,7 +255,14 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                     <pre
                         key={`code-${i}`}
                         className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
-                        aria-label={seg.lang ? `Code block (${seg.lang})` : "Code block"}
+                        aria-label={
+                            seg.lang
+                                ? tClient("events.edit.markdown.codeBlockWithLang").replace(
+                                    "{lang}",
+                                    seg.lang,
+                                )
+                                : tClient("events.edit.markdown.codeBlock")
+                        }
                     >
                         <code>{seg.content}</code>
                     </pre>
@@ -356,7 +364,7 @@ function MapPreview({
     if (!hasCoords) {
         return (
             <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-xs text-white/60">
-                Map preview will appear here once you pick a location from search.
+                {tClient("events.edit.map.noCoords")}
             </div>
         );
     }
@@ -367,7 +375,7 @@ function MapPreview({
     const previewEvent = {
         id: "new-event-preview",
         slug: "new-event-preview",
-        name: name || "New event",
+        name: name || tClient("events.new.preview.fallbackName"),
         locationName: locationName || undefined,
         dateStart: dateStart || undefined,
         lat: latNum,
@@ -449,7 +457,6 @@ export default function NewEventPage() {
                 setHits(results);
             } catch (err) {
                 if ((err as any)?.name !== "AbortError") {
-                    // eslint-disable-next-line no-console
                     // console.error("[NewEvent] geocode error", err);
                 }
             } finally {
@@ -487,9 +494,7 @@ export default function NewEventPage() {
                 }
             } catch (err) {
                 if (!cancelled) {
-                    // eslint-disable-next-line no-console
-                    // console.error("[NewEvent] members load error", err);
-                    setMembersError("Could not load members.");
+                    setMembersError(tClient("events.edit.members.error"));
                 }
             } finally {
                 if (!cancelled) setMembersLoading(false);
@@ -526,9 +531,7 @@ export default function NewEventPage() {
                 }
             } catch (err) {
                 if (!cancelled) {
-                    // eslint-disable-next-line no-console
-                    // console.error("[NewEvent] projects load error", err);
-                    setProjectsError("Could not load projects.");
+                    setProjectsError(tClient("events.edit.projects.error"));
                 }
             } finally {
                 if (!cancelled) setProjectsLoading(false);
@@ -575,9 +578,7 @@ export default function NewEventPage() {
                 }
             } catch (err) {
                 if (!cancelled) {
-                    // eslint-disable-next-line no-console
-                    // console.error("[NewEvent] blogs load error", err);
-                    // blogs are optional; do not set a red error
+                    // blogs optional – no hard error
                 }
             } finally {
                 if (!cancelled) setBlogsLoading(false);
@@ -595,16 +596,16 @@ export default function NewEventPage() {
     if (!user) {
         return (
             <section className="section">
-                <h1 className="display">Create a new event</h1>
+                <h1 className="display">{tClient("events.new.title")}</h1>
                 <p className="mt-3 text-white/70 max-w-2xl">
-                    You need to be logged in to create events.
+                    {tClient("events.new.gate.loginRequired")}
                 </p>
                 <div className="mt-5 flex gap-3">
                     <Link href="/events" className="btn-secondary">
-                        ← Back to events
+                        {tClient("events.new.gate.backToEvents")}
                     </Link>
                     <Link href="/" className="btn-primary">
-                        Log in
+                        {tClient("events.edit.loginButton")}
                     </Link>
                 </div>
             </section>
@@ -620,26 +621,26 @@ export default function NewEventPage() {
 
     function validate(): Errors {
         const e: Errors = {};
-        if (!state.name.trim()) e.name = "Event name is required.";
+        if (!state.name.trim()) e.name = tClient("events.edit.validation.nameRequired");
         if (state.dateStart && Number.isNaN(new Date(state.dateStart).getTime()))
-            e.dateStart = "Invalid start date.";
+            e.dateStart = tClient("events.edit.validation.dateStartInvalid");
         if (state.dateEnd && Number.isNaN(new Date(state.dateEnd).getTime()))
-            e.dateEnd = "Invalid end date.";
+            e.dateEnd = tClient("events.edit.validation.dateEndInvalid");
         if (state.dateStart && state.dateEnd) {
             const a = new Date(state.dateStart).getTime();
             const b = new Date(state.dateEnd).getTime();
-            if (a > b) e.dateEnd = "End must be after start.";
+            if (a > b) e.dateEnd = tClient("events.edit.validation.dateOrder");
         }
 
-        if (photos.length > 12) e.photos = "Please upload at most 12 photos.";
+        if (photos.length > 12) e.photos = tClient("events.edit.validation.photosTooMany");
         for (const f of photos) {
             const okType = /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
             if (!okType) {
-                e.photos = "Only PNG, JPG/JPEG, WEBP, or GIF are allowed.";
+                e.photos = tClient("events.edit.validation.photosType");
                 break;
             }
             if (f.size > 8 * 1024 * 1024) {
-                e.photos = "Each photo must be ≤ 8 MB.";
+                e.photos = tClient("events.edit.validation.photosSize");
                 break;
             }
         }
@@ -822,7 +823,7 @@ export default function NewEventPage() {
         setErrors(ve);
         if (Object.values(ve).some(Boolean)) {
             setSubmitting(false);
-            setError("Please fix the highlighted fields.");
+            setError(tClient("events.edit.validation.fixFields"));
             return;
         }
 
@@ -883,14 +884,12 @@ export default function NewEventPage() {
             };
 
             const res = await api.createEvent(accessToken, body);
-            setHint("Event created ✓ Redirecting…");
+            setHint(tClient("events.new.submit.success"));
             setTimeout(() => {
                 router.push(`/events/${res.slug}`);
             }, 600);
         } catch (err: any) {
-            // eslint-disable-next-line no-console
-            // console.error("[NewEvent] onSubmit error", err);
-            const msg = err?.message || "Failed to create event";
+            const msg = err?.message || tClient("events.new.submit.error");
             setError(msg);
         } finally {
             setSubmitting(false);
@@ -912,10 +911,10 @@ export default function NewEventPage() {
     return (
         <section className="section">
             <header className="mb-6">
-                <p className="kicker">EVENTS</p>
-                <h1 className="display">Create a new event</h1>
+                <p className="kicker">{tClient("events.new.kicker")}</p>
+                <h1 className="display">{tClient("events.new.title")}</h1>
                 <p className="mt-2 text-white/70 max-w-2xl">
-                    Add dates, location, details, attendees, photos, related projects, and related blog posts.
+                    {tClient("events.new.subtitle")}
                 </p>
             </header>
 
@@ -943,14 +942,14 @@ export default function NewEventPage() {
                     <div className="card p-5 space-y-3">
                         <div>
                             <label className="block text-sm text-white/70 mb-1">
-                                Event name *
+                                {tClient("events.edit.form.name.label")} *
                             </label>
                             <input
                                 required
                                 value={state.name}
                                 onChange={(e) => set("name", e.target.value)}
                                 className={inputCls("name")}
-                                placeholder="HackNight 2026 @ PUM"
+                                placeholder={tClient("events.edit.form.name.placeholder")}
                                 aria-invalid={!!errors.name}
                             />
                             {errors.name && (
@@ -962,26 +961,28 @@ export default function NewEventPage() {
                         <div className="grid md:grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-sm text-white/70 mb-1">
-                                    Description (Markdown)
+                                    {tClient("events.edit.form.description.label")}
                                 </label>
                                 <textarea
                                     rows={12}
                                     value={state.description}
                                     onChange={(e) => set("description", e.target.value)}
                                     className={inputCls("description")}
-                                    placeholder="Describe the event. **Markdown** supported."
+                                    placeholder={tClient(
+                                        "events.edit.form.description.placeholder",
+                                    )}
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm text-white/70 mb-1">
-                                    Preview
+                                    {tClient("events.edit.markdown.previewLabel")}
                                 </label>
                                 <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 min-h-[180px]">
                                     {state.description ? (
                                         <MarkdownPreview markdown={state.description} />
                                     ) : (
                                         <div className="text-white/50 text-sm">
-                                            Nothing to preview yet.
+                                            {tClient("events.edit.markdown.empty")}
                                         </div>
                                     )}
                                 </div>
@@ -991,7 +992,7 @@ export default function NewEventPage() {
                         <div className="grid sm:grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-sm text-white/70 mb-1">
-                                    Start (local)
+                                    {tClient("events.edit.form.dateStart.label")}
                                 </label>
                                 <input
                                     type="datetime-local"
@@ -1008,7 +1009,7 @@ export default function NewEventPage() {
                             </div>
                             <div>
                                 <label className="block text-sm text-white/70 mb-1">
-                                    End (local)
+                                    {tClient("events.edit.form.dateEnd.label")}
                                 </label>
                                 <input
                                     type="datetime-local"
@@ -1029,7 +1030,9 @@ export default function NewEventPage() {
                     <div className="card p-5 space-y-3">
                         {/* Photos */}
                         <div>
-                            <label className="block text-sm text-white/70 mb-1">Photos</label>
+                            <label className="block text-sm text-white/70 mb-1">
+                                {tClient("events.edit.form.photos.label")}
+                            </label>
                             <input
                                 type="file"
                                 multiple
@@ -1039,8 +1042,7 @@ export default function NewEventPage() {
                                 aria-invalid={!!errors.photos}
                             />
                             <p className="text-xs text-white/50 mt-1">
-                                Upload up to 12 images; PNG/JPG/WEBP/GIF; max 8 MB each.
-                                Choose one as the header image; the rest will appear in the gallery.
+                                {tClient("events.edit.form.photos.helper")}
                             </p>
                             {errors.photos && (
                                 <p className="mt-1 text-xs text-red-300">{errors.photos}</p>
@@ -1061,7 +1063,9 @@ export default function NewEventPage() {
                                                 type="button"
                                                 onClick={() => removePhoto(i)}
                                                 className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                                aria-label={`Remove ${f.name}`}
+                                                aria-label={tClient(
+                                                    "events.edit.form.photos.removeNew",
+                                                ).replace("{name}", f.name)}
                                             >
                                                 ✕
                                             </button>
@@ -1083,7 +1087,13 @@ export default function NewEventPage() {
                                                             : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
                                                     }`}
                                                 >
-                                                    {headerIndex === i ? "Header" : "Set header"}
+                                                    {headerIndex === i
+                                                        ? tClient(
+                                                            "events.edit.form.photos.headerLabel",
+                                                        )
+                                                        : tClient(
+                                                            "events.edit.form.photos.setHeader",
+                                                        )}
                                                 </button>
                                             </div>
                                         </div>
@@ -1100,13 +1110,15 @@ export default function NewEventPage() {
                     <div className="card p-5 space-y-3">
                         <div>
                             <label className="block text-sm text-white/70 mb-1">
-                                Location name
+                                {tClient("events.edit.form.locationName.label")}
                             </label>
                             <input
                                 value={state.locationName}
                                 onChange={(e) => set("locationName", e.target.value)}
                                 className={inputCls("locationName")}
-                                placeholder="Betahaus Berlin, Hall A"
+                                placeholder={tClient(
+                                    "events.edit.form.locationName.placeholder",
+                                )}
                             />
                         </div>
 
@@ -1115,12 +1127,14 @@ export default function NewEventPage() {
                                 <input
                                     value={searchQ}
                                     onChange={(e) => setSearchQ(e.target.value)}
-                                    placeholder="Search address / place"
+                                    placeholder={tClient(
+                                        "events.edit.map.search.placeholder",
+                                    )}
                                     className={searchInputCls}
                                 />
                                 {searching && (
                                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-white/50">
-                                        Searching…
+                                        {tClient("events.edit.map.search.searching")}
                                     </div>
                                 )}
                             </div>
@@ -1144,7 +1158,8 @@ export default function NewEventPage() {
                                                 {h.display_name}
                                             </div>
                                             <div className="text-xs text-white/60 mt-0.5">
-                                                lat {h.lat}, lon {h.lon}
+                                                {tClient("events.edit.map.search.latLabel")} {h.lat},{" "}
+                                                {tClient("events.edit.map.search.lngLabel")} {h.lon}
                                             </div>
                                         </li>
                                     ))}
@@ -1165,11 +1180,11 @@ export default function NewEventPage() {
                     <div className="card p-5 space-y-3">
                         <div className="flex items-baseline justify-between">
                             <h2 className="text-sm font-semibold text-white">
-                                Attendees & invites
+                                {tClient("events.edit.attendees.title")}
                             </h2>
                             {membersLoading && (
                                 <span className="text-[11px] text-white/50">
-                                    Loading members…
+                                    {tClient("events.edit.attendees.loadingMembers")}
                                 </span>
                             )}
                             {membersError && !membersLoading && (
@@ -1179,8 +1194,7 @@ export default function NewEventPage() {
                             )}
                         </div>
                         <p className="text-xs text-white/60">
-                            Start typing a name to add an existing member, or enter an email /
-                            name and hit Enter to add an invite.
+                            {tClient("events.new.attendees.helper")}
                         </p>
 
                         <div className="space-y-2">
@@ -1198,7 +1212,9 @@ export default function NewEventPage() {
                                             }
                                         }
                                     }}
-                                    placeholder="Search member or type email"
+                                    placeholder={tClient(
+                                        "events.edit.attendees.searchPlaceholder",
+                                    )}
                                     className={searchInputCls}
                                 />
                                 <button
@@ -1207,7 +1223,7 @@ export default function NewEventPage() {
                                     className="px-3 py-2 rounded-md bg-white text-black text-xs font-medium disabled:opacity-60"
                                     disabled={!attendeeQ.trim()}
                                 >
-                                    Add invite
+                                    {tClient("events.edit.attendees.addInviteButton")}
                                 </button>
                             </div>
 
@@ -1272,7 +1288,9 @@ export default function NewEventPage() {
                                                 type="button"
                                                 onClick={() => removeAttendee(idx)}
                                                 className="text-[11px] text-white/60 hover:text-white"
-                                                aria-label={`Remove ${a.member.name}`}
+                                                aria-label={tClient(
+                                                    "events.edit.attendees.removeMember",
+                                                ).replace("{name}", a.member.name)}
                                             >
                                                 ✕
                                             </button>
@@ -1286,13 +1304,15 @@ export default function NewEventPage() {
                                                 {a.value}
                                             </span>
                                             <span className="text-[10px] text-emerald-300/80">
-                                                invite
+                                                {tClient("events.new.attendees.inviteBadge")}
                                             </span>
                                             <button
                                                 type="button"
                                                 onClick={() => removeAttendee(idx)}
                                                 className="text-[11px] text-white/60 hover:text-white"
-                                                aria-label={`Remove ${a.value}`}
+                                                aria-label={tClient(
+                                                    "events.edit.attendees.removeInvite",
+                                                ).replace("{value}", a.value)}
                                             >
                                                 ✕
                                             </button>
@@ -1307,11 +1327,11 @@ export default function NewEventPage() {
                     <div className="card p-5 space-y-3">
                         <div className="flex items-baseline justify-between">
                             <h2 className="text-sm font-semibold text-white">
-                                Related projects
+                                {tClient("events.edit.projects.title")}
                             </h2>
                             {projectsLoading && (
                                 <span className="text-[11px] text-white/50">
-                                    Loading projects…
+                                    {tClient("events.edit.projects.loading")}
                                 </span>
                             )}
                             {projectsError && !projectsLoading && (
@@ -1321,14 +1341,16 @@ export default function NewEventPage() {
                             )}
                         </div>
                         <p className="text-xs text-white/60">
-                            Link projects that are showcased or launched during this event.
+                            {tClient("events.new.projects.helper")}
                         </p>
 
                         <div className="space-y-2">
                             <input
                                 value={projectQ}
                                 onChange={(e) => setProjectQ(e.target.value)}
-                                placeholder="Search projects by title, year, or tag"
+                                placeholder={tClient(
+                                    "events.edit.projects.searchPlaceholder",
+                                )}
                                 className={searchInputCls}
                             />
                             {!!projectSuggestions.length && (
@@ -1402,23 +1424,25 @@ export default function NewEventPage() {
                     <div className="card p-5 space-y-3">
                         <div className="flex items-baseline justify-between">
                             <h2 className="text-sm font-semibold text-white">
-                                Related blog posts
+                                {tClient("events.edit.blogs.title")}
                             </h2>
                             {blogsLoading && (
                                 <span className="text-[11px] text-white/50">
-                                    Loading blog posts…
+                                    {tClient("events.edit.blogs.loading")}
                                 </span>
                             )}
                         </div>
                         <p className="text-xs text-white/60">
-                            Link write-ups or recaps that are specifically about this event.
+                            {tClient("events.edit.blogs.helper")}
                         </p>
 
                         <div className="space-y-2">
                             <input
                                 value={blogQ}
                                 onChange={(e) => setBlogQ(e.target.value)}
-                                placeholder="Search posts by title or summary"
+                                placeholder={tClient(
+                                    "events.edit.blogs.searchPlaceholder",
+                                )}
                                 className={searchInputCls}
                             />
                             {!!blogSuggestions.length && (
@@ -1456,8 +1480,7 @@ export default function NewEventPage() {
                             )}
                             {!blogsLoading && blogs.length === 0 && (
                                 <p className="text-[11px] text-white/50">
-                                    No blog posts found, or blog API is unavailable.
-                                    You can still create the event and link posts later.
+                                    {tClient("events.edit.blogs.noneFound")}
                                 </p>
                             )}
                         </div>
@@ -1501,14 +1524,16 @@ export default function NewEventPage() {
                             disabled={submitting}
                             className="w-full px-4 py-2 rounded-md bg-white text-black font-semibold disabled:opacity-60"
                         >
-                            {submitting ? "Creating…" : "Create event"}
+                            {submitting
+                                ? tClient("events.new.submit.creating")
+                                : tClient("events.new.submit.create")}
                         </button>
                         <div className="mt-3 text-center">
                             <Link
                                 href="/events"
                                 className="text-sm underline underline-offset-4"
                             >
-                                Cancel
+                                {tClient("events.edit.cancel")}
                             </Link>
                         </div>
                     </div>

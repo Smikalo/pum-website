@@ -3,6 +3,7 @@
 import React from "react";
 import { useAuth } from "@/context/AuthProvider";
 import MemberAdminEditor from "@/components/MemberAdminEditor";
+import { tClient } from "@/lib/i18n-client";
 
 type EditMemberButtonProps = {
     slug: string;
@@ -36,7 +37,7 @@ export default function EditMemberButton({
                 className="btn-secondary text-sm"
                 onClick={() => setOpen(true)}
             >
-                Edit member
+                {tClient("members.actions.edit")}
             </button>
 
             {open && (

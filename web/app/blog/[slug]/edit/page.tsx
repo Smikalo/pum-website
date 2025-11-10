@@ -10,6 +10,7 @@ import { API_BASE } from "@/lib/config";
 import { uploadBlogPhoto } from "@/lib/actions";
 import { me as fetchMe } from "@/lib/authClient";
 import BlogEditorForm from "@/components/BlogEditorForm";
+import { tServer } from "@/lib/i18n-server";
 
 type Blog = {
     id: string;
@@ -31,7 +32,7 @@ type Blog = {
         role?: string | null;
     }[];
     projectSlugs?: string[];
-    eventSlugs?: string[]; // ✅ NEW
+    eventSlugs?: string[];
 };
 
 function normArr(x: any): string[] {
@@ -49,7 +50,6 @@ function normalizeBlog(raw: any): Blog | null {
     if (!raw) return null;
     const b = raw.item ?? raw.data ?? raw;
 
-    // Accept either images[] or photos[] from the backend
     const images: string[] = Array.isArray(b.images)
         ? b.images
         : Array.isArray(b.photos)
@@ -77,12 +77,14 @@ function normalizeBlog(raw: any): Blog | null {
         };
     };
 
-    // 🔗 events
     let eventSlugs: string[] = normArr(b.eventSlugs);
     if (!eventSlugs.length && Array.isArray(b.events)) {
         eventSlugs = (b.events as any[])
             .map((e) => e?.slug)
-            .filter((s): s is string => ((typeof s) === "string") && (s.trim().length>0))
+            .filter(
+                (s): s is string =>
+                    typeof s === "string" && s.trim().length > 0,
+            )
             .map((s) => s.trim());
     }
 
@@ -100,27 +102,13 @@ function normalizeBlog(raw: any): Blog | null {
         techStack: normArr(b.techStack ?? b.tech),
         authors: authorsInput.map(normalizeAuthor),
         projectSlugs: normArr(b.projectSlugs),
-        eventSlugs, // ✅
+        eventSlugs,
     };
-
-    // console.log("[EditBlogPage] normalizeBlog result", {
-    //     input: b,
-    //     normalized: {
-    //         id: blog.id,
-    //         slug: blog.slug,
-    //         title: blog.title,
-    //         authors: blog.authors,
-    //         projectSlugs: blog.projectSlugs,
-    //         eventSlugs: blog.eventSlugs,
-    //     },
-    // });
 
     return blog;
 }
 
 async function fetchBlog(slug: string): Promise<Blog | null> {
-    // console.log("[EditBlogPage] fetchBlog start", { slug });
-
     try {
         const url = new URL(`/api/blogs/${slug}`, API_BASE);
         const res = await fetch(url.toString(), {
@@ -128,26 +116,13 @@ async function fetchBlog(slug: string): Promise<Blog | null> {
         });
 
         if (!res.ok) {
-            // console.warn("[EditBlogPage] fetchBlog non-OK response", {
-            //     slug,
-            //     status: res.status,
-            // });
             return null;
         }
 
         const json = await res.json();
         const blog = normalizeBlog(json);
-
-        // console.log("[EditBlogPage] fetchBlog success", {
-        //     slug: blog?.slug,
-        //     authorSlugs: (blog?.authors || []).map((a) => a.slug),
-        //     projectSlugs: blog?.projectSlugs,
-        //     eventSlugs: blog?.eventSlugs,
-        // });
-
         return blog;
-    } catch (err) {
-        // console.error("[EditBlogPage] fetchBlog error", { slug, err });
+    } catch {
         return null;
     }
 }
@@ -166,7 +141,6 @@ function parseCsv(formData: FormData, key: string): string[] {
     return out;
 }
 
-// Only treat real non-empty File objects as files
 function isNonEmptyFileLike(value: unknown): value is File {
     if (!value) return false;
     const file = value as any;
@@ -179,21 +153,10 @@ function isNonEmptyFileLike(value: unknown): value is File {
 async function updateBlog(slug: string, formData: FormData) {
     "use server";
 
-    // console.log("[EditBlogPage] updateBlog action invoked", { slug });
-
     const cookieStore = cookies();
     const token = cookieStore.get("access_token")?.value;
 
-    // console.log("[EditBlogPage] updateBlog cookie check", {
-    //     slug,
-    //     hasToken: !!token,
-    // });
-
     if (!token) {
-        // console.warn(
-        //     "[EditBlogPage] updateBlog: no token, redirecting to /account",
-        //     { slug },
-        // );
         redirect("/account");
     }
 
@@ -203,19 +166,22 @@ async function updateBlog(slug: string, formData: FormData) {
     const tags = parseCsv(formData, "tags");
     const techStack = parseCsv(formData, "techStack");
     const projectSlugs = parseCsv(formData, "projectSlugs");
-    const eventSlugs = parseCsv(formData, "eventSlugs"); // ✅ NEW
+    const eventSlugs = parseCsv(formData, "eventSlugs");
     const authorSlugs = parseCsv(formData, "authorSlugs");
     const publishedAtRaw = (formData.get("publishedAt") || "")
         .toString()
         .trim();
 
-    const existingPhotosRaw = (formData.get("existingPhotos") || "").toString();
+    const existingPhotosRaw = (formData.get("existingPhotos") || "")
+        .toString();
     const existingPhotos = existingPhotosRaw
         .split("\n")
         .map((s) => s.trim())
         .filter(Boolean);
 
-    const headerExistingIndexRaw = (formData.get("headerExistingIndex") || "")
+    const headerExistingIndexRaw = (
+        formData.get("headerExistingIndex") || ""
+    )
         .toString()
         .trim();
     const headerNewIndexRaw = (formData.get("headerNewIndex") || "")
@@ -223,11 +189,12 @@ async function updateBlog(slug: string, formData: FormData) {
         .trim();
 
     const headerExistingIndex =
-        headerExistingIndexRaw !== "" ? Number(headerExistingIndexRaw) : null;
+        headerExistingIndexRaw !== ""
+            ? Number(headerExistingIndexRaw)
+            : null;
     const headerNewIndex =
         headerNewIndexRaw !== "" ? Number(headerNewIndexRaw) : null;
 
-    // Upload only *non-empty* newly attached photos
     const uploadedPhotoUrls: string[] = [];
     const photoFiles = formData.getAll("photos");
 
@@ -242,15 +209,13 @@ async function updateBlog(slug: string, formData: FormData) {
             const result = await uploadBlogPhoto(token, file);
             const url = (result as any)?.url;
             if (url) uploadedPhotoUrls.push(url);
-        } catch (err) {
-            // console.error("[updateBlog] failed to upload blog photo", err);
+        } catch {
             throw new Error("Failed to upload one of the images");
         }
     }
 
     let allPhotos: string[] = [...existingPhotos, ...uploadedPhotoUrls];
 
-    // Choose cover: prefer explicit selection; fall back to first photo
     let coverUrl: string | null = null;
 
     if (
@@ -274,7 +239,10 @@ async function updateBlog(slug: string, formData: FormData) {
     if (coverUrl) {
         const idx = allPhotos.indexOf(coverUrl);
         if (idx > 0) {
-            allPhotos = [coverUrl, ...allPhotos.filter((u, i) => i !== idx)];
+            allPhotos = [
+                coverUrl,
+                ...allPhotos.filter((u, i) => i !== idx),
+            ];
         }
     }
 
@@ -284,9 +252,9 @@ async function updateBlog(slug: string, formData: FormData) {
         content: content || null,
         tags,
         techStack,
-        photos: allPhotos, // server accepts photos/images array
+        photos: allPhotos,
         projectSlugs,
-        eventSlugs, // ✅ NEW
+        eventSlugs,
         authorSlugs,
     };
 
@@ -296,16 +264,6 @@ async function updateBlog(slug: string, formData: FormData) {
             body.publishedAt = d.toISOString();
         }
     }
-
-    // console.log("[EditBlogPage] updateBlog sending PUT", {
-    //     slug,
-    //     hasPhotos: allPhotos.length > 0,
-    //     tagCount: tags.length,
-    //     techStackCount: techStack.length,
-    //     authorSlugsCount: authorSlugs.length,
-    //     projectSlugsCount: projectSlugs.length,
-    //     eventSlugsCount: eventSlugs.length, // ✅
-    // });
 
     const res = await fetch(`${API_BASE}/api/blogs/${slug}`, {
         method: "PUT",
@@ -325,29 +283,17 @@ async function updateBlog(slug: string, formData: FormData) {
         } catch {
             // ignore
         }
-        // console.error("[EditBlogPage] updateBlog failed", {
-        //     slug,
-        //     status: res.status,
-        //     msg,
-        // });
         throw new Error(msg);
     }
 
     const json = await res.json();
     const newSlug = json?.slug || slug;
 
-    // console.log("[EditBlogPage] updateBlog success, redirecting", {
-    //     oldSlug: slug,
-    //     newSlug,
-    // });
-
     redirect(`/blog/${newSlug}`);
 }
 
 async function deleteBlog(slug: string, formData: FormData) {
     "use server";
-
-    // console.log("[EditBlogPage] deleteBlog action invoked", { slug });
 
     const confirmSlug = (formData.get("confirmSlug") || "")
         .toString()
@@ -356,17 +302,7 @@ async function deleteBlog(slug: string, formData: FormData) {
     const cookieStore = cookies();
     const token = cookieStore.get("access_token")?.value;
 
-    // console.log("[EditBlogPage] deleteBlog cookie check", {
-    //     slug,
-    //     hasToken: !!token,
-    //     confirmSlug,
-    // });
-
     if (!token) {
-        // console.warn(
-        //     "[EditBlogPage] deleteBlog: no token, redirecting to /account",
-        //     { slug },
-        // );
         redirect("/account");
     }
 
@@ -388,17 +324,8 @@ async function deleteBlog(slug: string, formData: FormData) {
         } catch {
             // ignore
         }
-        // console.error("[EditBlogPage] deleteBlog failed", {
-        //     slug,
-        //     status: res.status,
-        //     msg,
-        // });
         throw new Error(msg);
     }
-
-    // console.log("[EditBlogPage] deleteBlog success, redirecting to /blog", {
-    //     slug,
-    // });
 
     redirect("/blog");
 }
@@ -408,47 +335,21 @@ export default async function EditBlogPage({
                                            }: {
     params: { slug: string };
 }) {
-    // console.log("[EditBlogPage] page start", { slug: params.slug });
-
     const blog = await fetchBlog(params.slug);
     if (!blog) {
-        // console.warn("[EditBlogPage] blog not found, calling notFound()", {
-        //     slug: params.slug,
-        // });
         notFound();
     }
-
-    // console.log("[EditBlogPage] blog loaded", {
-    //     slug: blog.slug,
-    //     authorSlugs: (blog.authors || []).map((a) => a.slug),
-    //     projectSlugs: blog.projectSlugs,
-    //     eventSlugs: blog.eventSlugs, // ✅
-    // });
 
     const cookieStore = cookies();
     const token = cookieStore.get("access_token")?.value;
 
-    // console.log("[EditBlogPage] cookie access_token present?", {
-    //     slug: blog.slug,
-    //     hasToken: !!token,
-    // });
-
     if (!token) {
-        // console.warn(
-        //     "[EditBlogPage] no token on page load, redirecting to /account",
-        //     { slug: blog.slug },
-        // );
         redirect("/account");
     }
 
-    // 🔒 Enforce: only blog author(s), moderators, or admins can edit.
     let canEdit = false;
 
     try {
-        // console.log("[EditBlogPage] fetching /api/auth/me for permission check", {
-        //     slug: blog.slug,
-        // });
-
         const meData: any = await fetchMe(token);
         const rawUser = meData?.user ?? null;
         const rawUserRoles = Array.isArray(rawUser?.roles)
@@ -481,57 +382,36 @@ export default async function EditBlogPage({
             !!mySlugNorm && authorSlugsNorm.includes(mySlugNorm);
 
         canEdit = isAdminOrModerator || isAuthor;
-
-        // console.log("[EditBlogPage] permission check", {
-        //     slug: blog.slug,
-        //     rawRoles,
-        //     upperRoles,
-        //     isAdminOrModerator,
-        //     myMemberSlug,
-        //     authorSlugsNorm,
-        //     isAuthor,
-        //     canEdit,
-        // });
-    } catch (err) {
-        // console.error(
-        //     "[EditBlogPage] failed to determine edit permissions",
-        //     err,
-        // );
+    } catch {
         canEdit = false;
     }
 
     if (!canEdit) {
-        // console.warn(
-        //     "[EditBlogPage] canEdit=false, redirecting to detail view",
-        //     { slug: blog.slug },
-        // );
         redirect(`/blog/${blog.slug}`);
     }
 
     const updateBlogWithSlug = updateBlog.bind(null, blog.slug);
     const deleteBlogWithSlug = deleteBlog.bind(null, blog.slug);
 
-    // console.log("[EditBlogPage] rendering editor UI", {
-    //     slug: blog.slug,
-    // });
-
     return (
         <section className="section max-w-3xl">
             <header className="mb-6 flex items-center justify-between gap-3">
                 <div>
-                    <p className="kicker">BLOG</p>
+                    <p className="kicker">
+                        {tServer("blog.edit.kicker")}
+                    </p>
                     <h1 className="display text-2xl sm:text-3xl">
-                        Edit blog post
+                        {tServer("blog.edit.title")}
                     </h1>
-                    <p className="mt-2 text-white/70 text-sm max-w-xl">
-                        Update the content and metadata of this post.
+                    <p className="mt-2 max-w-xl text-sm text-white/70">
+                        {tServer("blog.edit.subtitle")}
                     </p>
                 </div>
                 <Link
                     href={`/blog/${blog.slug}`}
-                    className="text-sm underline underline-offset-4 text-white/70 hover:text-white"
+                    className="text-sm text-white/70 underline underline-offset-4 hover:text-white"
                 >
-                    View live
+                    {tServer("blog.edit.viewLive")}
                 </Link>
             </header>
 
@@ -544,30 +424,32 @@ export default async function EditBlogPage({
 
                 <form
                     action={deleteBlogWithSlug}
-                    className="card p-5 space-y-3 border border-red-500/40 bg-red-950/20"
+                    className="card space-y-3 border border-red-500/40 bg-red-950/20 p-5"
                 >
                     <h2 className="text-sm font-semibold text-red-300">
-                        Danger zone
+                        {tServer("blog.edit.danger.title")}
                     </h2>
                     <p className="text-xs text-red-100/80">
-                        Deleting this post is permanent and cannot be undone.
+                        {tServer("blog.edit.danger.body")}
                     </p>
                     <div>
-                        <label className="block text-xs font-semibold uppercase tracking-widest text-red-200/80 mb-1">
-                            Type the slug to confirm
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-red-200/80">
+                            {tServer("blog.edit.danger.confirmLabel")}
                         </label>
                         <input
                             name="confirmSlug"
                             placeholder={blog.slug}
-                            className="w-full rounded-lg bg-black/40 border border-red-500/40 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/60"
+                            className="w-full rounded-lg border border-red-500/40 bg-black/40 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/60"
                         />
                     </div>
                     <div className="flex justify-end">
                         <button
                             type="submit"
-                            className="px-4 py-2 rounded-lg border border-red-500/60 text-sm text-red-100 hover:bg-red-500/20"
+                            className="rounded-lg border border-red-500/60 px-4 py-2 text-sm text-red-100 hover:bg-red-500/20"
                         >
-                            Delete post
+                            {tServer(
+                                "blog.edit.danger.deleteButton",
+                            )}
                         </button>
                     </div>
                 </form>

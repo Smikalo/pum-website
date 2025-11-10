@@ -3,6 +3,7 @@
 import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { API_BASE } from "@/lib/config";
+import { useI18n } from "@/context/I18nProvider";
 
 function readCookie(name: string): string | null {
     if (typeof document === "undefined") return null;
@@ -46,24 +47,35 @@ function AcceptInviteInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const token = searchParams.get("token") || "";
+    const { t } = useI18n();
 
-    const [state, setState] = React.useState<"loading" | "needsPassword" | "done">("loading");
+    const [state, setState] = React.useState<
+        "loading" | "needsPassword" | "done"
+    >("loading");
     const [email, setEmail] = React.useState<string>("");
     const [targetSlug, setTargetSlug] = React.useState<string>("");
-    const [targetKind, setTargetKind] = React.useState<"event" | "project" | null>(null);
+    const [targetKind, setTargetKind] = React.useState<
+        "event" | "project" | null
+    >(null);
     const [name, setName] = React.useState<string>("");
     const [password, setPassword] = React.useState<string>("");
     const [passwordRepeat, setPasswordRepeat] = React.useState<string>("");
     const [error, setError] = React.useState<string | null>(null);
     const [submitting, setSubmitting] = React.useState(false);
 
-    function redirectFor(result: { eventSlug?: string | null; projectSlug?: string | null }) {
+    function redirectFor(result: {
+        eventSlug?: string | null;
+        projectSlug?: string | null;
+    }) {
         if (result.projectSlug) return `/projects/${result.projectSlug}`;
         if (result.eventSlug) return `/events/${result.eventSlug}`;
         return "/account";
     }
 
-    function deriveKind(slugs: { eventSlug?: string | null; projectSlug?: string | null }): "event" | "project" | null {
+    function deriveKind(slugs: {
+        eventSlug?: string | null;
+        projectSlug?: string | null;
+    }): "event" | "project" | null {
         if (slugs.projectSlug) return "project";
         if (slugs.eventSlug) return "event";
         return null;
@@ -71,7 +83,7 @@ function AcceptInviteInner() {
 
     React.useEffect(() => {
         if (!token) {
-            setError("Missing invitation token.");
+            setError(t("acceptInvite.error.missingToken"));
             setState("done");
             return;
         }
@@ -82,15 +94,18 @@ function AcceptInviteInner() {
                 await ensureCsrf();
                 const csrf = readCookie("XSRF-TOKEN");
 
-                const res = await fetch(`${API_BASE}/api/auth/invite/consume`, {
-                    method: "POST",
-                    credentials: "include",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRF-Token": csrf || "",
+                const res = await fetch(
+                    `${API_BASE}/api/auth/invite/consume`,
+                    {
+                        method: "POST",
+                        credentials: "include",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRF-Token": csrf || "",
+                        },
+                        body: JSON.stringify({ token }),
                     },
-                    body: JSON.stringify({ token }),
-                });
+                );
 
                 const data: ConsumeResult = await res.json();
 
@@ -110,13 +125,21 @@ function AcceptInviteInner() {
                     return;
                 }
 
-                setError((data as any)?.error || "Invite invalid or expired.");
+                setError(
+                    (data as any)?.error ||
+                    t("acceptInvite.error.invalidOrExpired"),
+                );
                 setState("done");
             } catch (err: any) {
-                setError(err?.message || "Something went wrong.");
+                setError(
+                    err?.message || t("acceptInvite.error.generic"),
+                );
                 setState("done");
             }
         })();
+        // We deliberately do *not* depend on `t` here to avoid re-consuming
+        // invites when the language changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, router]);
 
     async function onSubmit(e: React.FormEvent) {
@@ -150,12 +173,20 @@ function AcceptInviteInner() {
             if (res.ok && (data as any)?.ok) {
                 router.replace(redirectFor(data as any));
             } else if ((data as any)?.needsPassword) {
-                setError((data as any).error || "Please check your inputs.");
+                setError(
+                    (data as any).error ||
+                    t("acceptInvite.error.checkInputs"),
+                );
             } else {
-                setError((data as any)?.error || "Invite invalid or expired.");
+                setError(
+                    (data as any)?.error ||
+                    t("acceptInvite.error.invalidOrExpired"),
+                );
             }
         } catch (err: any) {
-            setError(err?.message || "Something went wrong.");
+            setError(
+                err?.message || t("acceptInvite.error.generic"),
+            );
         } finally {
             setSubmitting(false);
         }
@@ -164,32 +195,44 @@ function AcceptInviteInner() {
     if (state === "loading") {
         return (
             <div className="mx-auto max-w-xl px-4 py-12">
-                <h1 className="text-2xl font-semibold mb-2">Accepting your invite…</h1>
-                <p className="text-white/70 text-sm">
-                    We are verifying your invitation link. This usually only takes a moment.
+                <h1 className="mb-2 text-2xl font-semibold">
+                    {t("acceptInvite.loading.title")}
+                </h1>
+                <p className="text-sm text-white/70">
+                    {t("acceptInvite.loading.body")}
                 </p>
             </div>
         );
     }
 
     if (state === "needsPassword") {
-        const thing = targetKind === "project" ? "project" : "event";
+        const introKey =
+            targetKind === "project"
+                ? "acceptInvite.create.intro.projectPrefix"
+                : "acceptInvite.create.intro.eventPrefix";
+
         return (
             <div className="mx-auto max-w-xl px-4 py-12">
-                <h1 className="text-2xl font-semibold mb-3">Create your account</h1>
-                <p className="text-white/70 text-sm mb-6">
-                    We found an {thing} invitation for{" "}
+                <h1 className="mb-3 text-2xl font-semibold">
+                    {t("acceptInvite.create.title")}
+                </h1>
+                <p className="mb-6 text-sm text-white/70">
+                    {t(introKey)}{" "}
                     <span className="font-mono">{email}</span>
                     {targetSlug ? (
                         <>
                             {" "}
-                            to <span className="font-semibold">{targetSlug}</span>.
+                            {t("acceptInvite.create.intro.to")}{" "}
+                            <span className="font-semibold">
+                                {targetSlug}
+                            </span>
+                            .
                         </>
                     ) : (
                         "."
                     )}
                     <br />
-                    Set your name and password to create your account and join.
+                    {t("acceptInvite.create.intro.suffix")}
                 </p>
 
                 {error && (
@@ -200,17 +243,21 @@ function AcceptInviteInner() {
 
                 <form onSubmit={onSubmit} className="space-y-4">
                     <div>
-                        <label className="block text-sm mb-1">Full name</label>
+                        <label className="mb-1 block text-sm">
+                            {t("acceptInvite.form.fullName.label")}
+                        </label>
                         <input
                             type="text"
                             required
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 text-sm outline-none focus:ring-white/40"
+                            className="w-full rounded-md bg-white/5 px-3 py-2 text-sm outline-none ring-1 ring-white/10 focus:ring-white/40"
                         />
                     </div>
                     <div>
-                        <label className="block text-sm mb-1">Password</label>
+                        <label className="mb-1 block text-sm">
+                            {t("acceptInvite.form.password.label")}
+                        </label>
                         <input
                             type="password"
                             required
@@ -218,22 +265,28 @@ function AcceptInviteInner() {
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             autoComplete="new-password"
-                            className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 text-sm outline-none focus:ring-white/40"
+                            className="w-full rounded-md bg-white/5 px-3 py-2 text-sm outline-none ring-1 ring-white/10 focus:ring-white/40"
                         />
                         <p className="mt-1 text-xs text-white/50">
-                            At least 8 characters.
+                            {t("acceptInvite.form.password.helper")}
                         </p>
                     </div>
                     <div>
-                        <label className="block text-sm mb-1">Repeat password</label>
+                        <label className="mb-1 block text-sm">
+                            {t(
+                                "acceptInvite.form.passwordRepeat.label",
+                            )}
+                        </label>
                         <input
                             type="password"
                             required
                             minLength={8}
                             value={passwordRepeat}
-                            onChange={(e) => setPasswordRepeat(e.target.value)}
+                            onChange={(e) =>
+                                setPasswordRepeat(e.target.value)
+                            }
                             autoComplete="new-password"
-                            className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 text-sm outline-none focus:ring-white/40"
+                            className="w-full rounded-md bg-white/5 px-3 py-2 text-sm outline-none ring-1 ring-white/10 focus:ring-white/40"
                         />
                     </div>
 
@@ -241,9 +294,15 @@ function AcceptInviteInner() {
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="inline-flex items-center rounded-md bg-white px-4 py-2 text-sm font-medium text-black hover:bg_white/90 disabled:opacity-70"
+                            className="inline-flex items-center rounded-md bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90 disabled:opacity-70"
                         >
-                            {submitting ? "Creating account…" : "Create account & join"}
+                            {submitting
+                                ? t(
+                                    "acceptInvite.form.submit.creating",
+                                )
+                                : t(
+                                    "acceptInvite.form.submit.default",
+                                )}
                         </button>
                     </div>
                 </form>
@@ -251,25 +310,31 @@ function AcceptInviteInner() {
         );
     }
 
-    // state === "done" but we don't have a redirect (error)
+    // state === "done" but we don't have a redirect (error or info)
     return (
         <div className="mx-auto max-w-xl px-4 py-12">
-            <h1 className="text-2xl font-semibold mb-3">Invitation</h1>
-            <p className="text-white/70 text-sm">
-                {error || "Invite accepted. You can close this window."}
+            <h1 className="mb-3 text-2xl font-semibold">
+                {t("acceptInvite.done.title")}
+            </h1>
+            <p className="text-sm text-white/70">
+                {error || t("acceptInvite.done.message.default")}
             </p>
         </div>
     );
 }
 
 export default function AcceptInvitePage() {
+    const { t } = useI18n();
+
     return (
         <Suspense
             fallback={
                 <div className="mx-auto max-w-xl px-4 py-12">
-                    <h1 className="text-2xl font-semibold mb-2">Accepting your invite…</h1>
-                    <p className="text-white/70 text-sm">
-                        We are verifying your invitation link. This usually only takes a moment.
+                    <h1 className="mb-2 text-2xl font-semibold">
+                        {t("acceptInvite.loading.title")}
+                    </h1>
+                    <p className="text-sm text-white/70">
+                        {t("acceptInvite.loading.body")}
                     </p>
                 </div>
             }

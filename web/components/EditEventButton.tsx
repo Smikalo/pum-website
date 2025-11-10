@@ -3,13 +3,17 @@
 import React from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthProvider";
+import { tClient } from "@/lib/i18n-client";
 
 type EditEventButtonProps = {
     slug: string;
     creatorSlug: string | null;
 };
 
-export default function EditEventButton({ slug, creatorSlug }: EditEventButtonProps) {
+export default function EditEventButton({
+                                            slug,
+                                            creatorSlug,
+                                        }: EditEventButtonProps) {
     const { user } = useAuth();
 
     if (!user) return null;
@@ -26,7 +30,7 @@ export default function EditEventButton({ slug, creatorSlug }: EditEventButtonPr
 
     return (
         <Link href={`/events/${slug}/edit`} className="btn-secondary text-sm">
-            Edit event
+            {tClient("events.actions.edit")}
         </Link>
     );
 }

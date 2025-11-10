@@ -1,3 +1,4 @@
+// app/members/page.tsx
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
@@ -5,6 +6,7 @@ import { API_BASE } from "@/lib/config";
 import MembersGraph from "@/components/MembersGraph";
 import MembersSearchBar from "@/components/MembersSearchBar";
 import { toImageSrc } from "@/lib/images";
+import { tServer } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 
@@ -190,19 +192,23 @@ export default async function MembersPage({
     searchParams?: { q?: string; skill?: string; tech?: string; view?: string };
 }) {
     const q = searchParams?.q || "";
-    // We keep the URL param name "skill" for backward-compat, but it now means **focus area**
     const focusFilter = parseMulti(searchParams?.skill);
     const techFilter = parseMulti(searchParams?.tech);
     const view = (searchParams?.view || "list") as "list" | "graph" | "groups";
 
-    const [membersRes, apiProjects] = await Promise.all([fetchAllMembers(), fetchApiProjects()]);
+    const [membersRes, apiProjects] = await Promise.all([
+        fetchAllMembers(),
+        fetchApiProjects(),
+    ]);
     const allMembers = membersRes.items;
 
-    // vocabularies
-    const allFocusAreas = uniq(allMembers.map((m) => m.focusArea).filter(isString)).sort();
-    const allTech = uniq(allMembers.flatMap((m) => m.techStack)).sort();
+    const allFocusAreas = uniq(
+        allMembers.map((m) => m.focusArea).filter(isString),
+    ).sort();
+    const allTech = uniq(
+        allMembers.flatMap((m) => m.techStack),
+    ).sort();
 
-    // filter strictly by focusArea (NOT by skills)
     const filteredMembers = allMembers.filter(
         (m) =>
             includesAll(m.focusArea ? [m.focusArea] : [], focusFilter) &&
@@ -211,77 +217,101 @@ export default async function MembersPage({
     );
     const total = filteredMembers.length;
 
-    // limit projects to visible members
     const visibleSlugs = new Set(filteredMembers.map((m) => m.slug));
     const filteredProjects = apiProjects.filter((p: any) =>
         (p.members || []).some((r: any) => visibleSlugs.has(r.memberSlug)),
     );
 
-    // Build graph props:
-    //  - color driver: first skill = focusArea
-    //  - ✅ ensure avatar is available via multiple common keys (some graph UIs expect `avatar` or `imageUrl`)
     type MembersGraphProps = React.ComponentProps<typeof MembersGraph>;
-    const graphMembers: MembersGraphProps["members"] = filteredMembers.map((m) => {
-        const skillsForGraph = skillsWithFocusFirst(m.focusArea, (m.skills || []).filter(isString));
-        const node: any = {
-            id: m.id,
-            slug: m.slug,
-            name: m.name,
-            skills: skillsForGraph,
-            techStack: m.techStack,
-            avatarUrl: m.avatarUrl, // expected by current MembersGraph
-            // --- image fallbacks for card UIs that read different keys ---
-            avatar: m.avatarUrl, // some UIs read `avatar`
-            imageUrl: m.avatarUrl, // some UIs read `imageUrl`
-            photoUrl: m.avatarUrl, // belt & suspenders
-        };
-        return node as MembersGraphProps["members"][number];
-    });
+    const graphMembers: MembersGraphProps["members"] = filteredMembers.map(
+        (m) => {
+            const skillsForGraph = skillsWithFocusFirst(
+                m.focusArea,
+                (m.skills || []).filter(isString),
+            );
+            const node: any = {
+                id: m.id,
+                slug: m.slug,
+                name: m.name,
+                skills: skillsForGraph,
+                techStack: m.techStack,
+                avatarUrl: m.avatarUrl,
+                avatar: m.avatarUrl,
+                imageUrl: m.avatarUrl,
+                photoUrl: m.avatarUrl,
+            };
+            return node as MembersGraphProps["members"][number];
+        },
+    );
 
-    const graphProjects: MembersGraphProps["projects"] = filteredProjects.map((p: any) => ({
-        id: p.id as string,
-        slug: p.slug as string,
-        title: p.title as string,
-        members:
-            (p.members as { memberId?: string; memberSlug?: string }[] | undefined)?.map((m) => ({
-                memberId: m.memberId,
-                memberSlug: m.memberSlug,
-            })) ?? [],
-        techStack: (p.techStack as string[] | undefined) ?? [],
-        tags: (p.tags as string[] | undefined) ?? [],
-        imageUrl: (isString(p.imageUrl) ? p.imageUrl : undefined) as string | undefined,
-    }));
+    const graphProjects: MembersGraphProps["projects"] =
+        filteredProjects.map((p: any) => ({
+            id: p.id as string,
+            slug: p.slug as string,
+            title: p.title as string,
+            members:
+                (p.members as { memberId?: string; memberSlug?: string }[] | undefined)?.map(
+                    (m) => ({
+                        memberId: m.memberId,
+                        memberSlug: m.memberSlug,
+                    }),
+                ) ?? [],
+            techStack: (p.techStack as string[] | undefined) ?? [],
+            tags: (p.tags as string[] | undefined) ?? [],
+            imageUrl: (isString(p.imageUrl) ? p.imageUrl : undefined) as
+                | string
+                | undefined,
+        }));
 
     return (
         <section className="section">
             <header className="mb-6">
-                <p className="kicker">PEOPLE</p>
-                <h1 className="display">Meet the minds behind PUM</h1>
+                <p className="kicker">
+                    {tServer("members.list.kicker")}
+                </p>
+                <h1 className="display">
+                    {tServer("members.list.title")}
+                </h1>
                 <p className="mt-3 text-white/70 max-w-2xl">
-                    Browse by <strong>focus area</strong>, tech, or explore our network graph to see who built what.
+                    {tServer("members.list.subtitle")}
                 </p>
             </header>
 
             {/* Controls */}
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
                 <div className="flex-1">
-                    <MembersSearchBar placeholder="Search members by name, bio, focus area, tech…" paramKey="q" />
+                    <MembersSearchBar
+                        placeholder={tServer(
+                            "members.list.search.placeholder",
+                        )}
+                        paramKey="q"
+                    />
                 </div>
                 <div className="flex items-center gap-2">
-                    {["list", "graph", "groups"].map((v) => (
+                    {(["list", "graph", "groups"] as const).map((v) => (
                         <Link
                             key={v}
                             href={`/members?${new URLSearchParams({
                                 q,
-                                ...(focusFilter.length ? { skill: focusFilter.join(",") } : {}),
-                                ...(techFilter.length ? { tech: techFilter.join(",") } : {}),
+                                ...(focusFilter.length
+                                    ? { skill: focusFilter.join(",") }
+                                    : {}),
+                                ...(techFilter.length
+                                    ? { tech: techFilter.join(",") }
+                                    : {}),
                                 view: v,
                             }).toString()}`}
                             className={`px-3 py-2 rounded-lg text-sm ring-1 ring-white/10 ${
-                                view === v ? "bg-white text-black font-semibold" : "bg-white/5 hover:bg-white/10"
+                                view === v
+                                    ? "bg-white text-black font-semibold"
+                                    : "bg-white/5 hover:bg-white/10"
                             }`}
                         >
-                            {v === "list" ? "List" : v === "graph" ? "Graph" : "Groups"}
+                            {v === "list"
+                                ? tServer("members.list.view.list")
+                                : v === "graph"
+                                    ? tServer("members.list.view.graph")
+                                    : tServer("members.list.view.groups")}
                         </Link>
                     ))}
                 </div>
@@ -290,19 +320,26 @@ export default async function MembersPage({
             {/* Filters */}
             <div className="mb-8 grid md:grid-cols-2 gap-3">
                 <div className="card p-3">
-                    <div className="text-xs uppercase tracking-widest text-white/60 mb-2">Focus area</div>
+                    <div className="text-xs uppercase tracking-widest text-white/60 mb-2">
+                        {tServer("members.list.filter.focusArea.label")}
+                    </div>
                     <div className="flex flex-wrap gap-2">
                         <MultiFilterChips
                             base="/members"
                             params={{ q, tech: techFilter.join(","), view }}
                             values={allFocusAreas}
                             selected={focusFilter}
-                            name="skill" /* keep URL key for backward-compat */
+                            name="skill"
+                            clearLabel={tServer(
+                                "members.list.filter.clear",
+                            )}
                         />
                     </div>
                 </div>
                 <div className="card p-3">
-                    <div className="text-xs uppercase tracking-widest text-white/60 mb-2">Tech stack</div>
+                    <div className="text-xs uppercase tracking-widest text-white/60 mb-2">
+                        {tServer("members.list.filter.tech.label")}
+                    </div>
                     <div className="flex flex-wrap gap-2">
                         <MultiFilterChips
                             base="/members"
@@ -310,6 +347,9 @@ export default async function MembersPage({
                             values={allTech}
                             selected={techFilter}
                             name="tech"
+                            clearLabel={tServer(
+                                "members.list.filter.clear",
+                            )}
                         />
                     </div>
                 </div>
@@ -317,7 +357,11 @@ export default async function MembersPage({
 
             {/* Content */}
             {view === "graph" ? (
-                <MembersGraph members={graphMembers} projects={graphProjects} query={q} />
+                <MembersGraph
+                    members={graphMembers}
+                    projects={graphProjects}
+                    query={q}
+                />
             ) : view === "groups" ? (
                 <GroupsView members={filteredMembers} q={q} />
             ) : (
@@ -328,20 +372,21 @@ export default async function MembersPage({
             <div className="mt-10">
                 <div className="card p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
-                        <h2 className="text-lg font-semibold">Want to join these minds?</h2>
+                        <h2 className="text-lg font-semibold">
+                            {tServer("members.list.cta.title")}
+                        </h2>
                         <p className="text-sm text-white/70 max-w-xl">
-                            If you don’t see yourself on this page yet but would like to collaborate, mentor, or become a member,
-                            we’d love to hear from you.
+                            {tServer("members.list.cta.body")}
                         </p>
                     </div>
                     <Link
                         href="/contact"
                         className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition"
                     >
-                        Talk to us
+                        {tServer("members.list.cta.button")}
                         <span aria-hidden className="ml-1">
-              →
-            </span>
+                            →
+                        </span>
                     </Link>
                 </div>
             </div>
@@ -358,12 +403,14 @@ function MultiFilterChips({
                               values,
                               selected,
                               name,
+                              clearLabel,
                           }: {
     base: string;
     params: Record<string, string>;
     values: string[];
     selected: string[];
     name: string;
+    clearLabel: string;
 }) {
     const makeHref = (nextSelected: string[]) => {
         const p = new URLSearchParams();
@@ -377,15 +424,20 @@ function MultiFilterChips({
 
     const toggle = (v: string) => {
         const exists = selected.includes(v);
-        const next = exists ? selected.filter((s) => s !== v) : [...selected, v];
+        const next = exists
+            ? selected.filter((s) => s !== v)
+            : [...selected, v];
         return makeHref(next);
     };
 
     return (
         <>
             {selected.length ? (
-                <Link href={makeHref([])} className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10">
-                    Clear
+                <Link
+                    href={makeHref([])}
+                    className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10"
+                >
+                    {clearLabel}
                 </Link>
             ) : null}
             {values.map((v) => (
@@ -393,7 +445,9 @@ function MultiFilterChips({
                     key={v}
                     href={toggle(v)}
                     className={`px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 ${
-                        selected.includes(v) ? "bg-white text-black font-semibold" : "bg-white/5 hover:bg-white/10"
+                        selected.includes(v)
+                            ? "bg-white text-black font-semibold"
+                            : "bg-white/5 hover:bg-white/10"
                     }`}
                 >
                     {v}
@@ -473,15 +527,22 @@ function ListView({ members, total, q }: { members: UiMember[]; total: number; q
     );
 }
 
-function GroupsView({ members, q }: { members: UiMember[]; q: string }) {
-    // Group STRICTLY by focusArea (never by skills)
+function GroupsView({
+                        members,
+                        q,
+                    }: {
+    members: UiMember[];
+    q: string;
+}) {
     const buckets: Record<string, UiMember[]> = {};
     for (const m of members) {
-        const key = m.focusArea || "Other";
+        const key = m.focusArea || tServer("members.list.groups.other");
         if (!buckets[key]) buckets[key] = [];
         buckets[key].push(m);
     }
-    const groups = Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b));
+    const groups = Object.entries(buckets).sort(([a], [b]) =>
+        a.localeCompare(b),
+    );
     return (
         <div className="space-y-8">
             {groups.map(([focus, arr]) => (

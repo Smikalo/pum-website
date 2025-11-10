@@ -11,6 +11,7 @@ import { cookies } from "next/headers";
 import { API_BASE } from "@/lib/config";
 import { uploadBlogPhoto } from "@/lib/actions";
 import BlogEditorForm from "@/components/BlogEditorForm";
+import { tServer } from "@/lib/i18n-server";
 
 function parseCsv(formData: FormData, key: string): string[] {
     const values = formData.getAll(key);
@@ -26,7 +27,6 @@ function parseCsv(formData: FormData, key: string): string[] {
     return out;
 }
 
-// Same helper as in edit page: ignore empty/placeholder file fields
 function isNonEmptyFileLike(value: unknown): value is File {
     if (!value) return false;
     const file = value as any;
@@ -57,7 +57,7 @@ async function createBlog(formData: FormData) {
     const tags = parseCsv(formData, "tags");
     const techStack = parseCsv(formData, "techStack");
     const projectSlugs = parseCsv(formData, "projectSlugs");
-    const eventSlugs = parseCsv(formData, "eventSlugs"); // ✅ NEW
+    const eventSlugs = parseCsv(formData, "eventSlugs");
     const authorSlugs = parseCsv(formData, "authorSlugs");
     const publishedAtRaw = (formData.get("publishedAt") || "")
         .toString()
@@ -67,19 +67,18 @@ async function createBlog(formData: FormData) {
         throw new Error("Title is required");
     }
 
-    // Header index for new photos (no existing photos on create)
     const headerNewIndexRaw = (formData.get("headerNewIndex") || "")
         .toString()
         .trim();
-    const headerNewIndex = headerNewIndexRaw ? Number(headerNewIndexRaw) : null;
+    const headerNewIndex = headerNewIndexRaw
+        ? Number(headerNewIndexRaw)
+        : null;
 
-    // Upload non-empty photo files to /api/uploads/blog-photo via server action
     const uploadedPhotoUrls: string[] = [];
     const photoFiles = formData.getAll("photos");
 
     for (const f of photoFiles) {
         if (!isNonEmptyFileLike(f)) {
-            // Avoid calling the upload API when there's effectively no file.
             continue;
         }
 
@@ -89,22 +88,23 @@ async function createBlog(formData: FormData) {
             const result = await uploadBlogPhoto(token, file);
             const url = (result as any)?.url;
             if (url) uploadedPhotoUrls.push(url);
-        } catch (err) {
-            // console.error("[createBlog] failed to upload blog photo", err);
+        } catch {
             throw new Error("Failed to upload one of the images");
         }
     }
 
     let photos = [...uploadedPhotoUrls];
 
-    // Respect chosen cover (like ProjectForm)
     if (
         headerNewIndex !== null &&
         headerNewIndex >= 0 &&
         headerNewIndex < uploadedPhotoUrls.length
     ) {
         const cover = uploadedPhotoUrls[headerNewIndex];
-        photos = [cover, ...uploadedPhotoUrls.filter((u, i) => i !== headerNewIndex)];
+        photos = [
+            cover,
+            ...uploadedPhotoUrls.filter((u, i) => i !== headerNewIndex),
+        ];
     }
 
     const body: any = {
@@ -115,7 +115,7 @@ async function createBlog(formData: FormData) {
         techStack,
         photos,
         projectSlugs,
-        eventSlugs, // ✅ NEW
+        eventSlugs,
         authorSlugs,
     };
 
@@ -153,26 +153,29 @@ async function createBlog(formData: FormData) {
         throw new Error("Blog created but slug missing from response");
     }
 
-    // Redirect to PUBLIC page, not the edit page
     redirect(`/blog/${slug}`);
 }
 
 export default function NewBlogPage() {
     return (
         <section className="section max-w-3xl">
-            <header className="mb-6 flex items-center justify-between gap-3">
+            <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                    <p className="kicker">BLOG</p>
-                    <h1 className="display text-2xl sm:text-3xl">New blog post</h1>
-                    <p className="mt-2 text-white/70 text-sm max-w-xl">
-                        Draft a new story with full metadata. You can always refine it later.
+                    <p className="kicker">
+                        {tServer("blog.new.kicker")}
+                    </p>
+                    <h1 className="display text-2xl sm:text-3xl">
+                        {tServer("blog.new.title")}
+                    </h1>
+                    <p className="mt-2 max-w-xl text-sm text-white/70">
+                        {tServer("blog.new.subtitle")}
                     </p>
                 </div>
                 <Link
                     href="/blog"
-                    className="text-sm underline underline-offset-4 text-white/70 hover:text-white"
+                    className="text-sm text-white/70 underline underline-offset-4 hover:text-white"
                 >
-                    Cancel
+                    {tServer("blog.new.cancel")}
                 </Link>
             </header>
 

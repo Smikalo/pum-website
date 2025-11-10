@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import { API_BASE } from "@/lib/config";
 import { useAuth } from "@/context/AuthProvider";
 import * as api from "@/lib/api";
+import { tClient } from "@/lib/i18n-client";
 
 const AREAS = [
     "FRONTEND",
@@ -104,13 +105,9 @@ export default function MemberAdminEditor({
 
     function normalizeMemberFromApi(m: any): MemberProfile {
         const rawSkills: unknown[] = Array.isArray(m?.skills) ? m.skills : [];
-        const rawTech: unknown[] = Array.isArray(m?.techStack)
-            ? m.techStack
-            : [];
+        const rawTech: unknown[] = Array.isArray(m?.techStack) ? m.techStack : [];
         const linksObj: Record<string, string> =
-            m && typeof m.links === "object" && m.links !== null
-                ? m.links
-                : {};
+            m && typeof m.links === "object" && m.links !== null ? m.links : {};
 
         const skillsArr = rawSkills
             .map((s) => (typeof s === "string" ? s.trim() : ""))
@@ -131,9 +128,7 @@ export default function MemberAdminEditor({
                 ? m.roles
                 : [];
         const userRoles = rawRoles
-            .map((r) =>
-                typeof r === "string" ? r.trim().toUpperCase() : "",
-            )
+            .map((r) => (typeof r === "string" ? r.trim().toUpperCase() : ""))
             .filter(Boolean);
 
         const avatarUrl: string | null =
@@ -148,13 +143,9 @@ export default function MemberAdminEditor({
             slug: String(m?.slug ?? ""),
             name: String(m?.name ?? ""),
             headline:
-                typeof m?.headline === "string"
-                    ? m.headline
-                    : m?.headline ?? null,
+                typeof m?.headline === "string" ? m.headline : m?.headline ?? null,
             shortBio:
-                typeof m?.shortBio === "string"
-                    ? m.shortBio
-                    : m?.shortBio ?? null,
+                typeof m?.shortBio === "string" ? m.shortBio : m?.shortBio ?? null,
             markdown:
                 typeof m?.markdown === "string"
                     ? m.markdown
@@ -192,22 +183,22 @@ export default function MemberAdminEditor({
     function prettyAreaLabel(a: Area) {
         switch (a) {
             case "FRONTEND":
-                return "Frontend";
+                return tClient("admin.member.focusArea.frontend");
             case "BACKEND":
-                return "Backend";
+                return tClient("admin.member.focusArea.backend");
             case "ML":
-                return "Machine learning";
+                return tClient("admin.member.focusArea.ml");
             case "DATA":
-                return "Data / Analytics";
+                return tClient("admin.member.focusArea.data");
             case "DEVOPS":
-                return "DevOps / Infra";
+                return tClient("admin.member.focusArea.devops");
             case "DESIGN":
-                return "Design / UX";
+                return tClient("admin.member.focusArea.design");
             case "PM":
-                return "Product / Project mgmt";
+                return tClient("admin.member.focusArea.pm");
             case "OTHER":
             default:
-                return "Other";
+                return tClient("admin.member.focusArea.other");
         }
     }
 
@@ -233,7 +224,7 @@ export default function MemberAdminEditor({
                     cache: "no-store",
                 });
                 if (!res.ok) {
-                    throw new Error("Failed to load member profile.");
+                    throw new Error(tClient("admin.member.error.loadProfile"));
                 }
                 const json = await res.json();
                 if (cancelled) return;
@@ -254,7 +245,9 @@ export default function MemberAdminEditor({
                 setAccessRole(deriveAccessRole(prof.userRoles));
             } catch (err: any) {
                 if (cancelled) return;
-                setError(err?.message || "Failed to load member profile.");
+                setError(
+                    err?.message || tClient("admin.member.error.loadProfile"),
+                );
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -272,15 +265,13 @@ export default function MemberAdminEditor({
     async function onSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!accessToken) {
-            setError(
-                "You must be logged in as an admin or moderator to edit member profiles.",
-            );
+            setError(tClient("admin.member.error.authRequired"));
             return;
         }
 
         const nextErrors: Record<string, string> = {};
         if (!name.trim()) {
-            nextErrors.name = "Name is required.";
+            nextErrors.name = tClient("admin.member.validation.nameRequired");
         }
 
         setErrors(nextErrors);
@@ -328,9 +319,11 @@ export default function MemberAdminEditor({
                 setAvatarUrl(prof.avatarUrl ?? null);
                 setAccessRole(deriveAccessRole(prof.userRoles));
             }
-            setHint("Profile updated ✓");
+            setHint(tClient("admin.member.feedback.updated"));
         } catch (err: any) {
-            setError(err?.message || "Failed to update member profile.");
+            setError(
+                err?.message || tClient("admin.member.error.updateProfile"),
+            );
         } finally {
             setSaving(false);
         }
@@ -340,20 +333,16 @@ export default function MemberAdminEditor({
 
     async function onUploadAvatar() {
         if (!accessToken) {
-            setError(
-                "You must be logged in as an admin or moderator to change profile pictures.",
-            );
+            setError(tClient("admin.member.error.authRequiredAvatar"));
             return;
         }
         if (!avatarFile) {
-            setError("Please choose an image file to upload.");
+            setError(tClient("admin.member.error.avatarNoFile"));
             return;
         }
 
         if (!/^image\/(png|jpe?g|webp|gif)$/i.test(avatarFile.type)) {
-            setError(
-                "Unsupported image type. Please upload PNG, JPG, JPEG, WEBP, or GIF.",
-            );
+            setError(tClient("admin.member.error.avatarType"));
             return;
         }
 
@@ -362,28 +351,28 @@ export default function MemberAdminEditor({
         setHint(null);
 
         try {
-            // Requires backend endpoint & helper:
-            // POST /api/members/:slug/avatar + api.uploadMemberAvatar(token, slug, file)
             const res: any = await api.uploadMemberAvatar(
                 accessToken,
                 slug,
                 avatarFile,
             );
-            // Expecting response { ok: true, url: string } or similar
             if (res?.url || res?.avatarUrl) {
                 setAvatarUrl(res.url || res.avatarUrl);
-                setHint("Profile picture updated ✓");
+                setHint(tClient("admin.member.feedback.avatarUpdated"));
                 setAvatarFile(null);
             } else if (res?.member) {
                 const prof = normalizeMemberFromApi(res.member);
                 setProfile(prof);
                 setAvatarUrl(prof.avatarUrl ?? null);
-                setHint("Profile picture updated ✓");
+                setHint(tClient("admin.member.feedback.avatarUpdated"));
             } else {
-                setHint("Avatar uploaded.");
+                setHint(tClient("admin.member.feedback.avatarUploaded"));
             }
         } catch (err: any) {
-            setError(err?.message || "Failed to upload profile picture.");
+            setError(
+                err?.message ||
+                tClient("admin.member.error.avatarUploadFailed"),
+            );
         } finally {
             setUploadingAvatar(false);
         }
@@ -393,17 +382,15 @@ export default function MemberAdminEditor({
 
     async function onUploadCv() {
         if (!accessToken) {
-            setError(
-                "You must be logged in as an admin or moderator to upload CVs.",
-            );
+            setError(tClient("admin.member.error.authRequiredCv"));
             return;
         }
         if (!cvFile) {
-            setError("Please choose a PDF file to upload.");
+            setError(tClient("admin.member.error.cvNoFile"));
             return;
         }
         if (cvFile.type !== "application/pdf") {
-            setError("CV must be a PDF file.");
+            setError(tClient("admin.member.error.cvType"));
             return;
         }
 
@@ -417,20 +404,21 @@ export default function MemberAdminEditor({
                 slug,
                 cvFile,
             );
-            // Backend returns { ok: true, url }
             if (res?.url) {
                 setCvUrl(res.url);
-                setHint("CV uploaded ✓");
+                setHint(tClient("admin.member.feedback.cvUploaded"));
                 setCvFile(null);
             } else if (res?.cvUrl) {
                 setCvUrl(res.cvUrl);
-                setHint("CV uploaded ✓");
+                setHint(tClient("admin.member.feedback.cvUploaded"));
                 setCvFile(null);
             } else {
-                setHint("CV uploaded.");
+                setHint(tClient("admin.member.feedback.cvUploaded"));
             }
         } catch (err: any) {
-            setError(err?.message || "Failed to upload CV.");
+            setError(
+                err?.message || tClient("admin.member.error.cvUploadFailed"),
+            );
         } finally {
             setUploadingCv(false);
         }
@@ -440,24 +428,27 @@ export default function MemberAdminEditor({
 
     async function onDelete() {
         if (!accessToken) {
-            setError(
-                "You must be logged in as an admin or moderator to delete members.",
-            );
+            setError(tClient("admin.member.error.authRequiredDelete"));
             return;
         }
 
         const trimmed = deleteConfirmSlug.trim();
         if (!trimmed) {
-            setError("Please type the member slug to confirm deletion.");
+            setError(tClient("admin.member.delete.error.emptyConfirm"));
             return;
         }
         if (trimmed !== slug) {
-            setError(`Slug mismatch. Type "${slug}" to confirm deletion.`);
+            setError(
+                tClient("admin.member.delete.error.mismatch").replace(
+                    "{slug}",
+                    slug,
+                ),
+            );
             return;
         }
 
         const ok = window.confirm(
-            "This will permanently delete this member profile and its associations. This action cannot be undone.\n\nAre you absolutely sure?",
+            tClient("admin.member.delete.confirmDialog"),
         );
         if (!ok) return;
 
@@ -467,10 +458,12 @@ export default function MemberAdminEditor({
 
         try {
             await api.deleteMember(accessToken, slug, trimmed);
-            setHint("Member deleted ✓ Redirecting…");
+            setHint(tClient("admin.member.delete.success"));
             router.push("/members");
         } catch (err: any) {
-            setError(err?.message || "Failed to delete member.");
+            setError(
+                err?.message || tClient("admin.member.delete.error.generic"),
+            );
         } finally {
             setDeleting(false);
         }
@@ -500,13 +493,13 @@ export default function MemberAdminEditor({
                 <div className="flex items-start justify-between gap-4 mb-4">
                     <div>
                         <h2 className="text-xl font-semibold text-white">
-                            Edit member profile
+                            {tClient("admin.member.title")}
                         </h2>
                         <p className="text-xs text-white/60 mt-1">
-                            Editing public member entry{" "}
-                            <span className="font-mono text-white/80">
-                                {slug}
-                            </span>
+                            {tClient("admin.member.subtitle").replace(
+                                "{slug}",
+                                slug,
+                            )}
                         </p>
                     </div>
                     <button
@@ -514,7 +507,7 @@ export default function MemberAdminEditor({
                         onClick={onClose}
                         className="text-sm text-white/60 hover:text-white"
                     >
-                        Close
+                        {tClient("common.close")}
                     </button>
                 </div>
 
@@ -530,10 +523,12 @@ export default function MemberAdminEditor({
                 )}
 
                 {loading ? (
-                    <p className="text-sm text-white/70">Loading member…</p>
+                    <p className="text-sm text-white/70">
+                        {tClient("admin.member.loading")}
+                    </p>
                 ) : !profile ? (
                     <p className="text-sm text-red-300">
-                        Member could not be loaded.
+                        {tClient("admin.member.error.noProfile")}
                     </p>
                 ) : (
                     <form onSubmit={onSubmit} className="space-y-6">
@@ -545,56 +540,55 @@ export default function MemberAdminEditor({
                                     <div className="flex items-start gap-3">
                                         <div className="flex-shrink-0">
                                             {avatarUrl ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
                                                 <img
                                                     src={avatarUrl}
-                                                    alt={name || profile.name}
+                                                    alt={
+                                                        name || profile.name || tClient("account.editor.avatar.altFallback")
+                                                    }
                                                     className="h-16 w-16 rounded-full object-cover border border-white/20 bg-white/10"
                                                 />
                                             ) : (
                                                 <div className="h-16 w-16 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-xs text-white/50">
-                                                    No photo
+                                                    {tClient("admin.member.avatar.none")}
                                                 </div>
                                             )}
                                         </div>
                                         <div className="flex-1 space-y-2">
                                             <label className="block text-sm">
-                                                Profile picture
+                                                {tClient("admin.member.avatar.label")}
                                             </label>
                                             <input
                                                 type="file"
                                                 accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
                                                 onChange={(e) =>
                                                     setAvatarFile(
-                                                        e.target.files?.[0] ||
-                                                        null,
+                                                        e.target.files?.[0] || null,
                                                     )
                                                 }
-                                                className="block w-full text-xs text-white file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:text-white hover:file:bg-white/20"
+                                                className="block w-full text-xs text-white file:mr-3 file:rounded-md file:border-0 file:bg.white/10 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:text-white hover:file:bg-white/20"
                                             />
                                             <button
                                                 type="button"
                                                 onClick={onUploadAvatar}
                                                 disabled={
-                                                    uploadingAvatar ||
-                                                    !avatarFile
+                                                    uploadingAvatar || !avatarFile
                                                 }
                                                 className="btn-secondary text-xs disabled:opacity-60 disabled:cursor-not-allowed"
                                             >
                                                 {uploadingAvatar
-                                                    ? "Uploading picture…"
-                                                    : "Upload new picture"}
+                                                    ? tClient("admin.member.avatar.uploading")
+                                                    : tClient("admin.member.avatar.upload")}
                                             </button>
                                             <p className="text-[11px] text-white/45">
-                                                PNG, JPG, WEBP or GIF. Will be
-                                                shown on member cards and
-                                                profile pages.
+                                                {tClient("admin.member.avatar.helper")}
                                             </p>
                                         </div>
                                     </div>
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            Name
+                                            {tClient("account.editor.name.label")}
                                         </label>
                                         <input
                                             type="text"
@@ -603,7 +597,9 @@ export default function MemberAdminEditor({
                                                 setName(e.target.value)
                                             }
                                             className={inputCls("name")}
-                                            placeholder="Full name"
+                                            placeholder={tClient(
+                                                "admin.member.name.placeholder",
+                                            )}
                                             autoFocus
                                         />
                                         {errors.name && (
@@ -614,8 +610,8 @@ export default function MemberAdminEditor({
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm mb-1">
-                                            Headline
+                                        <label className="block text.sm mb-1">
+                                            {tClient("account.editor.headline.label")}
                                         </label>
                                         <input
                                             type="text"
@@ -624,13 +620,15 @@ export default function MemberAdminEditor({
                                                 setHeadline(e.target.value)
                                             }
                                             className={inputCls()}
-                                            placeholder="Short one-line headline shown on profile cards"
+                                            placeholder={tClient(
+                                                "admin.member.headline.placeholder",
+                                            )}
                                         />
                                     </div>
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            Short bio
+                                            {tClient("account.editor.shortBio.label")}
                                         </label>
                                         <textarea
                                             value={shortBio}
@@ -638,27 +636,32 @@ export default function MemberAdminEditor({
                                                 setShortBio(e.target.value)
                                             }
                                             className={`${inputCls()} min-h-[80px]`}
-                                            placeholder="Short summary used across the site"
+                                            placeholder={tClient(
+                                                "admin.member.shortBio.placeholder",
+                                            )}
                                         />
                                     </div>
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            Focus area
+                                            {tClient("account.editor.focusArea.label")}
                                         </label>
                                         <select
                                             value={focusArea}
                                             onChange={(e) =>
                                                 setFocusArea(
                                                     e.target.value
-                                                        ? (e.target
-                                                            .value as Area)
+                                                        ? (e.target.value as Area)
                                                         : "",
                                                 )
                                             }
                                             className={inputCls()}
                                         >
-                                            <option value="">Not set</option>
+                                            <option value="">
+                                                {tClient(
+                                                    "account.editor.focusArea.placeholder",
+                                                )}
+                                            </option>
                                             {AREAS.map((a) => (
                                                 <option key={a} value={a}>
                                                     {prettyAreaLabel(a)}
@@ -669,7 +672,9 @@ export default function MemberAdminEditor({
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            Skills (comma-separated)
+                                            {tClient(
+                                                "account.editor.skills.label",
+                                            )}
                                         </label>
                                         <input
                                             type="text"
@@ -678,17 +683,20 @@ export default function MemberAdminEditor({
                                                 setSkills(e.target.value)
                                             }
                                             className={inputCls()}
-                                            placeholder="product discovery, storytelling, leadership"
+                                            placeholder={tClient(
+                                                "admin.member.skills.placeholder",
+                                            )}
                                         />
                                         <p className="mt-1 text-xs text-white/40">
-                                            These map to the skill tags shown on
-                                            the profile.
+                                            {tClient(
+                                                "admin.member.skills.helper",
+                                            )}
                                         </p>
                                     </div>
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            Tech stack (comma-separated)
+                                            {tClient("account.editor.tech.label")}
                                         </label>
                                         <input
                                             type="text"
@@ -697,16 +705,18 @@ export default function MemberAdminEditor({
                                                 setTech(e.target.value)
                                             }
                                             className={inputCls()}
-                                            placeholder="React, Next.js, TypeScript, Postgres"
+                                            placeholder={tClient(
+                                                "admin.member.tech.placeholder",
+                                            )}
                                         />
                                         <p className="mt-1 text-xs text-white/40">
-                                            Technologies the member works with.
+                                            {tClient("admin.member.tech.helper")}
                                         </p>
                                     </div>
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            Links
+                                            {tClient("account.editor.links.label")}
                                         </label>
                                         <div className="space-y-2">
                                             {links.map((row, idx) => (
@@ -724,7 +734,9 @@ export default function MemberAdminEditor({
                                                             })
                                                         }
                                                         className={inputCls()}
-                                                        placeholder="Label (e.g. website, github, linkedin)"
+                                                        placeholder={tClient(
+                                                            "account.editor.links.labelPlaceholder",
+                                                        )}
                                                     />
                                                     <input
                                                         type="text"
@@ -736,7 +748,9 @@ export default function MemberAdminEditor({
                                                             })
                                                         }
                                                         className={inputCls()}
-                                                        placeholder="https://example.com"
+                                                        placeholder={tClient(
+                                                            "admin.member.links.urlPlaceholder",
+                                                        )}
                                                     />
                                                     <button
                                                         type="button"
@@ -745,7 +759,9 @@ export default function MemberAdminEditor({
                                                             removeLinkRow(idx)
                                                         }
                                                     >
-                                                        Remove
+                                                        {tClient(
+                                                            "account.editor.links.remove",
+                                                        )}
                                                     </button>
                                                 </div>
                                             ))}
@@ -754,16 +770,20 @@ export default function MemberAdminEditor({
                                                 onClick={addLinkRow}
                                                 className="text-xs text-white/70 hover:text-white"
                                             >
-                                                + Add link
+                                                {tClient(
+                                                    "account.editor.links.add",
+                                                )}
                                             </button>
                                         </div>
                                     </div>
 
                                     {/* Access role (admin only) */}
                                     {isAdmin && (
-                                        <div className="mt-2 border-t border-white/10 pt-3">
+                                        <div className="mt-2 border-t border.white/10 border-t border-white/10 pt-3">
                                             <label className="block text-sm mb-1">
-                                                Access role
+                                                {tClient(
+                                                    "admin.member.accessRole.label",
+                                                )}
                                             </label>
                                             <select
                                                 value={accessRole}
@@ -776,19 +796,25 @@ export default function MemberAdminEditor({
                                                 className={inputCls()}
                                             >
                                                 <option value="">
-                                                    Leave unchanged
+                                                    {tClient(
+                                                        "admin.member.accessRole.keep",
+                                                    )}
                                                 </option>
                                                 <option value="MEMBER">
-                                                    Regular member
+                                                    {tClient(
+                                                        "admin.member.accessRole.member",
+                                                    )}
                                                 </option>
                                                 <option value="MODERATOR">
-                                                    Moderator
+                                                    {tClient(
+                                                        "admin.member.accessRole.moderator",
+                                                    )}
                                                 </option>
                                             </select>
                                             <p className="mt-1 text-[11px] text-white/45">
-                                                Only admins can change access
-                                                roles. This affects what the
-                                                user can do across the site.
+                                                {tClient(
+                                                    "admin.member.accessRole.helper",
+                                                )}
                                             </p>
                                         </div>
                                     )}
@@ -800,11 +826,14 @@ export default function MemberAdminEditor({
                                 <div className="card p-4 space-y-3">
                                     <div className="flex items-center justify-between">
                                         <label className="block text-sm">
-                                            Profile description (Markdown)
+                                            {tClient(
+                                                "account.editor.markdown.label",
+                                            )}
                                         </label>
                                         <span className="text-[11px] text-white/40">
-                                            Supports basic Markdown syntax
-                                            (lists, links, headings, code)
+                                            {tClient(
+                                                "account.editor.markdown.helper",
+                                            )}
                                         </span>
                                     </div>
                                     <textarea
@@ -813,20 +842,34 @@ export default function MemberAdminEditor({
                                             setMarkdown(e.target.value)
                                         }
                                         className={`${inputCls()} min-h-[180px] font-mono text-[13px]`}
-                                        placeholder="Write a longer profile here..."
+                                        placeholder={tClient(
+                                            "account.editor.markdown.placeholder",
+                                        )}
                                     />
+                                    <div className="mt-2 text-xs text-white/50">
+                                        <ReactMarkdown
+                                            remarkPlugins={[remarkGfm]}
+                                            className="prose prose-invert prose-sm max-w-none"
+                                        >
+                                            {markdown ||
+                                                tClient(
+                                                    "account.editor.markdown.empty",
+                                                )}
+                                        </ReactMarkdown>
+                                    </div>
                                 </div>
 
                                 {/* CV management */}
                                 <div className="card p-4 space-y-3">
                                     <h3 className="text-sm font-semibold text-white">
-                                        Curriculum Vitae (CV)
+                                        {tClient("admin.member.cv.title")}
                                     </h3>
                                     {cvUrl ? (
                                         <div className="flex items-center justify-between">
                                             <p className="text-xs text-white/70">
-                                                A CV is currently uploaded for
-                                                this member.
+                                                {tClient(
+                                                    "admin.member.cv.existing",
+                                                )}
                                             </p>
                                             <a
                                                 href={cvUrl}
@@ -834,12 +877,16 @@ export default function MemberAdminEditor({
                                                 rel="noreferrer"
                                                 className="btn-secondary text-xs"
                                             >
-                                                Open CV
+                                                {tClient(
+                                                    "account.editor.cv.download",
+                                                )}
                                             </a>
                                         </div>
                                     ) : (
                                         <p className="text-xs text-white/60">
-                                            No CV uploaded yet.
+                                            {tClient(
+                                                "admin.member.cv.noneYet",
+                                            )}
                                         </p>
                                     )}
 
@@ -849,8 +896,7 @@ export default function MemberAdminEditor({
                                             accept="application/pdf"
                                             onChange={(e) =>
                                                 setCvFile(
-                                                    e.target.files?.[0] ||
-                                                    null,
+                                                    e.target.files?.[0] || null,
                                                 )
                                             }
                                             className="block w-full text-xs text-white file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:text-white hover:file:bg-white/20"
@@ -862,33 +908,31 @@ export default function MemberAdminEditor({
                                             className="btn-secondary text-xs disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
                                             {uploadingCv
-                                                ? "Uploading CV…"
-                                                : "Upload new CV"}
+                                                ? tClient(
+                                                    "admin.member.cv.uploading",
+                                                )
+                                                : tClient(
+                                                    "admin.member.cv.upload",
+                                                )}
                                         </button>
                                         <p className="text-[11px] text-white/45">
-                                            PDF only. Uploading a new CV will
-                                            replace the previous one.
+                                            {tClient("admin.member.cv.helper")}
                                         </p>
                                     </div>
                                 </div>
 
                                 <div className="card p-4 space-y-2 border border-red-500/40 bg-red-950/30">
                                     <h3 className="text-sm font-semibold text-red-100">
-                                        Danger zone
+                                        {tClient("admin.member.delete.title")}
                                     </h3>
                                     <p className="text-xs text-red-200/80">
-                                        Deleting a member removes their public
-                                        profile and disconnects them from
-                                        projects and events. This action cannot
-                                        be undone.
+                                        {tClient("admin.member.delete.body")}
                                     </p>
 
                                     <label className="block text-xs text-red-100 mt-2 mb-1">
-                                        Type{" "}
-                                        <span className="font-mono">
-                                            {slug}
-                                        </span>{" "}
-                                        to confirm
+                                        {tClient(
+                                            "admin.member.delete.confirmLabel",
+                                        ).replace("{slug}", slug)}
                                     </label>
                                     <input
                                         type="text"
@@ -903,11 +947,15 @@ export default function MemberAdminEditor({
                                         type="button"
                                         onClick={onDelete}
                                         disabled={deleting}
-                                        className="mt-3 inline-flex items-center justify-center rounded-md border border-red-500/70 bg-red-600/80 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed"
+                                        className="mt-3 inline-flex items-center justify-center rounded-md border border-red-500/70 bg-red-600/80 px-3 py-1.5 text-xs font-medium text.white text-white shadow-sm hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed"
                                     >
                                         {deleting
-                                            ? "Deleting…"
-                                            : "Delete member"}
+                                            ? tClient(
+                                                "admin.member.delete.deleting",
+                                            )
+                                            : tClient(
+                                                "admin.member.delete.button",
+                                            )}
                                     </button>
                                 </div>
                             </div>
@@ -915,7 +963,7 @@ export default function MemberAdminEditor({
 
                         <div className="flex items-center justify-between pt-2 border-t border-white/10">
                             <p className="text-xs text-white/50">
-                                Changes are saved immediately for all visitors.
+                                {tClient("admin.member.footer.liveNotice")}
                             </p>
                             <div className="flex gap-2">
                                 <button
@@ -924,14 +972,16 @@ export default function MemberAdminEditor({
                                     className="btn-secondary text-sm"
                                     disabled={saving || deleting}
                                 >
-                                    Cancel
+                                    {tClient("common.cancel")}
                                 </button>
                                 <button
                                     type="submit"
                                     className="btn-primary text-sm"
                                     disabled={saving || deleting}
                                 >
-                                    {saving ? "Saving…" : "Save changes"}
+                                    {saving
+                                        ? tClient("common.saving")
+                                        : tClient("common.saveChanges")}
                                 </button>
                             </div>
                         </div>

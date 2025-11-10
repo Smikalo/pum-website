@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 import { API_BASE } from "@/lib/config";
 import { useAuth } from "@/context/AuthProvider";
+import { tClient } from "@/lib/i18n-client";
 
 /* ----------------------- Tiny Markdown renderer ----------------------- */
 
@@ -212,7 +213,11 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
 
     const segments = splitFenced(src);
     if (!src.trim()) {
-        return <p className="text-white/60 text-sm">No description yet.</p>;
+        return (
+            <p className="text-white/60 text-sm">
+                {tClient("projects.form.markdown.empty")}
+            </p>
+        );
     }
     return (
         <div className="space-y-3 leading-relaxed text-white/90">
@@ -221,7 +226,14 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                     <pre
                         key={`code-${i}`}
                         className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
-                        aria-label={seg.lang ? `Code block (${seg.lang})` : "Code block"}
+                        aria-label={
+                            seg.lang
+                                ? tClient("projects.form.markdown.codeBlockWithLang").replace(
+                                    "{lang}",
+                                    seg.lang,
+                                )
+                                : tClient("projects.form.markdown.codeBlock")
+                        }
                     >
                         <code>{seg.content}</code>
                     </pre>
@@ -402,7 +414,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
     // links
     const [links, setLinks] = React.useState<LinkEntry[]>([{ label: "", url: "" }]);
 
-    // 🔴 Delete confirmation state
+    // Delete confirmation state
     const [deleteConfirm, setDeleteConfirm] = React.useState("");
     const [deleting, setDeleting] = React.useState(false);
 
@@ -423,7 +435,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
             setMembersError(null);
             try {
                 const res = await fetch("/api/members?size=999", { credentials: "include" });
-                if (!res.ok) throw new Error("Failed to load members");
+                if (!res.ok) {
+                    throw new Error(tClient("projects.form.load.membersFailed"));
+                }
                 const data = await res.json();
                 const items: any[] = Array.isArray(data) ? data : data.items ?? [];
                 if (cancelled) return;
@@ -437,7 +451,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 );
             } catch (e: any) {
                 if (cancelled) return;
-                setMembersError(e?.message || "Failed to load members");
+                setMembersError(
+                    e?.message || tClient("projects.form.load.membersFailed"),
+                );
             } finally {
                 if (!cancelled) setMembersLoading(false);
             }
@@ -450,7 +466,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 const url = new URL("/api/events", API_BASE);
                 url.searchParams.set("size", "999");
                 const res = await fetch(url.toString(), { credentials: "include" });
-                if (!res.ok) throw new Error("Failed to load events");
+                if (!res.ok) {
+                    throw new Error(tClient("projects.form.load.eventsFailed"));
+                }
                 const data = await res.json();
                 const items: any[] = Array.isArray(data) ? data : data.items ?? [];
                 if (cancelled) return;
@@ -466,7 +484,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 );
             } catch (e: any) {
                 if (cancelled) return;
-                setEventsError(e?.message || "Failed to load events");
+                setEventsError(
+                    e?.message || tClient("projects.form.load.eventsFailed"),
+                );
             } finally {
                 if (!cancelled) setEventsLoading(false);
             }
@@ -479,7 +499,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 const url = new URL("/api/blogs", API_BASE);
                 url.searchParams.set("size", "999");
                 const res = await fetch(url.toString(), { credentials: "include" });
-                if (!res.ok) throw new Error("Failed to load blogs");
+                if (!res.ok) {
+                    throw new Error(tClient("projects.form.load.blogsFailed"));
+                }
                 const data = await res.json();
                 const items: any[] = Array.isArray(data) ? data : data.items ?? [];
                 if (cancelled) return;
@@ -494,7 +516,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 );
             } catch (e: any) {
                 if (cancelled) return;
-                setBlogsError(e?.message || "Failed to load blogs");
+                setBlogsError(
+                    e?.message || tClient("projects.form.load.blogsFailed"),
+                );
             } finally {
                 if (!cancelled) setBlogsLoading(false);
             }
@@ -523,10 +547,16 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 const url = new URL(`/api/projects/${encodeURIComponent(slug ?? "")}`, API_BASE);
                 const res = await fetch(url.toString(), { credentials: "include" });
                 if (res.status === 404) {
-                    if (!cancelled) setLoadError("Project not found.");
+                    if (!cancelled) {
+                        setLoadError(
+                            tClient("projects.form.load.error.notFound"),
+                        );
+                    }
                     return;
                 }
-                if (!res.ok) throw new Error("Failed to load project");
+                if (!res.ok) {
+                    throw new Error(tClient("projects.form.load.error.generic"));
+                }
                 const p = await res.json();
                 if (cancelled) return;
 
@@ -642,7 +672,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 setLinks(parsed.length ? parsed : [{ label: "", url: "" }]);
             } catch (e: any) {
                 if (cancelled) return;
-                setLoadError(e?.message || "Failed to load project.");
+                setLoadError(
+                    e?.message || tClient("projects.form.load.error.generic"),
+                );
             } finally {
                 if (!cancelled) setLoadingProject(false);
             }
@@ -735,7 +767,10 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
         const arr = Array.from(files);
         const combined = [...photos, ...arr];
         if (combined.length > 20) {
-            setErrors((e) => ({ ...e, photos: "Please keep to 20 images max." }));
+            setErrors((e) => ({
+                ...e,
+                photos: tClient("projects.form.validation.photosTooMany"),
+            }));
             return;
         }
         setPhotos(combined);
@@ -828,15 +863,15 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
         }
     }
 
-    function toggleEventSlug(slug: string) {
+    function toggleEventSlug(eventSlug: string) {
         setSelectedEventSlugs((prev) =>
-            prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug],
+            prev.includes(eventSlug) ? prev.filter((s) => s !== eventSlug) : [...prev, eventSlug],
         );
     }
 
-    function toggleBlogSlug(slug: string) {
+    function toggleBlogSlug(blogSlug: string) {
         setSelectedBlogSlugs((prev) =>
-            prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug],
+            prev.includes(blogSlug) ? prev.filter((s) => s !== blogSlug) : [...prev, blogSlug],
         );
     }
 
@@ -858,23 +893,23 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
         const next: Errors = {};
 
         if (!current.title.trim()) {
-            next.title = "Title is required.";
+            next.title = tClient("projects.form.validation.titleRequired");
         }
 
         if (current.year.trim()) {
             const yr = Number(current.year.trim());
             if (!Number.isFinite(yr) || yr < 1900 || yr > 2100) {
-                next.year = "Year should be a number between 1900 and 2100.";
+                next.year = tClient("projects.form.validation.yearInvalid");
             }
         }
 
         // For new projects, require at least one team member.
         if (!currentTeam.length && !isEdit) {
-            next.team = "Add at least one team member.";
+            next.team = tClient("projects.form.validation.teamRequired");
         }
 
         if (photos.length + existingPhotos.length > 20) {
-            next.photos = "Please keep to 20 images max.";
+            next.photos = tClient("projects.form.validation.photosTooMany");
         }
 
         return next;
@@ -885,7 +920,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
     async function onSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!accessToken || !user) {
-            setSubmitError("You need to be signed in to save a project.");
+            setSubmitError(tClient("projects.form.error.authRequired"));
             return;
         }
 
@@ -895,7 +930,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
         const v = validate(state, team);
         if (Object.keys(v).length) {
             setErrors(v);
-            setSubmitError("Please fix the highlighted fields.");
+            setSubmitError(tClient("projects.form.validation.fixFields"));
             return;
         }
 
@@ -982,18 +1017,19 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
             if (isEdit) {
                 if (!slug) throw new Error("Missing project slug for edit.");
                 result = await api.updateProject(accessToken, slug, payload);
-                setHint("Project saved.");
+                setHint(tClient("projects.form.submit.success.edit"));
             } else {
                 result = await api.createProject(accessToken, payload);
-                setHint("Project created.");
+                setHint(tClient("projects.form.submit.success.create"));
             }
 
             const nextSlug: string =
                 result?.slug || slug || state.title.toLowerCase().replace(/\s+/g, "-");
             router.replace(`/projects/${encodeURIComponent(nextSlug)}`);
         } catch (err: any) {
-            // console.error("[ProjectForm] submit error", err);
-            setSubmitError(err?.message || "Failed to save project.");
+            setSubmitError(
+                err?.message || tClient("projects.form.submit.error"),
+            );
         } finally {
             setSubmitting(false);
         }
@@ -1004,15 +1040,17 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
     async function handleDelete() {
         if (!isEdit || !slug) return;
         if (!accessToken || !user) {
-            setSubmitError("You need to be signed in to delete this project.");
+            setSubmitError(tClient("projects.form.error.authRequiredDelete"));
             return;
         }
         if (!canDelete) {
-            setSubmitError("You don't have permission to delete this project.");
+            setSubmitError(tClient("projects.form.error.noPermissionDelete"));
             return;
         }
         if (deleteConfirm.trim() !== slug) {
-            setSubmitError("Type the project slug exactly to confirm deletion.");
+            setSubmitError(
+                tClient("projects.form.delete.error.mismatch").replace("{slug}", slug),
+            );
             return;
         }
 
@@ -1022,11 +1060,12 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
 
         try {
             await api.deleteProject(accessToken, slug, deleteConfirm.trim());
-            setHint("Project deleted. Redirecting…");
+            setHint(tClient("projects.form.delete.success"));
             router.replace("/projects");
         } catch (err: any) {
-            // console.error("[ProjectForm] delete error", err);
-            setSubmitError(err?.message || "Failed to delete project.");
+            setSubmitError(
+                err?.message || tClient("projects.form.delete.error.generic"),
+            );
         } finally {
             setDeleting(false);
         }
@@ -1078,18 +1117,24 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
 
     /* ------------------------------- Render ------------------------------- */
 
+    const isCreate = !isEdit;
+
     return (
         <section className="section">
             <header className="mb-6 flex items-center justify-between gap-3">
                 <div>
-                    <p className="kicker">{isEdit ? "EDIT PROJECT" : "NEW PROJECT"}</p>
+                    <p className="kicker">
+                        {tClient("projects.form.kicker")}
+                    </p>
                     <h1 className="display">
-                        {isEdit ? state.title || "Edit project" : "Create a new project"}
+                        {isEdit
+                            ? state.title || tClient("projects.form.title.edit")
+                            : tClient("projects.form.title.new")}
                     </h1>
                     <p className="mt-3 text-white/70 max-w-2xl text-sm">
                         {isEdit
-                            ? "Update project details, team, and related content. Changes are live as soon as you save."
-                            : "Describe what you’re building, add a small team, connect events and blog posts, and we’ll show it nicely on the projects page."}
+                            ? tClient("projects.form.subtitle.edit")
+                            : tClient("projects.form.subtitle.new")}
                     </p>
                 </div>
             </header>
@@ -1102,9 +1147,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
 
             {!hasAuth && (
                 <div className="mb-4 rounded-md border border-amber-400/60 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-                    You need to be signed in to create or edit projects.{" "}
+                    {tClient("projects.form.gate.loginRequired")}{" "}
                     <Link href="/login" className="underline underline-offset-4">
-                        Log in
+                        {tClient("projects.form.gate.loginLink")}
                     </Link>
                     .
                 </div>
@@ -1128,13 +1173,17 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                     {/* Basics */}
                     <div className="card p-5 space-y-4">
                         <div>
-                            <label className="block text-sm mb-1">Project title</label>
+                            <label className="block text-sm mb-1">
+                                {tClient("projects.form.fields.title.label")}
+                            </label>
                             <input
                                 type="text"
                                 value={state.title}
                                 onChange={(e) => updateField("title", e.target.value)}
                                 className={inputCls(!!errors.title)}
-                                placeholder="PUM internal tools, Hackathon winner, ..."
+                                placeholder={tClient(
+                                    "projects.form.fields.title.placeholder",
+                                )}
                                 disabled={!hasAuth || loadingProject || submitting}
                             />
                             {errors.title && (
@@ -1144,13 +1193,17 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
 
                         <div className="grid md:grid-cols-3 gap-3">
                             <div>
-                                <label className="block text-sm mb-1">Year</label>
+                                <label className="block text-sm mb-1">
+                                    {tClient("projects.form.fields.year.label")}
+                                </label>
                                 <input
                                     type="number"
                                     value={state.year}
                                     onChange={(e) => updateField("year", e.target.value)}
                                     className={inputCls(!!errors.year)}
-                                    placeholder="2024"
+                                    placeholder={tClient(
+                                        "projects.form.fields.year.placeholder",
+                                    )}
                                     disabled={!hasAuth || loadingProject || submitting}
                                 />
                                 {errors.year && (
@@ -1158,32 +1211,44 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                 )}
                             </div>
                             <div className="md:col-span-2">
-                                <label className="block text-sm mb-1">Status</label>
+                                <label className="block text-sm mb-1">
+                                    {tClient("projects.form.fields.status.label")}
+                                </label>
                                 <input
                                     type="text"
                                     value={state.status}
                                     onChange={(e) => updateField("status", e.target.value)}
                                     className={inputCls(!!errors.status)}
-                                    placeholder="Prototype, In progress, Launched…"
+                                    placeholder={tClient(
+                                        "projects.form.fields.status.placeholder",
+                                    )}
                                     disabled={!hasAuth || loadingProject || submitting}
                                 />
                             </div>
                         </div>
 
                         <div>
-                            <label className="block text-sm mb-1">Short summary</label>
+                            <label className="block text-sm mb-1">
+                                {tClient("projects.form.fields.summary.label")}
+                            </label>
                             <textarea
                                 value={state.summary}
                                 onChange={(e) => updateField("summary", e.target.value)}
-                                className={inputCls(!!errors.summary) + " min-h-[70px] resize-y"}
-                                placeholder="One–two sentences describing the project."
+                                className={
+                                    inputCls(!!errors.summary) + " min-h-[70px] resize-y"
+                                }
+                                placeholder={tClient(
+                                    "projects.form.fields.summary.placeholder",
+                                )}
                                 disabled={!hasAuth || loadingProject || submitting}
                             />
                         </div>
 
                         <div className="grid md:grid-cols-2 gap-3">
                             <div>
-                                <label className="block text-sm mb-1">Tags</label>
+                                <label className="block text-sm mb-1">
+                                    {tClient("projects.form.fields.tags.label")}
+                                </label>
                                 <div className="flex flex-wrap gap-1.5 mb-1">
                                     {state.tags.map((tag) => (
                                         <button
@@ -1203,12 +1268,16 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                     onChange={(e) => updateField("tagInput", e.target.value)}
                                     onKeyDown={handleTagKeyDown}
                                     className={inputCls(false)}
-                                    placeholder="Add tag… (press Enter)"
+                                    placeholder={tClient(
+                                        "projects.form.fields.tags.placeholder",
+                                    )}
                                     disabled={!hasAuth || loadingProject || submitting}
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm mb-1">Tech stack</label>
+                                <label className="block text-sm mb-1">
+                                    {tClient("projects.form.fields.tech.label")}
+                                </label>
                                 <div className="flex flex-wrap gap-1.5 mb-1">
                                     {state.techStack.map((t) => (
                                         <button
@@ -1228,7 +1297,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                     onChange={(e) => updateField("techInput", e.target.value)}
                                     onKeyDown={handleTechKeyDown}
                                     className={inputCls(false)}
-                                    placeholder="Add tech… (press Enter)"
+                                    placeholder={tClient(
+                                        "projects.form.fields.tech.placeholder",
+                                    )}
                                     disabled={!hasAuth || loadingProject || submitting}
                                 />
                             </div>
@@ -1238,7 +1309,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                     {/* Description */}
                     <div className="card p-5 space-y-3">
                         <div>
-                            <label className="block text-sm mb-1">Long description</label>
+                            <label className="block text-sm mb-1">
+                                {tClient("projects.form.fields.description.label")}
+                            </label>
                             <textarea
                                 value={state.description}
                                 onChange={(e) => updateField("description", e.target.value)}
@@ -1246,13 +1319,15 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                     inputCls(!!errors.description) +
                                     " min-h-[160px] resize-y font-mono text-xs"
                                 }
-                                placeholder="Tell the story, main features, why this matters. Markdown supported (headings, lists, **bold**, `code`)."
+                                placeholder={tClient(
+                                    "projects.form.fields.description.placeholder",
+                                )}
                                 disabled={!hasAuth || loadingProject || submitting}
                             />
                         </div>
                         <div className="mt-3 rounded-md bg-black/40 ring-1 ring-white/10 px-3 py-2">
                             <div className="text-[11px] uppercase tracking-widest text-white/40 mb-1">
-                                Preview
+                                {tClient("projects.form.markdown.previewLabel")}
                             </div>
                             <MarkdownPreview markdown={state.description} />
                         </div>
@@ -1262,14 +1337,15 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                     <div className="card p-5 space-y-4">
                         <div className="flex items-center justify-between gap-2">
                             <div>
-                                <h2 className="text-sm font-semibold">Images</h2>
+                                <h2 className="text-sm font-semibold">
+                                    {tClient("projects.form.photos.title")}
+                                </h2>
                                 <p className="text-xs text-white/60">
-                                    Add a cover image and gallery shots. These will be reused on the
-                                    project page.
+                                    {tClient("projects.form.photos.helper")}
                                 </p>
                             </div>
                             <label className="inline-flex items-center px-3 py-1.5 rounded-md bg-white/5 hover:bg-white/10 text-xs ring-1 ring-white/10 cursor-pointer">
-                                <span>Upload</span>
+                                <span>{tClient("projects.form.photos.upload")}</span>
                                 <input
                                     type="file"
                                     accept="image/*"
@@ -1290,7 +1366,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                             {existingPhotos.length > 0 && (
                                 <div>
                                     <div className="text-xs uppercase tracking-widest text-white/60 mb-2">
-                                        Existing
+                                        {tClient(
+                                            "projects.form.photos.existingSection",
+                                        )}
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         {existingPhotos.map((url, i) => {
@@ -1309,7 +1387,12 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                                     <img
                                                         src={url}
-                                                        alt={`Project image ${i + 1}`}
+                                                        alt={tClient(
+                                                            "projects.form.photos.existingAlt",
+                                                        ).replace(
+                                                            "{index}",
+                                                            String(i + 1),
+                                                        )}
                                                         className="w-full h-24 object-cover"
                                                     />
                                                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex flex-col items-stretch justify-between p-1 text-[10px]">
@@ -1321,8 +1404,12 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                             className="rounded bg-black/70 px-1 py-0.5 border border-white/30"
                                                         >
                                                             {isHeader
-                                                                ? "Cover image"
-                                                                : "Set as cover"}
+                                                                ? tClient(
+                                                                    "projects.form.photos.headerLabel",
+                                                                )
+                                                                : tClient(
+                                                                    "projects.form.photos.setHeader",
+                                                                )}
                                                         </button>
                                                         <button
                                                             type="button"
@@ -1331,7 +1418,12 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                             }
                                                             className="rounded bg-black/70 px-1 py-0.5 border border-red-400/70 text-red-200"
                                                         >
-                                                            Remove
+                                                            {tClient(
+                                                                "projects.form.photos.removeExisting",
+                                                            ).replace(
+                                                                "{index}",
+                                                                String(i + 1),
+                                                            )}
                                                         </button>
                                                     </div>
                                                 </div>
@@ -1345,7 +1437,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                             {photos.length > 0 && (
                                 <div>
                                     <div className="text-xs uppercase tracking-widest text-white/60 mb-2">
-                                        New uploads (not saved yet)
+                                        {tClient(
+                                            "projects.form.photos.newSection",
+                                        )}
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         {photos.map((file, i) => {
@@ -1377,8 +1471,12 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                             className="rounded bg-black/70 px-1 py-0.5 border border-white/30"
                                                         >
                                                             {isHeader
-                                                                ? "Cover image"
-                                                                : "Set as cover"}
+                                                                ? tClient(
+                                                                    "projects.form.photos.headerLabel",
+                                                                )
+                                                                : tClient(
+                                                                    "projects.form.photos.setHeader",
+                                                                )}
                                                         </button>
                                                         <button
                                                             type="button"
@@ -1387,7 +1485,12 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                             }
                                                             className="rounded bg-black/70 px-1 py-0.5 border border-red-400/70 text-red-200"
                                                         >
-                                                            Remove
+                                                            {tClient(
+                                                                "projects.form.photos.removeNew",
+                                                            ).replace(
+                                                                "{name}",
+                                                                file.name,
+                                                            )}
                                                         </button>
                                                     </div>
                                                 </div>
@@ -1400,8 +1503,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
 
                         {existingPhotos.length === 0 && photos.length === 0 && (
                             <p className="text-xs text-white/50">
-                                No images yet. A simple screenshot of the UI, a logo, or a
-                                diagram works well.
+                                {tClient("projects.form.photos.empty")}
                             </p>
                         )}
                     </div>
@@ -1413,16 +1515,19 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                     <div className="card p-5 space-y-3">
                         <div className="flex items-center justify-between gap-2">
                             <div>
-                                <h2 className="text-sm font-semibold">Team & roles</h2>
+                                <h2 className="text-sm font-semibold">
+                                    {tClient("projects.form.team.title")}
+                                </h2>
                                 <p className="text-xs text-white/60">
-                                    Add members who worked on this project and define their roles.
-                                    You can also type an email and press Enter to add an invite.
+                                    {tClient("projects.form.team.helper")}
                                 </p>
                             </div>
                         </div>
 
                         <div>
-                            <label className="block text-xs mb-1">Search members / invite</label>
+                            <label className="block text-xs mb-1">
+                                {tClient("projects.form.team.searchLabel")}
+                            </label>
                             <input
                                 type="text"
                                 value={memberQ}
@@ -1431,13 +1536,17 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                     handleMemberSearchKeyDown(e, memberSuggestions)
                                 }
                                 className={searchInputCls()}
-                                placeholder="Search by name or slug… or type an email and press Enter to invite"
+                                placeholder={tClient(
+                                    "projects.form.team.searchPlaceholder",
+                                )}
                                 disabled={
                                     membersLoading || !hasAuth || loadingProject || submitting
                                 }
                             />
                             {membersError && (
-                                <p className="mt-1 text-xs text-red-300">{membersError}</p>
+                                <p className="mt-1 text-xs text-red-300">
+                                    {membersError}
+                                </p>
                             )}
                             {memberSuggestions.length > 0 && memberQ.trim() && (
                                 <div className="mt-1 rounded-md bg-black/80 border border-white/15 max-h-52 overflow-y-auto text-sm">
@@ -1475,7 +1584,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                         <div className="mt-2 space-y-2">
                             {team.length === 0 ? (
                                 <p className="text-xs text-white/60">
-                                    No team members yet. Start typing a name above to add one.
+                                    {tClient("projects.form.team.noMembers")}
                                 </p>
                             ) : (
                                 <ul className="space-y-2">
@@ -1504,7 +1613,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                                 </div>
                                                                 {isCreatorFlag && (
                                                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/50">
-                                                                        Creator
+                                                                        {tClient(
+                                                                            "projects.form.team.creatorBadge",
+                                                                        )}
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -1514,7 +1625,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                         </div>
                                                         {isCreatorFlag ? (
                                                             <span className="text-[11px] text-white/40">
-                                                                Cannot remove
+                                                                {tClient(
+                                                                    "projects.form.team.cannotRemove",
+                                                                )}
                                                             </span>
                                                         ) : (
                                                             <button
@@ -1524,7 +1637,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                                     removeTeamMember(t.member.id)
                                                                 }
                                                             >
-                                                                Remove
+                                                                {tClient(
+                                                                    "projects.form.team.removeMember",
+                                                                )}
                                                             </button>
                                                         )}
                                                     </div>
@@ -1539,7 +1654,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                                 )
                                                             }
                                                             className={inputCls(false)}
-                                                            placeholder="Role (e.g. Creator, Backend, Design…)"
+                                                            placeholder={tClient(
+                                                                "projects.form.team.rolePlaceholder",
+                                                            )}
                                                             disabled={
                                                                 !hasAuth ||
                                                                 loadingProject ||
@@ -1558,7 +1675,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                         {invites.length > 0 && (
                             <div className="mt-3">
                                 <div className="text-xs uppercase tracking-widest text-white/60 mb-1">
-                                    Invites to send
+                                    {tClient(
+                                        "projects.form.team.invites.sectionTitle",
+                                    )}
                                 </div>
                                 <div className="flex flex-wrap gap-1.5">
                                     {invites.map((inv, idx) => (
@@ -1570,13 +1689,17 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                 {inv.value}
                                             </span>
                                             <span className="text-white/50">
-                                                invite
+                                                {tClient(
+                                                    "projects.form.team.invites.badge",
+                                                )}
                                             </span>
                                             <button
                                                 type="button"
                                                 onClick={() => removeInvite(idx)}
                                                 className="text-white/60 hover:text-red-300"
-                                                aria-label={`Remove invite ${inv.value}`}
+                                                aria-label={tClient(
+                                                    "projects.form.team.invites.removeAria",
+                                                ).replace("{value}", inv.value)}
                                             >
                                                 ✕
                                             </button>
@@ -1591,10 +1714,11 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                     <div className="card p-5 space-y-3">
                         <div className="flex items-center justify-between gap-2">
                             <div>
-                                <h2 className="text-sm font-semibold">Related events</h2>
+                                <h2 className="text-sm font-semibold">
+                                    {tClient("projects.form.events.title")}
+                                </h2>
                                 <p className="text-xs text-white/60">
-                                    Link hackathons, demos, or meetups where this project was
-                                    presented.
+                                    {tClient("projects.form.events.helper")}
                                 </p>
                             </div>
                         </div>
@@ -1604,11 +1728,15 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                             value={eventQ}
                             onChange={(e) => setEventQ(e.target.value)}
                             className={searchInputCls()}
-                            placeholder="Search events by name…"
+                            placeholder={tClient(
+                                "projects.form.events.searchPlaceholder",
+                            )}
                             disabled={eventsLoading || !hasAuth || loadingProject || submitting}
                         />
                         {eventsError && (
-                            <p className="mt-1 text-xs text-red-300">{eventsError}</p>
+                            <p className="mt-1 text-xs text-red-300">
+                                {eventsError}
+                            </p>
                         )}
 
                         {eventSuggestions.length > 0 && eventQ.trim() && (
@@ -1636,7 +1764,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                         <div className="mt-2 space-y-1">
                             {selectedEvents.length === 0 ? (
                                 <p className="text-xs text-white/60">
-                                    No events linked yet.
+                                    {tClient("projects.form.events.noneLinked")}
                                 </p>
                             ) : (
                                 selectedEvents.map((ev) => (
@@ -1657,7 +1785,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                             onClick={() => toggleEventSlug(ev.slug)}
                                             className="text-[11px] text-white/60 hover:text-red-300"
                                         >
-                                            Remove
+                                            {tClient("projects.form.events.remove")}
                                         </button>
                                     </div>
                                 ))
@@ -1670,11 +1798,10 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                         <div className="flex items-center justify-between gap-2">
                             <div>
                                 <h2 className="text-sm font-semibold">
-                                    Related blog posts
+                                    {tClient("projects.form.blogs.title")}
                                 </h2>
                                 <p className="text-xs text-white/60">
-                                    Connect write-ups, retrospective posts, or launch
-                                    announcements.
+                                    {tClient("projects.form.blogs.helper")}
                                 </p>
                             </div>
                         </div>
@@ -1684,11 +1811,15 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                             value={blogQ}
                             onChange={(e) => setBlogQ(e.target.value)}
                             className={searchInputCls()}
-                            placeholder="Search blog posts by title…"
+                            placeholder={tClient(
+                                "projects.form.blogs.searchPlaceholder",
+                            )}
                             disabled={blogsLoading || !hasAuth || loadingProject || submitting}
                         />
                         {blogsError && (
-                            <p className="mt-1 text-xs text-red-300">{blogsError}</p>
+                            <p className="mt-1 text-xs text-red-300">
+                                {blogsError}
+                            </p>
                         )}
 
                         {blogSuggestions.length > 0 && blogQ.trim() && (
@@ -1718,7 +1849,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                         <div className="mt-2 space-y-1">
                             {selectedBlogs.length === 0 ? (
                                 <p className="text-xs text-white/60">
-                                    No blog posts linked yet.
+                                    {tClient("projects.form.blogs.noneLinked")}
                                 </p>
                             ) : (
                                 selectedBlogs.map((b) => (
@@ -1736,7 +1867,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                             onClick={() => toggleBlogSlug(b.slug)}
                                             className="text-[11px] text-white/60 hover:text-red-300"
                                         >
-                                            Remove
+                                            {tClient("projects.form.blogs.remove")}
                                         </button>
                                     </div>
                                 ))
@@ -1746,32 +1877,38 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
 
                     {/* Links + actions */}
                     <div className="card p-5 space-y-3">
-                        <h2 className="text-sm font-semibold">Links & actions</h2>
+                        <h2 className="text-sm font-semibold">
+                            {tClient("projects.form.links.title")}
+                        </h2>
 
                         <div className="space-y-2">
                             <div>
                                 <label className="block text-sm mb-1">
-                                    Live demo URL
+                                    {tClient("projects.form.links.demo.label")}
                                 </label>
                                 <input
                                     type="url"
                                     value={state.demoUrl}
                                     onChange={(e) => updateField("demoUrl", e.target.value)}
                                     className={inputCls(!!errors.demoUrl)}
-                                    placeholder="https://…"
+                                    placeholder={tClient(
+                                        "projects.form.links.demo.placeholder",
+                                    )}
                                     disabled={!hasAuth || loadingProject || submitting}
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm mb-1">
-                                    Source code URL
+                                    {tClient("projects.form.links.repo.label")}
                                 </label>
                                 <input
                                     type="url"
                                     value={state.repoUrl}
                                     onChange={(e) => updateField("repoUrl", e.target.value)}
                                     className={inputCls(!!errors.repoUrl)}
-                                    placeholder="https://github.com/…"
+                                    placeholder={tClient(
+                                        "projects.form.links.repo.placeholder",
+                                    )}
                                     disabled={!hasAuth || loadingProject || submitting}
                                 />
                             </div>
@@ -1780,14 +1917,18 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                         <div className="mt-4 space-y-2">
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-xs uppercase tracking-widest text-white/60">
-                                    Additional links
+                                    {tClient(
+                                        "projects.form.links.additional.title",
+                                    )}
                                 </span>
                                 <button
                                     type="button"
                                     onClick={addLinkRow}
                                     className="text-[11px] text-white/70 hover:text-white underline underline-offset-4"
                                 >
-                                    Add link
+                                    {tClient(
+                                        "projects.form.links.additional.add",
+                                    )}
                                 </button>
                             </div>
                             <div className="space-y-2">
@@ -1803,7 +1944,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                 updateLink(idx, "label", e.target.value)
                                             }
                                             className={inputCls(false)}
-                                            placeholder="Label (e.g. Figma, Pitch deck)"
+                                            placeholder={tClient(
+                                                "projects.form.links.additional.labelPlaceholder",
+                                            )}
                                             disabled={
                                                 !hasAuth ||
                                                 loadingProject ||
@@ -1817,7 +1960,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                                 updateLink(idx, "url", e.target.value)
                                             }
                                             className={inputCls(false)}
-                                            placeholder="https://…"
+                                            placeholder={tClient(
+                                                "projects.form.links.additional.urlPlaceholder",
+                                            )}
                                             disabled={
                                                 !hasAuth ||
                                                 loadingProject ||
@@ -1846,21 +1991,19 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                             <div className="mt-5 border-t border-red-500/40 pt-3 space-y-2">
                                 <div className="flex items-center justify-between">
                                     <span className="text-xs uppercase tracking-widest text-red-300">
-                                        Danger zone
+                                        {tClient("projects.form.delete.title")}
                                     </span>
                                     <span className="text-[11px] text-red-200/80">
-                                        This cannot be undone.
+                                        {tClient("projects.form.delete.subtitle")}
                                     </span>
                                 </div>
                                 <p className="text-[11px] text-red-100/80">
-                                    Deleting this project will permanently remove its data,
-                                    connections, and references. You&apos;ll still be able to
-                                    create a new project with the same name later, but the old data
-                                    will not come back.
+                                    {tClient("projects.form.delete.body")}
                                 </p>
                                 <label className="block text-[11px] text-red-100 mb-1">
-                                    Type <code className="font-mono">{slug}</code> to confirm
-                                    deletion:
+                                    {tClient(
+                                        "projects.form.delete.confirmLabel",
+                                    ).replace("{slug}", slug)}
                                 </label>
                                 <div className="flex gap-2">
                                     <input
@@ -1870,7 +2013,10 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                         className="flex-1 rounded-md bg-red-900/40 ring-1 ring-red-500/60 px-3 py-1.5 text-xs text-red-50 placeholder:text-red-200/60 outline-none focus:ring-red-300"
                                         placeholder={slug}
                                         disabled={
-                                            !hasAuth || loadingProject || submitting || deleting
+                                            !hasAuth ||
+                                            loadingProject ||
+                                            submitting ||
+                                            deleting
                                         }
                                     />
                                     <button
@@ -1885,7 +2031,9 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                         }
                                         className="px-3 py-1.5 rounded-md bg-red-600 text-xs font-semibold text-white disabled:opacity-60"
                                     >
-                                        {deleting ? "Deleting…" : "Delete project"}
+                                        {deleting
+                                            ? tClient("projects.form.delete.deleting")
+                                            : tClient("projects.form.delete.button")}
                                     </button>
                                 </div>
                             </div>
@@ -1896,7 +2044,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                                 href={slug ? `/projects/${slug}` : "/projects"}
                                 className="text-xs text-white/60 underline underline-offset-4"
                             >
-                                Cancel
+                                {tClient("common.cancel")}
                             </Link>
                             <button
                                 type="submit"
@@ -1905,11 +2053,11 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                             >
                                 {submitting
                                     ? isEdit
-                                        ? "Saving…"
-                                        : "Creating…"
+                                        ? tClient("common.saving")
+                                        : tClient("projects.form.submit.creating")
                                     : isEdit
-                                        ? "Save changes"
-                                        : "Create project"}
+                                        ? tClient("common.saveChanges")
+                                        : tClient("projects.form.submit.create")}
                             </button>
                         </div>
                     </div>

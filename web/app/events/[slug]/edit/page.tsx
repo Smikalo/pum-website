@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthProvider";
 import * as api from "@/lib/api";
 import EventsMap from "@/components/EventsMap";
 import { API_BASE } from "@/lib/config";
+import { tClient } from "@/lib/i18n-client";
 
 /* ----------------------- Tiny Markdown renderer ----------------------- */
 
@@ -262,27 +263,34 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
     if (!src.trim()) {
         return (
             <p className="text-white/50 text-sm">
-                Nothing to preview yet.
+                {tClient("events.edit.markdown.empty")}
             </p>
         );
     }
     return (
         <div className="space-y-3 leading-relaxed text-white/90">
             {segments.map((seg, i) =>
-                seg.type === "code" ? (
-                    <pre
-                        key={`code-${i}`}
-                        className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
-                        aria-label={seg.lang ? `Code block (${seg.lang})` : "Code block"}
-                    >
-                        <code>{seg.content}</code>
-                    </pre>
-                ) : (
-                    <BlockText
-                        key={`txt-${i}`}
-                        text={seg.content}
-                    />
-                ),
+                    seg.type === "code" ? (
+                        <pre
+                            key={`code-${i}`}
+                            className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
+                            aria-label={
+                                seg.lang
+                                    ? tClient("events.edit.markdown.codeBlockWithLang").replace(
+                                        "{lang}",
+                                        seg.lang,
+                                    )
+                                    : tClient("events.edit.markdown.codeBlock")
+                            }
+                        >
+            <code>{seg.content}</code>
+          </pre>
+                    ) : (
+                        <BlockText
+                            key={`txt-${i}`}
+                            text={seg.content}
+                        />
+                    ),
             )}
         </div>
     );
@@ -380,7 +388,7 @@ function MapPreview({
     if (!hasCoords) {
         return (
             <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-xs text-white/60">
-                Set latitude and longitude to preview the location.
+                {tClient("events.edit.map.noCoords")}
             </div>
         );
     }
@@ -391,7 +399,7 @@ function MapPreview({
     const previewEvent = {
         id: "event-preview",
         slug: "event-preview",
-        name: name || "Event",
+        name: name || tClient("events.edit.map.previewFallbackName"),
         locationName: locationName || undefined,
         dateStart: dateStart || undefined,
         lat: latNum,
@@ -533,7 +541,7 @@ export default function EditEventPage({ params }: Props) {
                 if (!cancelled) {
                     // eslint-disable-next-line no-console
                     // console.error("[EditEvent] members load error", err);
-                    setMembersError("Could not load members.");
+                    setMembersError(tClient("events.edit.members.error"));
                 }
             } finally {
                 if (!cancelled) setMembersLoading(false);
@@ -573,7 +581,7 @@ export default function EditEventPage({ params }: Props) {
                 if (!cancelled) {
                     // eslint-disable-next-line no-console
                     // console.error("[EditEvent] projects load error", err);
-                    setProjectsError("Could not load projects.");
+                    setProjectsError(tClient("events.edit.projects.error"));
                 }
             } finally {
                 if (!cancelled) setProjectsLoading(false);
@@ -654,7 +662,7 @@ export default function EditEventPage({ params }: Props) {
                 if (!res.ok) {
                     if (!cancelled) {
                         if (res.status === 404) setLoadError("not-found");
-                        else setLoadError("Failed to load event.");
+                        else setLoadError(tClient("events.edit.load.error.generic"));
                     }
                     return;
                 }
@@ -769,7 +777,7 @@ export default function EditEventPage({ params }: Props) {
                 // eslint-disable-next-line no-console
                 // console.error("[EditEvent] loadEvent error", err);
                 if (!cancelled)
-                    setLoadError("Failed to load event.");
+                    setLoadError(tClient("events.edit.load.error.generic"));
             } finally {
                 if (!cancelled) setLoadingEvent(false);
             }
@@ -876,16 +884,16 @@ export default function EditEventPage({ params }: Props) {
     if (loadingEvent) {
         return (
             <section className="section">
-                <h1 className="display">Edit event</h1>
+                <h1 className="display">{tClient("events.edit.title")}</h1>
                 <p className="mt-3 text-white/70">
-                    Loading event details…
+                    {tClient("events.edit.loading")}
                 </p>
                 <p className="mt-4">
                     <Link
                         href="/events"
                         className="underline underline-offset-4"
                     >
-                        ← Back to events
+                        {tClient("events.edit.backToEvents")}
                     </Link>
                 </p>
             </section>
@@ -895,17 +903,16 @@ export default function EditEventPage({ params }: Props) {
     if (loadError === "not-found") {
         return (
             <section className="section">
-                <h1 className="display">Event not found</h1>
+                <h1 className="display">{tClient("events.edit.notFound.title")}</h1>
                 <p className="mt-3 text-white/70">
-                    We couldn&apos;t find this event. It may have been
-                    removed or the link is incorrect.
+                    {tClient("events.edit.notFound.body")}
                 </p>
                 <p className="mt-4">
                     <Link
                         href="/events"
                         className="underline underline-offset-4"
                     >
-                        ← Back to events
+                        {tClient("events.edit.backToEvents")}
                     </Link>
                 </p>
             </section>
@@ -915,14 +922,14 @@ export default function EditEventPage({ params }: Props) {
     if (loadError && loadError !== "not-found") {
         return (
             <section className="section">
-                <h1 className="display">Edit event</h1>
+                <h1 className="display">{tClient("events.edit.title")}</h1>
                 <p className="mt-3 text-white/70">{loadError}</p>
                 <p className="mt-4">
                     <Link
                         href="/events"
                         className="underline underline-offset-4"
                     >
-                        ← Back to events
+                        {tClient("events.edit.backToEvents")}
                     </Link>
                 </p>
             </section>
@@ -933,22 +940,22 @@ export default function EditEventPage({ params }: Props) {
     if (!user) {
         return (
             <section className="section">
-                <h1 className="display">Edit event</h1>
+                <h1 className="display">{tClient("events.edit.title")}</h1>
                 <p className="mt-3 text-white/70 max-w-2xl">
-                    You need to be logged in to edit events.
+                    {tClient("events.edit.gate.loginRequired")}
                 </p>
                 <div className="mt-5 flex gap-3">
                     <Link
                         href={`/events/${params.slug}`}
                         className="btn-secondary"
                     >
-                        ← Back to event
+                        {tClient("events.edit.backToEvent")}
                     </Link>
                     <Link
                         href="/"
                         className="btn-primary"
                     >
-                        Log in
+                        {tClient("events.edit.loginButton")}
                     </Link>
                 </div>
             </section>
@@ -967,23 +974,22 @@ export default function EditEventPage({ params }: Props) {
     if (!canEditEvent) {
         return (
             <section className="section">
-                <h1 className="display">Edit event</h1>
+                <h1 className="display">{tClient("events.edit.title")}</h1>
                 <p className="mt-3 text-white/70 max-w-2xl">
-                    You don&apos;t have permission to edit this
-                    event.
+                    {tClient("events.edit.gate.noPermission")}
                 </p>
                 <div className="mt-5 flex gap-3">
                     <Link
                         href={`/events/${params.slug}`}
                         className="btn-secondary"
                     >
-                        ← Back to event
+                        {tClient("events.edit.backToEvent")}
                     </Link>
                     <Link
                         href="/events"
                         className="btn-primary"
                     >
-                        Browse all events
+                        {tClient("events.edit.browseEvents")}
                     </Link>
                 </div>
             </section>
@@ -1000,27 +1006,27 @@ export default function EditEventPage({ params }: Props) {
     function validate(): Errors {
         const e: Errors = {};
         if (!state.name.trim())
-            e.name = "Event name is required.";
+            e.name = tClient("events.edit.validation.nameRequired");
         if (
             state.dateStart &&
             Number.isNaN(new Date(state.dateStart).getTime())
         )
-            e.dateStart = "Invalid start date.";
+            e.dateStart = tClient("events.edit.validation.dateStartInvalid");
         if (
             state.dateEnd &&
             Number.isNaN(new Date(state.dateEnd).getTime())
         )
-            e.dateEnd = "Invalid end date.";
+            e.dateEnd = tClient("events.edit.validation.dateEndInvalid");
         if (state.dateStart && state.dateEnd) {
             const a = new Date(state.dateStart).getTime();
             const b = new Date(state.dateEnd).getTime();
-            if (a > b) e.dateEnd = "End must be after start.";
+            if (a > b) e.dateEnd = tClient("events.edit.validation.dateOrder");
         }
 
         const totalPhotos =
             existingPhotos.length + photos.length;
         if (totalPhotos > 12) {
-            e.photos = "Please upload at most 12 photos in total.";
+            e.photos = tClient("events.edit.validation.photosTooMany");
         }
 
         for (const f of photos) {
@@ -1028,11 +1034,11 @@ export default function EditEventPage({ params }: Props) {
                 /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
             if (!okType) {
                 e.photos =
-                    "Only PNG, JPG/JPEG, WEBP, or GIF are allowed.";
+                    tClient("events.edit.validation.photosType");
                 break;
             }
             if (f.size > 8 * 1024 * 1024) {
-                e.photos = "Each photo must be ≤ 8 MB.";
+                e.photos = tClient("events.edit.validation.photosSize");
                 break;
             }
         }
@@ -1203,7 +1209,7 @@ export default function EditEventPage({ params }: Props) {
         setErrors(ve);
         if (Object.values(ve).some(Boolean)) {
             setSubmitting(false);
-            setError("Please fix the highlighted fields.");
+            setError(tClient("events.edit.validation.fixFields"));
             return;
         }
 
@@ -1344,7 +1350,7 @@ export default function EditEventPage({ params }: Props) {
                 params.slug,
                 body,
             );
-            setHint("Event updated ✓ Redirecting…");
+            setHint(tClient("events.edit.submit.success"));
             setTimeout(() => {
                 router.push(`/events/${params.slug}`);
             }, 600);
@@ -1353,7 +1359,7 @@ export default function EditEventPage({ params }: Props) {
             // console.error("[EditEvent] onSubmit error", err);
             const msg =
                 err?.message ||
-                "Failed to update event";
+                tClient("events.edit.submit.error");
             setError(msg);
         } finally {
             setSubmitting(false);
@@ -1373,19 +1379,19 @@ export default function EditEventPage({ params }: Props) {
 
         if (!trimmed) {
             setError(
-                "Please type the event slug to confirm deletion.",
+                tClient("events.edit.delete.error.emptyConfirm"),
             );
             return;
         }
         if (trimmed !== params.slug) {
             setError(
-                "Slug does not match. Type the exact event slug to confirm deletion.",
+                tClient("events.edit.delete.error.mismatch"),
             );
             return;
         }
 
         const confirmed = window.confirm(
-            "This will permanently delete this event and all directly related data. This cannot be undone. Continue?",
+            tClient("events.edit.delete.confirmDialog"),
         );
         if (!confirmed) return;
 
@@ -1397,7 +1403,7 @@ export default function EditEventPage({ params }: Props) {
                 trimmed,
             );
             setHint(
-                "Event deleted ✓ Redirecting to events…",
+                tClient("events.edit.delete.success"),
             );
             router.push("/events");
         } catch (err: any) {
@@ -1408,7 +1414,7 @@ export default function EditEventPage({ params }: Props) {
             // );
             const msg =
                 err?.message ||
-                "Failed to delete event.";
+                tClient("events.edit.delete.error.generic");
             setError(msg);
         } finally {
             setDeleting(false);
@@ -1432,14 +1438,10 @@ export default function EditEventPage({ params }: Props) {
     return (
         <section className="section">
             <header className="mb-6">
-                <p className="kicker">EVENTS</p>
-                <h1 className="display">Edit event</h1>
+                <p className="kicker">{tClient("events.edit.kicker")}</p>
+                <h1 className="display">{tClient("events.edit.title")}</h1>
                 <p className="mt-2 text-white/70 max-w-2xl">
-                    Update dates, location, details,
-                    attendees, photos, related
-                    projects, and related blog posts.
-                    Existing invites won&apos;t be
-                    resent when you save changes.
+                    {tClient("events.edit.subtitle")}
                 </p>
             </header>
 
@@ -1470,7 +1472,7 @@ export default function EditEventPage({ params }: Props) {
                     <div className="card p-5 space-y-3">
                         <div>
                             <label className="block text-sm text-white/70 mb-1">
-                                Event name *
+                                {tClient("events.edit.form.name.label")} *
                             </label>
                             <input
                                 required
@@ -1482,7 +1484,7 @@ export default function EditEventPage({ params }: Props) {
                                     )
                                 }
                                 className={inputCls("name")}
-                                placeholder="HackNight @ PUM"
+                                placeholder={tClient("events.edit.form.name.placeholder")}
                                 aria-invalid={!!errors.name}
                             />
                             {errors.name && (
@@ -1496,7 +1498,7 @@ export default function EditEventPage({ params }: Props) {
                         <div className="grid md:grid-cols-2 gap-3">
                             <div className="space-y-1">
                                 <label className="block text-sm text-white/70">
-                                    Long description
+                                    {tClient("events.edit.form.description.label")}
                                 </label>
                                 <textarea
                                     value={
@@ -1509,16 +1511,17 @@ export default function EditEventPage({ params }: Props) {
                                         )
                                     }
                                     className={`${inputCls()} min-h-[160px] resize-vertical`}
-                                    placeholder="What is this event about? Who is it for? Agenda, expectations…"
+                                    placeholder={tClient(
+                                        "events.edit.form.description.placeholder",
+                                    )}
                                 />
                             </div>
                             <div className="space-y-1">
                                 <div className="flex items-center justify-between text-xs text-white/60">
-                                    <span>Preview</span>
+                                    <span>{tClient("events.edit.markdown.previewLabel")}</span>
                                     <span>
-                                        Supports basic
-                                        markdown
-                                    </span>
+                    {tClient("events.edit.markdown.supports")}
+                  </span>
                                 </div>
                                 <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 min-h-[160px] text-sm">
                                     <MarkdownPreview
@@ -1534,7 +1537,7 @@ export default function EditEventPage({ params }: Props) {
                         <div className="grid md:grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-sm text-white/70 mb-1">
-                                    Start (local)
+                                    {tClient("events.edit.form.dateStart.label")}
                                 </label>
                                 <input
                                     type="datetime-local"
@@ -1560,7 +1563,7 @@ export default function EditEventPage({ params }: Props) {
                             </div>
                             <div>
                                 <label className="block text-sm text-white/70 mb-1">
-                                    End (local)
+                                    {tClient("events.edit.form.dateEnd.label")}
                                 </label>
                                 <input
                                     type="datetime-local"
@@ -1591,7 +1594,7 @@ export default function EditEventPage({ params }: Props) {
                         {/* Photos (existing + new) */}
                         <div>
                             <label className="block text-sm text-white/70 mb-1">
-                                Photos
+                                {tClient("events.edit.form.photos.label")}
                             </label>
                             <input
                                 type="file"
@@ -1610,11 +1613,7 @@ export default function EditEventPage({ params }: Props) {
                                 }
                             />
                             <p className="text-xs text-white/50 mt-1">
-                                Up to 12 images total;
-                                PNG/JPG/WEBP/GIF; max 8 MB
-                                each. Choose one as the
-                                header; others will appear
-                                in the gallery.
+                                {tClient("events.edit.form.photos.helper")}
                             </p>
                             {errors.photos && (
                                 <p className="mt-1 text-xs text-red-300">
@@ -1629,8 +1628,7 @@ export default function EditEventPage({ params }: Props) {
                                         0 && (
                                             <div>
                                                 <p className="text-[11px] text-white/50 mb-1">
-                                                    Existing
-                                                    photos
+                                                    {tClient("events.edit.form.photos.existing")}
                                                 </p>
                                                 <div className="grid grid-cols-3 gap-2">
                                                     {existingPhotos.map(
@@ -1655,10 +1653,9 @@ export default function EditEventPage({ params }: Props) {
                                                                         )
                                                                     }
                                                                     className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                    aria-label={`Remove photo ${
-                                                                        i +
-                                                                        1
-                                                                    }`}
+                                                                    aria-label={tClient(
+                                                                        "events.edit.form.photos.removeExisting",
+                                                                    ).replace("{index}", String(i + 1))}
                                                                 >
                                                                     ✕
                                                                 </button>
@@ -1666,18 +1663,16 @@ export default function EditEventPage({ params }: Props) {
                                                                     src={
                                                                         url
                                                                     }
-                                                                    alt={`Event photo ${
-                                                                        i +
-                                                                        1
-                                                                    }`}
+                                                                    alt={tClient(
+                                                                        "events.edit.form.photos.existingAlt",
+                                                                    ).replace("{index}", String(i + 1))}
                                                                     className="w-full h-24 object-cover rounded"
                                                                 />
                                                                 <div className="mt-1 flex items-center justify-between gap-1">
-                                                                    <span className="text-[11px] text-white/70 truncate">
-                                                                        Existing #
-                                                                        {i +
-                                                                            1}
-                                                                    </span>
+                                <span className="text-[11px] text-white/70 truncate">
+                                  {tClient("events.edit.form.photos.existingLabelPrefix")}
+                                    {i + 1}
+                                </span>
                                                                     <button
                                                                         type="button"
                                                                         onClick={() =>
@@ -1698,8 +1693,8 @@ export default function EditEventPage({ params }: Props) {
                                                                         i &&
                                                                         headerNewIndex ==
                                                                         null
-                                                                            ? "Header"
-                                                                            : "Set header"}
+                                                                            ? tClient("events.edit.form.photos.headerLabel")
+                                                                            : tClient("events.edit.form.photos.setHeader")}
                                                                     </button>
                                                                 </div>
                                                             </div>
@@ -1711,9 +1706,7 @@ export default function EditEventPage({ params }: Props) {
                                     {photos.length > 0 && (
                                         <div>
                                             <p className="text-[11px] text-white/50 mb-1">
-                                                New uploads
-                                                (will be
-                                                added on save)
+                                                {tClient("events.edit.form.photos.newUploads")}
                                             </p>
                                             <div className="grid grid-cols-3 gap-2">
                                                 {photos.map(
@@ -1740,7 +1733,9 @@ export default function EditEventPage({ params }: Props) {
                                                                     )
                                                                 }
                                                                 className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                aria-label={`Remove ${f.name}`}
+                                                                aria-label={tClient(
+                                                                    "events.edit.form.photos.removeNew",
+                                                                ).replace("{name}", f.name)}
                                                             >
                                                                 ✕
                                                             </button>
@@ -1779,8 +1774,8 @@ export default function EditEventPage({ params }: Props) {
                                                                     i &&
                                                                     headerExistingIndex ==
                                                                     null
-                                                                        ? "Header"
-                                                                        : "Set header"}
+                                                                        ? tClient("events.edit.form.photos.headerLabel")
+                                                                        : tClient("events.edit.form.photos.setHeader")}
                                                                 </button>
                                                             </div>
                                                         </div>
@@ -1801,7 +1796,7 @@ export default function EditEventPage({ params }: Props) {
                     <div className="card p-5 space-y-3">
                         <div>
                             <label className="block text-sm text-white/70 mb-1">
-                                Location name
+                                {tClient("events.edit.form.locationName.label")}
                             </label>
                             <input
                                 value={state.locationName}
@@ -1814,7 +1809,9 @@ export default function EditEventPage({ params }: Props) {
                                 className={inputCls(
                                     "locationName",
                                 )}
-                                placeholder="Betahaus Berlin, Hall A"
+                                placeholder={tClient(
+                                    "events.edit.form.locationName.placeholder",
+                                )}
                             />
                         </div>
 
@@ -1828,12 +1825,14 @@ export default function EditEventPage({ params }: Props) {
                                             e.target.value,
                                         )
                                     }
-                                    placeholder="Search address / place"
+                                    placeholder={tClient(
+                                        "events.edit.map.search.placeholder",
+                                    )}
                                     className={searchInputCls}
                                 />
                                 {searching && (
                                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-white/50">
-                                        Searching…
+                                        {tClient("events.edit.map.search.searching")}
                                     </div>
                                 )}
                             </div>
@@ -1868,7 +1867,8 @@ export default function EditEventPage({ params }: Props) {
                                                 }
                                             </div>
                                             <div className="text-xs text-white/60 mt-0.5">
-                                                lat {h.lat}, lon{" "}
+                                                {tClient("events.edit.map.search.latLabel")} {h.lat},{" "}
+                                                {tClient("events.edit.map.search.lngLabel")}{" "}
                                                 {h.lon}
                                             </div>
                                         </li>
@@ -1881,7 +1881,7 @@ export default function EditEventPage({ params }: Props) {
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-xs text-white/60 mb-1">
-                                    Latitude
+                                    {tClient("events.edit.form.lat.label")}
                                 </label>
                                 <input
                                     value={state.lat}
@@ -1892,12 +1892,12 @@ export default function EditEventPage({ params }: Props) {
                                         )
                                     }
                                     className={inputCls("lat")}
-                                    placeholder="52.5"
+                                    placeholder={tClient("events.edit.form.lat.placeholder")}
                                 />
                             </div>
                             <div>
                                 <label className="block text-xs text-white/60 mb-1">
-                                    Longitude
+                                    {tClient("events.edit.form.lng.label")}
                                 </label>
                                 <input
                                     value={state.lng}
@@ -1908,7 +1908,7 @@ export default function EditEventPage({ params }: Props) {
                                         )
                                     }
                                     className={inputCls("lng")}
-                                    placeholder="13.4"
+                                    placeholder={tClient("events.edit.form.lng.placeholder")}
                                 />
                             </div>
                         </div>
@@ -1926,12 +1926,12 @@ export default function EditEventPage({ params }: Props) {
                     <div className="card p-5 space-y-3">
                         <div className="flex items-center justify-between">
                             <h2 className="text-sm font-semibold text-white">
-                                Attendees &amp; invites
+                                {tClient("events.edit.attendees.title")}
                             </h2>
                             {membersLoading && (
                                 <span className="text-[11px] text-white/50">
-                                    Loading members…
-                                </span>
+                  {tClient("events.edit.attendees.loadingMembers")}
+                </span>
                             )}
                         </div>
                         {membersError && (
@@ -1970,7 +1970,9 @@ export default function EditEventPage({ params }: Props) {
                                             }
                                         }
                                     }}
-                                    placeholder="Search member or type email"
+                                    placeholder={tClient(
+                                        "events.edit.attendees.searchPlaceholder",
+                                    )}
                                     className={searchInputCls}
                                 />
                                 <button
@@ -1983,7 +1985,7 @@ export default function EditEventPage({ params }: Props) {
                                     className="px-3 py-2 rounded-md bg-white text-black text-xs font-medium disabled:opacity-60"
                                     disabled={!attendeeQ.trim()}
                                 >
-                                    Add invite
+                                    {tClient("events.edit.attendees.addInviteButton")}
                                 </button>
                             </div>
 
@@ -2045,77 +2047,81 @@ export default function EditEventPage({ params }: Props) {
                         {attendees.length > 0 && (
                             <div className="mt-3 flex flex-wrap gap-2">
                                 {attendees.map((a, idx) =>
-                                    a.kind === "member" ? (
-                                        <div
-                                            key={`m-${a.member.id}`}
-                                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
-                                        >
-                                            {a.member
-                                                .avatarUrl ? (
-                                                <img
-                                                    src={
-                                                        a
-                                                            .member
-                                                            .avatarUrl
-                                                    }
-                                                    alt={
-                                                        a
-                                                            .member
-                                                            .name
-                                                    }
-                                                    className="w-6 h-6 rounded-full object-cover ring-1 ring-white/20"
-                                                />
-                                            ) : (
-                                                <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
-                                                    {a.member.name
-                                                        .charAt(
-                                                            0,
+                                        a.kind === "member" ? (
+                                            <div
+                                                key={`m-${a.member.id}`}
+                                                className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                            >
+                                                {a.member
+                                                    .avatarUrl ? (
+                                                    <img
+                                                        src={
+                                                            a
+                                                                .member
+                                                                .avatarUrl
+                                                        }
+                                                        alt={
+                                                            a
+                                                                .member
+                                                                .name
+                                                        }
+                                                        className="w-6 h-6 rounded-full object-cover ring-1 ring-white/20"
+                                                    />
+                                                ) : (
+                                                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                        {a.member.name
+                                                            .charAt(
+                                                                0,
+                                                            )
+                                                            .toUpperCase()}
+                                                    </div>
+                                                )}
+                                                <span className="text-xs text-white">
+                        {
+                            a
+                                .member
+                                .name
+                        }
+                      </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        removeAttendee(
+                                                            idx,
                                                         )
-                                                        .toUpperCase()}
-                                                </div>
-                                            )}
-                                            <span className="text-xs text-white">
-                                                {
-                                                    a
-                                                        .member
-                                                        .name
-                                                }
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    removeAttendee(
-                                                        idx,
-                                                    )
-                                                }
-                                                className="text-[11px] text-white/60 hover:text-white"
-                                                aria-label={`Remove ${a.member.name}`}
+                                                    }
+                                                    className="text-[11px] text-white/60 hover:text-white"
+                                                    aria-label={tClient(
+                                                        "events.edit.attendees.removeMember",
+                                                    ).replace("{name}", a.member.name)}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div
+                                                key={`i-${a.value}-${idx}`}
+                                                className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
                                             >
-                                                ✕
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div
-                                            key={`i-${a.value}-${idx}`}
-                                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
-                                        >
-                                            <span className="text-xs text-white/90">
-                                                {a.value}
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    removeAttendee(
-                                                        idx,
-                                                    )
-                                                }
-                                                className="text-[11px] text-white/60 hover:text-white"
-                                                aria-label={`Remove invite ${a.value}`}
-                                            >
-                                                ✕
-                                            </button>
-                                        </div>
-                                    ),
+                      <span className="text-xs text-white/90">
+                        {a.value}
+                      </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        removeAttendee(
+                                                            idx,
+                                                        )
+                                                    }
+                                                    className="text-[11px] text-white/60 hover:text-white"
+                                                    aria-label={tClient(
+                                                        "events.edit.attendees.removeInvite",
+                                                    ).replace("{value}", a.value)}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        ),
                                 )}
                             </div>
                         )}
@@ -2125,12 +2131,12 @@ export default function EditEventPage({ params }: Props) {
                     <div className="card p-5 space-y-3">
                         <div className="flex items-center justify-between">
                             <h2 className="text-sm font-semibold text-white">
-                                Related projects
+                                {tClient("events.edit.projects.title")}
                             </h2>
                             {projectsLoading && (
                                 <span className="text-[11px] text-white/50">
-                                    Loading projects…
-                                </span>
+                  {tClient("events.edit.projects.loading")}
+                </span>
                             )}
                         </div>
                         {projectsError && (
@@ -2147,7 +2153,9 @@ export default function EditEventPage({ params }: Props) {
                                         e.target.value,
                                     )
                                 }
-                                placeholder="Search projects by title, year, or tag"
+                                placeholder={tClient(
+                                    "events.edit.projects.searchPlaceholder",
+                                )}
                                 className={searchInputCls}
                             />
                             {!!projectSuggestions.length && (
@@ -2241,13 +2249,13 @@ export default function EditEventPage({ params }: Props) {
                                                 </div>
                                             )}
                                             <span className="text-xs text-white">
-                                                {
-                                                    p.title
-                                                }
-                                            </span>
+                        {
+                            p.title
+                        }
+                      </span>
                                             <span className="text-[11px] text-white/60 group-hover:text-red-300">
-                                                ✕
-                                            </span>
+                        ✕
+                      </span>
                                         </button>
                                     ),
                                 )}
@@ -2259,18 +2267,16 @@ export default function EditEventPage({ params }: Props) {
                     <div className="card p-5 space-y-3">
                         <div className="flex items-center justify-between">
                             <h2 className="text-sm font-semibold text-white">
-                                Related blog posts
+                                {tClient("events.edit.blogs.title")}
                             </h2>
                             {blogsLoading && (
                                 <span className="text-[11px] text-white/50">
-                                    Loading blog posts…
-                                </span>
+                  {tClient("events.edit.blogs.loading")}
+                </span>
                             )}
                         </div>
                         <p className="text-xs text-white/60">
-                            Link write-ups or recaps that are specifically
-                            about this event. They will show up on the
-                            event page under “Blog posts about this event”.
+                            {tClient("events.edit.blogs.helper")}
                         </p>
 
                         <div className="space-y-2">
@@ -2281,7 +2287,9 @@ export default function EditEventPage({ params }: Props) {
                                         e.target.value,
                                     )
                                 }
-                                placeholder="Search posts by title or summary"
+                                placeholder={tClient(
+                                    "events.edit.blogs.searchPlaceholder",
+                                )}
                                 className={searchInputCls}
                             />
                             {!!blogSuggestions.length && (
@@ -2340,9 +2348,7 @@ export default function EditEventPage({ params }: Props) {
                             {!blogsLoading &&
                                 blogs.length === 0 && (
                                     <p className="text-[11px] text-white/50">
-                                        No blog posts found, or blog API is unavailable.
-                                        You can still update the event and link posts
-                                        later.
+                                        {tClient("events.edit.blogs.noneFound")}
                                     </p>
                                 )}
                         </div>
@@ -2383,13 +2389,13 @@ export default function EditEventPage({ params }: Props) {
                                                 </div>
                                             )}
                                             <span className="text-xs text-white">
-                                                {
-                                                    b.title
-                                                }
-                                            </span>
+                        {
+                            b.title
+                        }
+                      </span>
                                             <span className="text-[11px] text-white/60 group-hover:text-red-300">
-                                                ✕
-                                            </span>
+                        ✕
+                      </span>
                                         </button>
                                     ),
                                 )}
@@ -2405,36 +2411,32 @@ export default function EditEventPage({ params }: Props) {
                             className="w-full px-4 py-2 rounded-md bg-white text-black font-semibold disabled:opacity-60"
                         >
                             {submitting
-                                ? "Saving…"
-                                : "Save changes"}
+                                ? tClient("events.edit.submit.saving")
+                                : tClient("events.edit.submit.save")}
                         </button>
                         <div className="mt-3 text-center">
                             <Link
                                 href={`/events/${params.slug}`}
                                 className="text-sm underline underline-offset-4"
                             >
-                                Cancel
+                                {tClient("events.edit.cancel")}
                             </Link>
                         </div>
 
                         {/* Danger zone: delete event */}
                         <div className="mt-5 border-t border-white/10 pt-4">
                             <h2 className="text-sm font-semibold text-red-300">
-                                Danger zone
+                                {tClient("events.edit.delete.title")}
                             </h2>
                             <p className="mt-1 text-xs text-white/60">
-                                Deleting this event will
-                                permanently remove it and
-                                all data directly related
-                                to it. This cannot be
-                                undone.
+                                {tClient("events.edit.delete.body")}
                             </p>
                             <label className="mt-3 block text-xs text-white/70">
-                                Type{" "}
+                                {tClient("events.edit.delete.confirmLabel.prefix")}{" "}
                                 <code className="rounded bg-white/10 px-1 py-0.5 text-[11px]">
                                     {params.slug}
                                 </code>{" "}
-                                to confirm deletion.
+                                {tClient("events.edit.delete.confirmLabel.suffix")}
                             </label>
                             <input
                                 value={deleteConfirmSlug}
@@ -2458,8 +2460,8 @@ export default function EditEventPage({ params }: Props) {
                                 className="mt-3 w-full px-4 py-2 rounded-md bg-red-600 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
                             >
                                 {deleting
-                                    ? "Deleting…"
-                                    : "Delete event"}
+                                    ? tClient("events.edit.delete.deleting")
+                                    : tClient("events.edit.delete.button")}
                             </button>
                         </div>
                     </div>

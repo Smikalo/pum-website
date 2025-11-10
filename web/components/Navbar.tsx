@@ -1,16 +1,21 @@
-// web/components/Navbar.tsx
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import React from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { toImageSrc } from "@/lib/images";
 import { useI18n } from "@/context/I18nProvider";
 
-type NavKey = "home" | "members" | "projects" | "events" | "blog" | "contact";
+type NavKey =
+    | "home"
+    | "members"
+    | "projects"
+    | "events"
+    | "blog"
+    | "contact";
 
 type NavItem = { href: string; key: NavKey };
 
@@ -25,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function Navbar() {
     const pathname = usePathname();
+    const router = useRouter();
     const { user, logout } = useAuth();
     const { lang, setLang, t } = useI18n();
 
@@ -66,9 +72,24 @@ export default function Navbar() {
     };
 
     const changeLang = (next: "en" | "de") => {
-        if (next !== lang) {
-            setLang(next);
+        if (next === lang) return;
+
+        // Update React context
+        setLang(next);
+
+        // Ensure cookie is updated immediately so server + tServer see it
+        try {
+            const maxAge = 60 * 60 * 24 * 365; // 1 year
+            document.cookie = `lang=${encodeURIComponent(
+                next,
+            )}; path=/; max-age=${maxAge}; samesite=lax`;
+        } catch {
+            // ignore
         }
+
+        // Re-fetch and re-render the current route so server components
+        // and any tServer/tClient content pick up the new language.
+        router.refresh();
     };
 
     return (
@@ -204,7 +225,7 @@ export default function Navbar() {
                                     <DropdownMenu.Item asChild>
                                         <Link
                                             href="/account"
-                                            className="block rounded-md px-3 py-2 hover:bg:white/10"
+                                            className="block rounded-md px-3 py-2 hover:bg-white/10"
                                         >
                                             Profile
                                         </Link>
@@ -224,7 +245,7 @@ export default function Navbar() {
                             <button
                                 type="button"
                                 onClick={() => setMobileOpen(true)}
-                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10 hover:bg:white/10 md:hidden"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10 hover:bg-white/10 md:hidden"
                                 aria-label="Open navigation"
                             >
                                 <MenuIcon />
@@ -285,7 +306,7 @@ export default function Navbar() {
                                         "rounded-md px-2 py-1 text-xs ring-1 ring-white/10",
                                         lang === "de"
                                             ? "bg-white text-black font-semibold"
-                                            : "bg-white/5 text:white/80",
+                                            : "bg-white/5 text-white/80",
                                     ].join(" ")}
                                 >
                                     DE
@@ -315,7 +336,9 @@ export default function Navbar() {
                                                 ? "bg-white text-black font-semibold"
                                                 : "bg-white/5 text-white/80 hover:bg-white/10",
                                         ].join(" ")}
-                                        aria-current={active ? "page" : undefined}
+                                        aria-current={
+                                            active ? "page" : undefined
+                                        }
                                     >
                                         {t(`nav.${item.key}`)}
                                     </Link>
@@ -430,7 +453,7 @@ function LoginForm({ mode, onSuccess }: LoginFormProps) {
             <div className="space-y-1">
                 <label
                     htmlFor={`password-${mode}`}
-                    className="text-sm text:white/80"
+                    className="text-sm text-white/80"
                 >
                     Password
                 </label>
@@ -467,7 +490,7 @@ function Avatar({ label, src }: { label: string; src?: string | null }) {
     }, [label]);
 
     return (
-        <div className="grid h-8 w-8 place-items-center overflow-hidden rounded-full bg:white text-xs font-bold text-black">
+        <div className="grid h-8 w-8 place-items-center overflow-hidden rounded-full bg-white text-xs font-bold text-black">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             {src ? (
                 <img

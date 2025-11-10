@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { tClient } from "@/lib/i18n-client";
 
 type Event = {
     id: string;
@@ -24,12 +25,22 @@ function formatDateRange(a?: string, b?: string) {
     if (!a && b) return new Date(b).toLocaleDateString();
     const da = new Date(a!);
     const db = new Date(b!);
-    const opts: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" };
-    return `${da.toLocaleDateString(undefined, opts)} – ${db.toLocaleDateString(undefined, opts)}`;
+    const opts: Intl.DateTimeFormatOptions = {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+    };
+    return `${da.toLocaleDateString(undefined, opts)} – ${db.toLocaleDateString(
+        undefined,
+        opts,
+    )}`;
 }
 
 // Easter egg target: 48°15'47.2"N 11°39'58.3"E  -> 48.263111, 11.666194
-const SPEZI_TARGET = { lat: 48.26311111111111, lng: 11.666194444444445 };
+const SPEZI_TARGET = {
+    lat: 48.26311111111111,
+    lng: 11.666194444444445,
+};
 const SPEZI_ZOOM = 17.2; // "really close"
 
 // Inject our popup + marker theme once
@@ -95,10 +106,15 @@ export default function EventsMap({ events }: { events: Event[] }) {
     const speziShownRef = useRef<boolean>(false);
     const lockedRef = useRef<{ popup: maplibregl.Popup; el: HTMLElement } | null>(null);
 
+    const ariaLabel = tClient("events.map.ariaLabel");
+
     // Prefer your MapTiler dark style (env), fall back to OpenFreeMap dark (no key).
     const style = useMemo(() => {
         const styleUrl = process.env.NEXT_PUBLIC_MAP_STYLE_URL;
-        if (styleUrl) return styleUrl as unknown as maplibregl.StyleSpecification | string;
+        if (styleUrl)
+            return styleUrl as unknown as
+                | maplibregl.StyleSpecification
+                | string;
         return "https://tiles.openfreemap.org/styles/dark";
     }, []);
 
@@ -116,7 +132,10 @@ export default function EventsMap({ events }: { events: Event[] }) {
             cooperativeGestures: true,
         });
 
-        map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+        map.addControl(
+            new maplibregl.NavigationControl({ visualizePitch: true }),
+            "top-right",
+        );
         mapRef.current = map;
 
         // Clicking on the map background unlocks any locked popup
@@ -124,7 +143,9 @@ export default function EventsMap({ events }: { events: Event[] }) {
             const target = e.originalEvent.target as HTMLElement;
             const locked = lockedRef.current;
             if (!locked) return;
-            const insidePopup = locked.popup && locked.popup.getElement()?.contains(target);
+            const insidePopup =
+                locked.popup &&
+                locked.popup.getElement()?.contains(target);
             const isMarker = locked.el.contains(target);
             if (!insidePopup && !isMarker) {
                 locked.popup.remove();
@@ -150,7 +171,7 @@ export default function EventsMap({ events }: { events: Event[] }) {
         markersRef.current = [];
 
         const valid = events.filter(
-            (e) => typeof e.lng === "number" && typeof e.lat === "number"
+            (e) => typeof e.lng === "number" && typeof e.lat === "number",
         );
 
         for (const e of valid) {
@@ -162,14 +183,12 @@ export default function EventsMap({ events }: { events: Event[] }) {
             popupEl.innerHTML = renderPopupHtml(e);
 
             const popup = new maplibregl.Popup({
-                offset: 8,                 // smaller gap -> easier to hover into
+                offset: 8,
                 closeButton: false,
-                closeOnClick: false,       // don't auto-close on click (we manage it)
-                closeOnMove: false,        // keep open while panning/zooming
-                className: "pum-popup",    // custom class for our CSS
-            }).setDOMContent(popupEl);    // official API for DOM content
-            // Docs: PopupOptions.className, closeOnClick, closeOnMove; setDOMContent.
-            // :contentReference[oaicite:4]{index=4}
+                closeOnClick: false,
+                closeOnMove: false,
+                className: "pum-popup",
+            }).setDOMContent(popupEl);
 
             // State for hover handling
             let overPopup = false;
@@ -189,7 +208,7 @@ export default function EventsMap({ events }: { events: Event[] }) {
                         popup.remove();
                         el.classList.remove("pum-marker--active");
                     }
-                }, 400); // generous time so you can move cursor into popup
+                }, 400);
             };
 
             // Hover opens popup and keeps it while hovering marker or popup
@@ -205,7 +224,10 @@ export default function EventsMap({ events }: { events: Event[] }) {
             // Keep popup open while mouse is inside popup content
             popupEl.addEventListener("mouseenter", () => {
                 overPopup = true;
-                if (hoverCloseTimer) { window.clearTimeout(hoverCloseTimer); hoverCloseTimer = null; }
+                if (hoverCloseTimer) {
+                    window.clearTimeout(hoverCloseTimer);
+                    hoverCloseTimer = null;
+                }
             });
             popupEl.addEventListener("mouseleave", () => {
                 overPopup = false;
@@ -225,17 +247,21 @@ export default function EventsMap({ events }: { events: Event[] }) {
 
             const marker = new maplibregl.Marker({ element: el })
                 .setLngLat([e.lng as number, e.lat as number])
-                .setPopup(popup); // keep association (not used for default open)
+                .setPopup(popup);
             marker.addTo(map);
             markersRef.current.push(marker);
         }
 
         // Fit bounds
         if (valid.length === 1) {
-            map.easeTo({ center: [valid[0].lng as number, valid[0].lat as number], zoom: 6 });
+            map.easeTo({
+                center: [valid[0].lng as number, valid[0].lat as number],
+                zoom: 6,
+            });
         } else if (valid.length > 1) {
             const bounds = new maplibregl.LngLatBounds();
-            for (const e of valid) bounds.extend([e.lng as number, e.lat as number]);
+            for (const e of valid)
+                bounds.extend([e.lng as number, e.lat as number]);
             map.fitBounds(bounds, { padding: 60, maxZoom: 6 });
         }
     }, [events]);
@@ -249,21 +275,32 @@ export default function EventsMap({ events }: { events: Event[] }) {
         function ensureSpeziMarker() {
             if (speziRef.current) return;
             const el = document.createElement("div");
-            el.title = "Spezi stash!";
-            el.className = "text-[12px] leading-none select-none pointer-events-none";
+            el.title = tClient("events.map.spezi.title");
+            el.className =
+                "text-[12px] leading-none select-none pointer-events-none";
             el.style.transform = "translate(-50%, -100%)";
             el.innerHTML = `
         <div class="px-1.5 py-1 rounded-md bg-black/80 ring-1 ring-white/20 shadow">
-          <span>here be spezi ;)</span>
+          <span>${escapeHtml(
+                tClient("events.map.spezi.label"),
+            )}</span>
         </div>
       `;
-            speziRef.current = new maplibregl.Marker({ element: el }).setLngLat([SPEZI_TARGET.lng, SPEZI_TARGET.lat]);
+            speziRef.current = new maplibregl.Marker({ element: el }).setLngLat([
+                SPEZI_TARGET.lng,
+                SPEZI_TARGET.lat,
+            ]);
         }
 
         function maybeShow() {
             const z = map.getZoom();
             const c = map.getCenter();
-            const d = distanceMeters(c.lat, c.lng, SPEZI_TARGET.lat, SPEZI_TARGET.lng);
+            const d = distanceMeters(
+                c.lat,
+                c.lng,
+                SPEZI_TARGET.lat,
+                SPEZI_TARGET.lng,
+            );
             if (z >= SPEZI_ZOOM && d < 40) {
                 ensureSpeziMarker();
                 if (!speziShownRef.current && speziRef.current) {
@@ -295,7 +332,7 @@ export default function EventsMap({ events }: { events: Event[] }) {
         <div
             ref={containerRef}
             className="w-full h-[520px] rounded-2xl ring-1 ring-white/10 overflow-hidden bg-black/50"
-            aria-label="Events map"
+            aria-label={ariaLabel}
         />
     );
 }
@@ -303,7 +340,13 @@ export default function EventsMap({ events }: { events: Event[] }) {
 // helpers
 function escapeHtml(s?: string) {
     if (!s) return "";
-    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+    return s.replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+    }[c]!));
 }
 function escapeAttr(s?: string) {
     return escapeHtml(s).replace(/"/g, "&quot;");
@@ -312,38 +355,72 @@ function escapeAttr(s?: string) {
 function renderPopupHtml(e: Event) {
     const img = e.photos && e.photos.length ? e.photos[0] : undefined;
     const imageBlock = img
-        ? `<img alt="${escapeAttr(e.name)}" src="${escapeAttr(img)}" class="pum-img" />`
+        ? `<img alt="${escapeAttr(e.name)}" src="${escapeAttr(
+            img,
+        )}" class="pum-img" />`
         : "";
     const tags =
         e.tags && e.tags.length
             ? `<div class="pum-tags">
-          ${e.tags.slice(0, 6).map((t) => `<span class="pum-tag">${escapeHtml(t)}</span>`).join("")}
+          ${e.tags
+                .slice(0, 6)
+                .map(
+                    (t) =>
+                        `<span class="pum-tag">${escapeHtml(t)}</span>`,
+                )
+                .join("")}
         </div>`
             : "";
+
+    const linkLabel = escapeHtml(tClient("events.map.popup.openPage"));
 
     return `
     <div class="pum-body">
       <div class="pum-title">${escapeHtml(e.name)}</div>
-      ${e.locationName ? `<div class="pum-sub">${escapeHtml(e.locationName)}</div>` : ""}
-      <div class="pum-date">${escapeHtml(formatDateRange(e.dateStart, e.dateEnd))}</div>
-      ${e.description ? `<div class="pum-desc">${escapeHtml(e.description)}</div>` : ""}
+      ${
+        e.locationName
+            ? `<div class="pum-sub">${escapeHtml(
+                e.locationName,
+            )}</div>`
+            : ""
+    }
+      <div class="pum-date">${escapeHtml(
+        formatDateRange(e.dateStart, e.dateEnd),
+    )}</div>
+      ${
+        e.description
+            ? `<div class="pum-desc">${escapeHtml(
+                e.description,
+            )}</div>`
+            : ""
+    }
       ${tags}
       ${imageBlock}
       <div class="mt-3">
-        <a href="/events/${encodeURIComponent(e.slug)}" class="text-xs">Open page →</a>
+        <a href="/events/${encodeURIComponent(
+        e.slug,
+    )}" class="text-xs">${linkLabel}</a>
       </div>
     </div>
   `;
 }
 
 // Approx haversine for meters
-function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
+function distanceMeters(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+) {
     const R = 6371000;
     const toRad = (d: number) => (d * Math.PI) / 180;
     const dLat = toRad(lat2 - lat1);
     const dLng = toRad(lng2 - lng1);
     const a =
         Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        Math.cos(toRad(lat1)) *
+        Math.cos(toRad(lat2)) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }

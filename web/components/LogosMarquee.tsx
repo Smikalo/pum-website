@@ -1,20 +1,20 @@
-// web/components/LogosMarquee.tsx
-'use client';
+"use client";
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
+import { tClient } from "@/lib/i18n-client";
 
 type Sponsor = { file: string; url: string; name: string };
 
 const SPONSORS: Sponsor[] = [
-    { file: 'google.png',    url: 'https://google.com',             name: 'Google' },
-    { file: 'microsoft.png', url: 'https://microsoft.com',          name: 'Microsoft' },
-    { file: 'mercedes.png',  url: 'https://www.mercedes-benz.com',  name: 'Mercedes-Benz' },
-    { file: 'tumai.png',     url: 'https://www.tum-ai.com',         name: 'TUM.ai' },
-    { file: 'tum.png',       url: 'https://www.tum.de',             name: 'TUM' },
-    { file: 'jetbrains.svg', url: 'https://www.jetbrains.com',      name: 'JetBrains' },
-    { file: 'check24.png',   url: 'https://www.check24.de',         name: 'CHECK24' },
-    { file: 'siemens.png',   url: 'https://www.siemens.com',        name: 'Siemens' },
-    { file: 'openai.webp',   url: 'https://openai.com',             name: 'OpenAI' },
+    { file: "google.png", url: "https://google.com", name: "Google" },
+    { file: "microsoft.png", url: "https://microsoft.com", name: "Microsoft" },
+    { file: "mercedes.png", url: "https://www.mercedes-benz.com", name: "Mercedes-Benz" },
+    { file: "tumai.png", url: "https://www.tum-ai.com", name: "TUM.ai" },
+    { file: "tum.png", url: "https://www.tum.de", name: "TUM" },
+    { file: "jetbrains.svg", url: "https://www.jetbrains.com", name: "JetBrains" },
+    { file: "check24.png", url: "https://www.check24.de", name: "CHECK24" },
+    { file: "siemens.png", url: "https://www.siemens.com", name: "Siemens" },
+    { file: "openai.webp", url: "https://openai.com", name: "OpenAI" },
 ];
 
 const PX_PER_SECOND = 22;
@@ -27,14 +27,15 @@ function Logo({ file, url, name }: Sponsor) {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={name}
+            aria-label={tClient("logosMarquee.logoAria").replace("{name}", name)}
             title={name}
             className="logo-wrap"
             role="listitem"
         >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
                 src={`/sponsors/${file}`}
-                alt={`${name} logo`}
+                alt={tClient("logosMarquee.logoAlt").replace("{name}", name)}
                 className="logo-img"
                 loading="lazy"
                 decoding="async"
@@ -62,12 +63,13 @@ export default function LogosMarquee() {
             widths.length = 0;
             const children = Array.from(track.children) as HTMLElement[];
             for (const el of children) {
-                const gapPx = GAP_REM * parseFloat(getComputedStyle(document.documentElement).fontSize);
+                const gapPx =
+                    GAP_REM * parseFloat(getComputedStyle(document.documentElement).fontSize);
                 widths.push(el.getBoundingClientRect().width + gapPx);
             }
         };
 
-        const imgs = Array.from(track.querySelectorAll('img')) as HTMLImageElement[];
+        const imgs = Array.from(track.querySelectorAll("img")) as HTMLImageElement[];
         let pending = imgs.length;
         const doneOne = () => {
             pending = Math.max(0, pending - 1);
@@ -75,20 +77,20 @@ export default function LogosMarquee() {
         };
         imgs.forEach((img) => {
             if (img.complete) return;
-            img.addEventListener('load', doneOne);
-            img.addEventListener('error', doneOne);
+            img.addEventListener("load", doneOne);
+            img.addEventListener("error", doneOne);
         });
 
         measure();
 
         const ro = new ResizeObserver(() => {
             offsetX = 0;
-            track.style.transform = 'translate3d(0,0,0)';
+            track.style.transform = "translate3d(0,0,0)";
             measure();
         });
         ro.observe(track);
 
-        const prefersReduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const prefersReduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
         const tick = (now: number) => {
             raf = requestAnimationFrame(tick);
@@ -114,21 +116,25 @@ export default function LogosMarquee() {
             track.style.transform = `translate3d(${offsetX.toFixed(2)}px,0,0)`;
         };
 
-        const onEnter = () => { paused = true; };
-        const onLeave = () => { paused = false; };
+        const onEnter = () => {
+            paused = true;
+        };
+        const onLeave = () => {
+            paused = false;
+        };
 
-        root.addEventListener('mouseenter', onEnter);
-        root.addEventListener('mouseleave', onLeave);
+        root.addEventListener("mouseenter", onEnter);
+        root.addEventListener("mouseleave", onLeave);
         raf = requestAnimationFrame(tick);
 
         return () => {
             cancelAnimationFrame(raf);
             ro.disconnect();
-            root.removeEventListener('mouseenter', onEnter);
-            root.removeEventListener('mouseleave', onLeave);
+            root.removeEventListener("mouseenter", onEnter);
+            root.removeEventListener("mouseleave", onLeave);
             imgs.forEach((img) => {
-                img.removeEventListener('load', doneOne);
-                img.removeEventListener('error', doneOne);
+                img.removeEventListener("load", doneOne);
+                img.removeEventListener("error", doneOne);
             });
         };
     }, []);
@@ -137,7 +143,12 @@ export default function LogosMarquee() {
 
     return (
         <section className="section border-y border-white/10 py-6">
-            <div className="ticker" ref={rootRef} aria-label="Sponsor logos" role="list">
+            <div
+                className="ticker"
+                ref={rootRef}
+                aria-label={tClient("logosMarquee.ariaLabel")}
+                role="list"
+            >
                 <div className="ticker__track" ref={trackRef}>
                     {all.map((s, i) => (
                         <Logo key={`${i}-${s.file}`} {...s} />
