@@ -322,6 +322,9 @@
   "events.list.cta.body": "Wenn du ein Hackathon, Meetup oder eine Konferenz planst und möchtest, dass PUM co-hostet, spricht oder mentort, melde dich – wir schauen gemeinsam, was passt.",
   "events.list.cta.button": "Team kontaktieren",
 
+  "events.list.count.singular": "Event gefunden",
+  "events.list.count.plural": "Events gefunden",
+
   "imprint.kicker": "RECHTLICHES",
   "imprint.title": "Impressum",
   "imprint.intro": "Anbieterkennzeichnung und grundlegende rechtliche Informationen für diese persönliche, nicht-kommerzielle Portfolio- und Projektwebsite, die von einer kleinen Gruppe von Freund:innen/Studierenden betrieben wird. Wir sind kein eingetragener Verein oder ein Unternehmen und dies ist keine offizielle Website der Technischen Universität München (TUM).",

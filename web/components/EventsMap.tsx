@@ -331,7 +331,7 @@ export default function EventsMap({ events }: { events: Event[] }) {
     return (
         <div
             ref={containerRef}
-            className="w-full h-[520px] rounded-2xl ring-1 ring-white/10 overflow-hidden bg-black/50"
+            className="w-full h-[520px] rounded-2xl ring-1 ring-white/10 overflow-hidden bg-black/50 emoji-stable"
             aria-label={ariaLabel}
         />
     );

@@ -180,7 +180,7 @@ export default async function EventsPage({
             </div>
 
             {/* Map */}
-            <div className="mb-8 emoji-stable">
+            <div className="mb-8">
                 <EventsMap events={filtered} />
             </div>
 

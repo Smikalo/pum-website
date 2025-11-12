@@ -166,9 +166,9 @@ export default function ContactPage() {
                 <span className="text-white">
                                 <a
                                     className="underline underline-offset-4"
-                                    href="mailto:contact@the-pum.de"
+                                    href="mailto:contact@the-pum.com"
                                 >
-                                    contact@the-pum.de
+                                    contact@the-pum.com
                                 </a>
                             </span>
               </div>

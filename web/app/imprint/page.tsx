@@ -64,12 +64,12 @@ export default function ImprintPage() {
                         <br />
                         {tServer("imprint.section.contact.webLabel")}{" "}
                         <a
-                            href="https://the-pum.de"
+                            href="https://the-pum.com"
                             className="underline underline-offset-4"
                             target="_blank"
                             rel="noreferrer"
                         >
-                            https://the-pum.de
+                            https://the-pum.com
                         </a>
                     </p>
                 </div>
