@@ -7,12 +7,17 @@ const slugify = require("slugify");
 const { nanoid } = require("nanoid");
 const path = require("path");
 const fs = require("fs");
-const multer = require("multer");
-const mime = require("mime-types");
-const pdfParse = require("pdf-parse");
 const { ensureMemberAvatar } = require("./imageDefaults");
 const { sendOk, sendCreated, sendUnauthorized, sendBadRequest, sendServerError } = require("./utils/http");
-const { upsertStringList, abs, CV_DIR, AVATAR_DIR } = require("./utils/shared");
+const { upsertStringList, abs, CV_DIR } = require("./utils/shared");
+const {
+    avatarUploadMiddleware,
+    cvUploadMiddleware,
+    processCvUpload,
+    processAvatarUpload,
+    cvLatestPath,
+    cvLatestUrl
+} = require("./services/uploads.service");
 
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
 
@@ -27,63 +32,6 @@ function authRequired(req, res, next) {
     } catch {
         return sendUnauthorized(res, "Invalid access token");
     }
-}
-
-const upload = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
-        filename: (req, file, cb) => {
-            const ext = mime.extension(file.mimetype) || "bin";
-            cb(null, `${req.userId}-${Date.now()}.${ext}`);
-        },
-    }),
-    fileFilter: (_req, file, cb) => {
-        const ok = ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype);
-        cb(ok ? null : new Error("Invalid image type"), ok);
-    },
-    limits: { fileSize: 5 * 1024 * 1024 },
-});
-
-const uploadPdf = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => cb(null, CV_DIR),
-        filename: (req, _file, cb) => cb(null, `${req.userId}-${Date.now()}.pdf`),
-    }),
-    fileFilter: (_req, file, cb) => {
-        cb(file.mimetype === "application/pdf" ? null : new Error("Only PDF allowed"), file.mimetype === "application/pdf");
-    },
-    limits: { fileSize: 10 * 1024 * 1024 },
-});
-
-function cvLatestPath(userId) { return path.join(CV_DIR, `${userId}-latest.pdf`); }
-function cvLatestUrl(userId) { return `/uploads/cv/${userId}-latest.pdf`; }
-
-function looksLikePdf(filePath) {
-    try {
-        const fd = fs.openSync(filePath, "r");
-        const buf = Buffer.alloc(5);
-        fs.readSync(fd, buf, 0, 5, 0);
-        fs.closeSync(fd);
-        return buf.toString() === "%PDF-";
-    } catch { return false; }
-}
-
-async function parsePdfForKeywords(filePath) {
-    let text = "";
-    try {
-        const data = await pdfParse(fs.readFileSync(filePath));
-        text = String(data.text || "");
-    } catch { text = ""; }
-    const norm = (s) => s.toLowerCase();
-    const hay = norm(text);
-    const [skills, techs] = await Promise.all([
-        prisma.skill.findMany({ select: { name: true } }),
-        prisma.tech.findMany({ select: { name: true } }),
-    ]);
-    const foundSkills = [], foundTechs = [];
-    for (const { name } of skills) if (hay.includes(norm(name))) foundSkills.push(name);
-    for (const { name } of techs) if (hay.includes(norm(name))) foundTechs.push(name);
-    return { skills: [...new Set(foundSkills)], tech: [...new Set(foundTechs)] };
 }
 
 async function ensureMemberForUser(user) {
@@ -177,40 +125,36 @@ router.put("/profile", async (req, res) => {
     sendOk(res, { ok: true, profile: { ...presentMember(updated, skillsOut.map((s) => s.skill.name), techsOut.map((t) => t.tech.name), req), cvUrl } });
 });
 
-router.post("/avatar", upload.single("avatar"), async (req, res) => {
-    if (!req.file) return sendBadRequest(res, "Missing file");
+router.post("/avatar", avatarUploadMiddleware.single("avatar"), async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
-    if (!user || !user.memberId) return sendUnauthorized(res, "Unknown user");
-    const rel = `/uploads/avatars/${req.file.filename}`;
-    await prisma.member.update({ where: { id: user.memberId }, data: { avatarUrl: rel } });
-    sendCreated(res, { ok: true, url: abs(rel, req) });
+    if (!user || !user.memberId) {
+        try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
+        return sendUnauthorized(res, "Unknown user");
+    }
+
+    try {
+        const result = await processAvatarUpload({ userId: req.userId, memberId: user.memberId, file: req.file });
+        sendCreated(res, { ok: true, url: abs(result.url, req) });
+    } catch (e) {
+        sendBadRequest(res, e.message);
+    }
 });
 
-router.post("/cv", uploadPdf.single("cv"), async (req, res) => {
-    if (!req.file) return sendBadRequest(res, "Missing file");
+router.post("/cv", cvUploadMiddleware.single("cv"), async (req, res) => {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
+    if (!user || !user.memberId) {
+        try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
+        return sendUnauthorized(res, "Unknown user");
+    }
+
+    // Ensure a member record exists
+    const member = user.member || (await ensureMemberForUser(user));
+
     try {
-        if (!looksLikePdf(req.file.path)) {
-            try { fs.unlinkSync(req.file.path); } catch {}
-            return sendBadRequest(res, "Invalid PDF file");
-        }
-        const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
-        if (!user || !user.memberId) {
-            try { fs.unlinkSync(req.file.path); } catch {}
-            return sendUnauthorized(res, "Unknown user");
-        }
-        const latest = cvLatestPath(req.userId);
-        try { fs.renameSync(req.file.path, latest); } catch {
-            fs.copyFileSync(req.file.path, latest);
-            try { fs.unlinkSync(req.file.path); } catch {}
-        }
-        const publicUrl = cvLatestUrl(req.userId);
-        const member = user.member || (await ensureMemberForUser(user));
-        const links = { ...(member.links || {}), CV: publicUrl };
-        await prisma.member.update({ where: { id: member.id }, data: { links } });
-        const extracted = await parsePdfForKeywords(latest);
-        sendCreated(res, { ok: true, url: abs(publicUrl, req), extractedSkills: extracted.skills, extractedTech: extracted.tech });
+        const result = await processCvUpload({ userId: req.userId, memberId: member.id, file: req.file });
+        sendCreated(res, { ok: true, url: abs(result.url, req), extractedSkills: result.extractedSkills, extractedTech: result.extractedTech });
     } catch (e) {
-        try { if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); } catch {}
+        if (e.message === "Invalid PDF file") return sendBadRequest(res, "Invalid PDF file");
         sendServerError(res, "CV upload failed");
     }
 });

@@ -1,7 +1,6 @@
+// api/src/routes/members.js
 const express = require("express");
 const z = require("zod");
-const multer = require("multer");
-const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { prisma } = require("../db");
@@ -23,9 +22,13 @@ const {
     abs,
     upsertStringList,
     CV_DIR,
-    AVATAR_DIR,
-    UPLOAD_ROOT
 } = require("../utils/shared");
+const {
+    cvUploadMiddleware,
+    avatarUploadMiddleware,
+    processCvUpload,
+    processAvatarUpload
+} = require("../services/uploads.service");
 
 const router = express.Router();
 
@@ -51,45 +54,6 @@ const memberProfileUpdateSchema = z.object({
 
 const deleteBySlugSchema = z.object({
     confirmSlug: z.string().min(1),
-});
-
-const memberCvStorage = multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, CV_DIR),
-    filename: (_req, file, cb) => {
-        const ext = (file.originalname.split(".").pop() || "pdf").toLowerCase();
-        const safeExt = ext === "pdf" ? "pdf" : "pdf";
-        const tmpName = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
-        cb(null, tmpName);
-    },
-});
-
-const uploadMemberCv = multer({
-    storage: memberCvStorage,
-    limits: { fileSize: 16 * 1024 * 1024, files: 1 },
-    fileFilter: (_req, file, cb) => {
-        if (file.mimetype === "application/pdf") cb(null, true);
-        else cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "cv"));
-    },
-});
-
-const memberAvatarStorage = multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
-    filename: (_req, file, cb) => {
-        const ext = (file.originalname.split(".").pop() || "jpg").toLowerCase();
-        const safeExt = /^(png|jpg|jpeg|webp|gif)$/i.test(ext) ? ext : "jpg";
-        const tmpName = `${Date.now()}-${crypto.randomUUID()}.${safeExt}`;
-        cb(null, tmpName);
-    },
-});
-
-const uploadMemberAvatar = multer({
-    storage: memberAvatarStorage,
-    limits: { fileSize: 8 * 1024 * 1024, files: 1 },
-    fileFilter: (_req, file, cb) => {
-        if (/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype))
-            cb(null, true);
-        else cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "avatar"));
-    },
 });
 
 router.get("/", async (req, res) => {
@@ -241,7 +205,7 @@ router.get("/:slug", async (req, res) => {
         events: m.events.map((r) => ({
             id: r.event.id,
             slug: r.event.slug,
-            name: r.role || r.event.name,
+            name: r.event.name,
             role: r.role || null,
             dateStart: r.event.dateStart,
             dateEnd: r.event.dateEnd,
@@ -481,6 +445,8 @@ router.delete("/:slug", requireAuth, requireAdminOrModerator, async (req, res) =
     }
 });
 
+// --- CV Upload (Service-backed) ---
+
 router.post(
     "/:slug/cv",
     requireAuth,
@@ -492,7 +458,12 @@ router.post(
         if (!member) {
             return sendNotFound(res, "Member not found");
         }
-
+        req._member = member;
+        next();
+    },
+    cvUploadMiddleware.single("cv"),
+    async (req, res) => {
+        const member = req._member;
         const usersForMember = await prisma.user.findMany({
             where: { memberId: member.id },
             include: { roles: true },
@@ -502,43 +473,27 @@ router.post(
             (u.roles || []).some((r) => r.role === "ADMIN"),
         );
         if (isAdminMember) {
+            try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
             return sendForbidden(res, "Cannot modify admin member from this page");
         }
 
         if (!usersForMember.length) {
+            try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
             return sendBadRequest(res, "No user account linked to this member");
         }
 
-        req._memberForCv = member;
-        req._usersForCv = usersForMember;
-        return uploadMemberCv.single("cv")(req, res, (err) => {
-            if (err) return next(err);
-            return next();
-        });
-    },
-    async (req, res) => {
-        const member = req._memberForCv;
-        const usersForMember = req._usersForCv || [];
-        if (!req.file) {
-            return sendBadRequest(res, "No file uploaded");
-        }
-
-        const userForCv = usersForMember[0];
-        const userId = userForCv.id;
-
-        const finalName = `${userId}-latest.pdf`;
-        const finalPath = path.join(CV_DIR, finalName);
-
         try {
-            fs.renameSync(req.file.path, finalPath);
-        } catch (err) {
-            return sendServerError(res, "Failed to store CV file");
+            // Use first user ID for the CV naming if multiple exist
+            const userId = usersForMember[0].id;
+            const result = await processCvUpload({ userId, memberId: member.id, file: req.file });
+            sendCreated(res, { ok: true, url: abs(result.url, req) });
+        } catch (e) {
+            return sendBadRequest(res, e.message || "CV upload failed");
         }
-
-        const url = abs(`/uploads/cv/${finalName}`, req);
-        sendCreated(res, { ok: true, url });
     },
 );
+
+// --- Avatar Upload (Service-backed) ---
 
 router.post(
     "/:slug/avatar",
@@ -548,10 +503,13 @@ router.post(
         const member = await prisma.member.findUnique({
             where: { slug: req.params.slug },
         });
-        if (!member) {
-            return sendNotFound(res, "Member not found");
-        }
-
+        if (!member) return sendNotFound(res, "Member not found");
+        req._member = member;
+        next();
+    },
+    avatarUploadMiddleware.single("avatar"),
+    async (req, res) => {
+        const member = req._member;
         const usersForMember = await prisma.user.findMany({
             where: { memberId: member.id },
             include: { roles: true },
@@ -561,51 +519,22 @@ router.post(
             (u.roles || []).some((r) => r.role === "ADMIN"),
         );
         if (isAdminMember) {
+            try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
             return sendForbidden(res, "Cannot modify admin member from this page");
         }
 
-        req._memberForAvatar = member;
-        return uploadMemberAvatar.single("avatar")(req, res, (err) => {
-            if (err) return next(err);
-            return next();
-        });
-    },
-    async (req, res) => {
-        const member = req._memberForAvatar;
-        if (!req.file) {
-            return sendBadRequest(res, "No file uploaded");
-        }
-
-        const relPath = `/uploads/avatars/${req.file.filename}`;
-        const absUrl = abs(relPath, req);
+        const userId = usersForMember[0]?.id || null;
 
         try {
-            if (
-                member.avatarUrl &&
-                member.avatarUrl.startsWith("/uploads/avatars/")
-            ) {
-                const oldFsPath = path.join(
-                    UPLOAD_ROOT,
-                    member.avatarUrl.replace(/^\/uploads\//, ""),
-                );
-                if (fs.existsSync(oldFsPath)) {
-                    fs.unlinkSync(oldFsPath);
-                }
-            }
-        } catch (err) {
-            // ignore
+            const result = await processAvatarUpload({ userId, memberId: member.id, file: req.file });
+            sendCreated(res, {
+                ok: true,
+                url: abs(result.url, req),
+                relativePath: result.url,
+            });
+        } catch (e) {
+            return sendBadRequest(res, e.message || "Avatar upload failed");
         }
-
-        await prisma.member.update({
-            where: { id: member.id },
-            data: { avatarUrl: relPath },
-        });
-
-        sendCreated(res, {
-            ok: true,
-            url: absUrl,
-            relativePath: relPath,
-        });
     },
 );
 
