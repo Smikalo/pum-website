@@ -7,6 +7,8 @@ import EventsMap from "@/components/EventsMap";
 import { SEED_EVENTS } from "@/data/events.seed";
 import NewEventButton from "@/components/NewEventButton";
 import { tServer } from "@/lib/i18n-server";
+import { uniq, checkMatches, highlight } from "@/lib/list-utils";
+import PageCtaCard from "@/components/PageCtaCard";
 
 type Event = {
     id: string;
@@ -62,41 +64,13 @@ function formatDateRange(
     )}`;
 }
 
-function highlight(text: string | undefined, q: string) {
-    if (!text) return null;
-    if (!q) return text;
-    const esc = q.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&",
-    );
-    const re = new RegExp(`(${esc})`, "ig");
-    const parts = text.split(re);
-    return parts.map((p, i) =>
-        re.test(p) ? (
-            <mark
-                key={i}
-                className="px-0.5 rounded bg-yellow-300/30 text-yellow-200"
-            >
-                {p}
-            </mark>
-        ) : (
-            <span key={i}>{p}</span>
-        ),
-    );
-}
-
 function matchesQuery(e: Event, q: string) {
-    if (!q) return true;
-    const n = q.toLowerCase();
-    const fields = [
+    return checkMatches(q, [
         e.name || "",
         e.locationName || "",
         e.description || "",
-        ...(e.tags || []),
-    ];
-    return fields.some((f) =>
-        f.toLowerCase().includes(n),
-    );
+        ...(e.tags || [])
+    ]);
 }
 
 function parseYear(s?: string) {
@@ -104,9 +78,6 @@ function parseYear(s?: string) {
     const y = Number(s.slice(0, 4));
     return Number.isFinite(y) ? y : undefined;
 }
-
-const uniq = <T,>(arr: T[]): T[] =>
-    Array.from(new Set(arr));
 
 function normalizeEvent(e: RawEvent): Event {
     return {
@@ -261,29 +232,12 @@ export default async function EventsPage({
 
     return (
         <section className="section">
-            <header className="mb-6">
-                <p className="kicker">
-                    {tServer(
-                        "events.list.kicker",
-                    )}
-                </p>
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        <h1 className="display">
-                            {tServer(
-                                "events.list.title",
-                            )}
-                        </h1>
-                        <p className="mt-3 text-white/70 max-w-2xl">
-                            {tServer(
-                                "events.list.subtitle",
-                            )}
-                        </p>
-                    </div>
-                    {/* Visible only for logged-in users */}
-                    <NewEventButton />
-                </div>
-            </header>
+            <PageCtaCard
+                kicker={tServer("events.list.kicker")}
+                title={tServer("events.list.title")}
+                subtitle={tServer("events.list.subtitle")}
+                action={<NewEventButton />}
+            />
 
             {/* Controls */}
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">

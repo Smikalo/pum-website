@@ -5,6 +5,9 @@ import MembersSearchBar from "@/components/MembersSearchBar";
 import NewBlogButton from "@/components/NewBlogButton";
 import { API_BASE } from "@/lib/config";
 import { tServer } from "@/lib/i18n-server";
+import { uniq, parseMulti, includesAll, checkMatches, highlight } from "@/lib/list-utils";
+import MultiFilterChips from "@/components/MultiFilterChips";
+import PageCtaCard from "@/components/PageCtaCard";
 
 type BlogAuthorCard = {
     slug: string;
@@ -52,59 +55,13 @@ type BlogListResponse =
     items?: RawBlogListItem[];
 };
 
-function uniq<T>(arr: T[]): T[] {
-    return Array.from(new Set(arr));
-}
-
-function parseMulti(param?: string): string[] {
-    return (param || "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-}
-
 function matchesQuery(b: BlogCard, q: string): boolean {
-    if (!q) return true;
-    const n = q.toLowerCase();
-    const fields = [
+    return checkMatches(q, [
         b.title || "",
         b.summary || "",
         ...(b.tags || []),
-        ...(b.techStack || []),
-    ];
-    return fields.some((f) => f.toLowerCase().includes(n));
-}
-
-function includesAll(
-    hay: string[] | undefined,
-    needles: string[],
-): boolean {
-    if (!needles.length) return true;
-    const h = new Set((hay || []).map((s) => s.toLowerCase()));
-    return needles.every((n) => h.has(n.toLowerCase()));
-}
-
-function highlight(
-    text: string | undefined,
-    q: string,
-): React.ReactNode {
-    if (!text) return null;
-    if (!q) return text;
-    const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`(${esc})`, "ig");
-    const parts = text.split(re);
-    return parts.map((p, i) =>
-        re.test(p) ? (
-            <mark
-                key={i}
-                className="rounded bg-yellow-300/30 px-0.5 text-yellow-200"
-            >
-                {p}
-            </mark>
-        ) : (
-            <span key={i}>{p}</span>
-        ),
-    );
+        ...(b.techStack || [])
+    ]);
 }
 
 async function fetchApiBlogs(): Promise<BlogCard[]> {
@@ -187,20 +144,12 @@ export default async function BlogsPage({
 
     return (
         <section className="section">
-            <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                    <p className="kicker">
-                        {tServer("blog.list.kicker")}
-                    </p>
-                    <h1 className="display">
-                        {tServer("blog.list.title")}
-                    </h1>
-                    <p className="mt-3 max-w-2xl text-white/70">
-                        {tServer("blog.list.subtitle")}
-                    </p>
-                </div>
-                <NewBlogButton />
-            </header>
+            <PageCtaCard
+                kicker={tServer("blog.list.kicker")}
+                title={tServer("blog.list.title")}
+                subtitle={tServer("blog.list.subtitle")}
+                action={<NewBlogButton />}
+            />
 
             <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
                 <div className="flex-1">
@@ -267,6 +216,7 @@ export default async function BlogsPage({
                             values={allTags}
                             selected={tagsSel}
                             name="tag"
+                            clearLabel={tServer("blog.list.filters.clear")}
                         />
                     </div>
                 </div>
@@ -285,6 +235,7 @@ export default async function BlogsPage({
                             values={allTech}
                             selected={techSel}
                             name="tech"
+                            clearLabel={tServer("blog.list.filters.clear")}
                         />
                     </div>
                 </div>
@@ -371,62 +322,5 @@ export default async function BlogsPage({
                 </div>
             </div>
         </section>
-    );
-}
-
-function MultiFilterChips({
-                              base,
-                              params,
-                              values,
-                              selected,
-                              name,
-                          }: {
-    base: string;
-    params: Record<string, string>;
-    values: string[];
-    selected: string[];
-    name: string;
-}) {
-    const makeHref = (nextSelected: string[]) => {
-        const p = new URLSearchParams();
-        Object.entries(params).forEach(([k, v]) => {
-            if (v) p.set(k, v);
-        });
-        if (nextSelected.length)
-            p.set(name, nextSelected.join(","));
-        const qs = p.toString();
-        return `${base}${qs ? `?${qs}` : ""}`;
-    };
-    const toggle = (v: string) => {
-        const exists = selected.includes(v);
-        const next = exists
-            ? selected.filter((s) => s !== v)
-            : [...selected, v];
-        return makeHref(next);
-    };
-    return (
-        <>
-            {selected.length ? (
-                <Link
-                    href={makeHref([])}
-                    className="rounded-full px-2.5 py-1.5 text-xs ring-1 ring-white/10 bg-white/10"
-                >
-                    {tServer("blog.list.filters.clear")}
-                </Link>
-            ) : null}
-            {values.map((v) => (
-                <Link
-                    key={v}
-                    href={toggle(v)}
-                    className={`rounded-full px-2.5 py-1.5 text-xs ring-1 ring-white/10 ${
-                        selected.includes(v)
-                            ? "bg-white text-black font-semibold"
-                            : "bg-white/5 hover:bg-white/10"
-                    }`}
-                >
-                    {v}
-                </Link>
-            ))}
-        </>
     );
 }

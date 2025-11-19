@@ -6,6 +6,9 @@ import MembersGraph from "@/components/MembersGraph";
 import MembersSearchBar from "@/components/MembersSearchBar";
 import { toImageSrc } from "@/lib/images";
 import { tServer } from "@/lib/i18n-server";
+import { uniq, parseMulti, includesAll, checkMatches, highlight } from "@/lib/list-utils";
+import MultiFilterChips from "@/components/MultiFilterChips";
+import PageCtaCard from "@/components/PageCtaCard";
 
 export const dynamic = "force-dynamic";
 
@@ -78,52 +81,14 @@ function isString(x: unknown): x is string {
     return typeof x === "string" && x.trim().length > 0;
 }
 
-function uniq<T>(arr: T[]): T[] {
-    return Array.from(new Set(arr));
-}
-
-function parseMulti(param?: string): string[] {
-    if (!param) return [];
-    return param
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
-}
-
-function includesAll(haystack: string[] | undefined, needles: string[]): boolean {
-    if (!needles.length) return true;
-    const set = new Set((haystack || []).map((s) => s.toLowerCase()));
-    return needles.every((n) => set.has(n.toLowerCase()));
-}
-
-function highlight(text: string | undefined | null, q: string) {
-    if (!text) return null;
-    if (!q) return text;
-    const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`(${esc})`, "ig");
-    const parts = text.split(re);
-    return parts.map((p, i) =>
-        i % 2 === 1 ? (
-            <mark key={i} className="px-0.5 rounded bg-yellow-300/30 text-yellow-200">
-                {p}
-            </mark>
-        ) : (
-            <span key={i}>{p}</span>
-        ),
-    );
-}
-
 function matchesQuery(m: UiMember, q: string): boolean {
-    if (!q) return true;
-    const needle = q.toLowerCase();
-    const fields: string[] = [
+    return checkMatches(q, [
         m.name || "",
         m.shortBio || "",
         ...(m.skills || []),
         ...(m.techStack || []),
         m.focusArea || "",
-    ];
-    return fields.some((f) => f.toLowerCase().includes(needle));
+    ]);
 }
 
 /** normalize any image-like value to a proper src (never null) */
@@ -311,17 +276,11 @@ export default async function MembersPage({
 
     return (
         <section className="section">
-            <header className="mb-6">
-                <p className="kicker">
-                    {tServer("members.list.kicker")}
-                </p>
-                <h1 className="display">
-                    {tServer("members.list.title")}
-                </h1>
-                <p className="mt-3 text-white/70 max-w-2xl">
-                    {tServer("members.list.subtitle")}
-                </p>
-            </header>
+            <PageCtaCard
+                kicker={tServer("members.list.kicker")}
+                title={tServer("members.list.title")}
+                subtitle={tServer("members.list.subtitle")}
+            />
 
             {/* Controls */}
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
@@ -376,9 +335,7 @@ export default async function MembersPage({
                             values={allFocusAreas}
                             selected={focusFilter}
                             name="skill"
-                            clearLabel={tServer(
-                                "members.list.filter.clear",
-                            )}
+                            clearLabel={tServer("members.list.filter.clear")}
                         />
                     </div>
                 </div>
@@ -393,9 +350,7 @@ export default async function MembersPage({
                             values={allTech}
                             selected={techFilter}
                             name="tech"
-                            clearLabel={tServer(
-                                "members.list.filter.clear",
-                            )}
+                            clearLabel={tServer("members.list.filter.clear")}
                         />
                     </div>
                 </div>
@@ -443,66 +398,6 @@ export default async function MembersPage({
 /** ------------------------------------------------------------
  *  Presentational helpers
  *  ------------------------------------------------------------ */
-function MultiFilterChips({
-                              base,
-                              params,
-                              values,
-                              selected,
-                              name,
-                              clearLabel,
-                          }: {
-    base: string;
-    params: Record<string, string>;
-    values: string[];
-    selected: string[];
-    name: string;
-    clearLabel: string;
-}) {
-    const makeHref = (nextSelected: string[]) => {
-        const p = new URLSearchParams();
-        Object.entries(params).forEach(([k, v]) => {
-            if (v) p.set(k, v);
-        });
-        if (nextSelected.length) p.set(name, nextSelected.join(","));
-        const qs = p.toString();
-        return `${base}${qs ? `?${qs}` : ""}`;
-    };
-
-    const toggle = (v: string) => {
-        const exists = selected.includes(v);
-        const next = exists
-            ? selected.filter((s) => s !== v)
-            : [...selected, v];
-        return makeHref(next);
-    };
-
-    return (
-        <>
-            {selected.length ? (
-                <Link
-                    href={makeHref([])}
-                    className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10"
-                >
-                    {clearLabel}
-                </Link>
-            ) : null}
-            {values.map((v) => (
-                <Link
-                    key={v}
-                    href={toggle(v)}
-                    className={`px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 ${
-                        selected.includes(v)
-                            ? "bg-white text-black font-semibold"
-                            : "bg-white/5 hover:bg-white/10"
-                    }`}
-                >
-                    {v}
-                </Link>
-            ))}
-        </>
-    );
-}
-
 function Avatar({ name, src, size = 40 }: { name: string; src?: string; size?: number }) {
     const initials = name
         .split(" ")

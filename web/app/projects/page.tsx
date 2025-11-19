@@ -5,6 +5,9 @@ import MembersSearchBar from "@/components/MembersSearchBar";
 import { API_BASE } from "@/lib/config";
 import NewProjectButton from "@/components/NewProjectButton";
 import { tServer } from "@/lib/i18n-server";
+import { uniq, parseMulti, includesAll, checkMatches, highlight } from "@/lib/list-utils";
+import MultiFilterChips from "@/components/MultiFilterChips";
+import PageCtaCard from "@/components/PageCtaCard";
 
 export const dynamic = "force-dynamic";
 
@@ -49,42 +52,13 @@ type ApiProjectListItem = {
 };
 
 /* ---------- Helpers ---------- */
-function uniq<T>(arr: T[]): T[] {
-    return Array.from(new Set(arr));
-}
-function parseMulti(param?: string): string[] {
-    if (!param) return [];
-    return param.split(",").map((x) => x.trim()).filter(Boolean);
-}
-function includesAll(haystack: string[] | undefined, needles: string[]): boolean {
-    if (!needles.length) return true;
-    const h = new Set((haystack || []).map((s) => s.toLowerCase()));
-    return needles.every((n) => h.has(n.toLowerCase()));
-}
 function matchesQuery(p: Project, q: string): boolean {
-    if (!q) return true;
-    const needle = q.toLowerCase();
-    const fields = [p.title || "", p.summary || "", ...(p.tags || []), ...(p.techStack || [])];
-    return fields.some((f) => f.toLowerCase().includes(needle));
-}
-function highlight(text: string | undefined, q: string) {
-    if (!text) return null;
-    if (!q) return text;
-    const esc = q.replace(/[.*+?^${}()|[\]\\/+^]/g, "\\$&");
-    const re = new RegExp(`(${esc})`, "ig");
-    const parts = text.split(re);
-    return parts.map((p, i) =>
-        re.test(p) ? (
-            <mark
-                key={i}
-                className="px-0.5 rounded bg-yellow-300/30 text-yellow-200"
-            >
-                {p}
-            </mark>
-        ) : (
-            <span key={i}>{p}</span>
-        ),
-    );
+    return checkMatches(q, [
+        p.title || "",
+        p.summary || "",
+        ...(p.tags || []),
+        ...(p.techStack || [])
+    ]);
 }
 
 function isString(x: unknown): x is string {
@@ -164,22 +138,12 @@ export default async function ProjectsPage({
 
     return (
         <section className="section">
-            <header className="mb-6">
-                <p className="kicker">
-                    {tServer("projects.list.kicker")}
-                </p>
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        <h1 className="display">
-                            {tServer("projects.list.title")}
-                        </h1>
-                        <p className="mt-3 text-white/70 max-w-2xl">
-                            {tServer("projects.list.subtitle")}
-                        </p>
-                    </div>
-                    <NewProjectButton />
-                </div>
-            </header>
+            <PageCtaCard
+                kicker={tServer("projects.list.kicker")}
+                title={tServer("projects.list.title")}
+                subtitle={tServer("projects.list.subtitle")}
+                action={<NewProjectButton />}
+            />
 
             {/* Controls */}
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
@@ -238,6 +202,7 @@ export default async function ProjectsPage({
                             values={allTags}
                             selected={tagsSel}
                             name="tag"
+                            clearLabel={tServer("projects.list.filter.clear")}
                         />
                     </div>
                 </div>
@@ -256,6 +221,7 @@ export default async function ProjectsPage({
                             values={allTech}
                             selected={techSel}
                             name="tech"
+                            clearLabel={tServer("projects.list.filter.clear")}
                         />
                     </div>
                 </div>
@@ -327,59 +293,5 @@ export default async function ProjectsPage({
                 </div>
             </div>
         </section>
-    );
-}
-
-function MultiFilterChips({
-                              base,
-                              params,
-                              values,
-                              selected,
-                              name,
-                          }: {
-    base: string;
-    params: Record<string, string>;
-    values: string[];
-    selected: string[];
-    name: string;
-}) {
-    const makeHref = (nextSelected: string[]) => {
-        const p = new URLSearchParams();
-        Object.entries(params).forEach(([k, v]) => v && p.set(k, v));
-        if (nextSelected.length) p.set(name, nextSelected.join(","));
-        const qs = p.toString();
-        return `${base}${qs ? `?${qs}` : ""}`;
-    };
-
-    const toggle = (v: string) => {
-        const exists = selected.includes(v);
-        const next = exists ? selected.filter((s) => s !== v) : [...selected, v];
-        return makeHref(next);
-    };
-
-    return (
-        <>
-            {selected.length ? (
-                <Link
-                    href={makeHref([])}
-                    className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10"
-                >
-                    {tServer("projects.list.filter.clear")}
-                </Link>
-            ) : null}
-            {values.map((v) => (
-                <Link
-                    key={v}
-                    href={toggle(v)}
-                    className={`px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 ${
-                        selected.includes(v)
-                            ? "bg-white text-black font-semibold"
-                            : "bg-white/5 hover:bg-white/10"
-                    }`}
-                >
-                    {v}
-                </Link>
-            ))}
-        </>
     );
 }
