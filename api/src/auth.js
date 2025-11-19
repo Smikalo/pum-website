@@ -10,11 +10,12 @@ const rateLimit = require("express-rate-limit");
 
 const { prisma } = require("./db");
 const { ensureMemberAvatar } = require("./imageDefaults");
+const { sendOk, sendUnauthorized, sendBadRequest } = require("./utils/http");
 
 const router = express.Router();
 
-// --- Config (env + defaults) ---
-const ACCESS_TTL_SEC = Number(process.env.JWT_ACCESS_TTL_SEC || 15 * 60); // 15 minutes
+// --- Config ---
+const ACCESS_TTL_SEC = Number(process.env.JWT_ACCESS_TTL_SEC || 15 * 60);
 const REFRESH_TTL_DAYS = Number(process.env.JWT_REFRESH_TTL_DAYS || 30);
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
 const REFRESH_COOKIE_NAME = process.env.REFRESH_COOKIE_NAME || "refreshToken";
@@ -72,192 +73,109 @@ function parseCookies(req) {
     return cookie.parse(req.headers.cookie || "");
 }
 
-// --- CSRF: double-submit cookie ---
+// --- CSRF ---
 function ensureCsrf(req, res, next) {
     const method = req.method.toUpperCase();
     if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
-
     const cookies = parseCookies(req);
     const cookieVal = cookies[CSRF_COOKIE_NAME];
     const headerVal = req.get("X-CSRF-Token");
-
     if (!cookieVal || !headerVal || cookieVal !== headerVal) {
-        return res
-            .status(403)
-            .json({ ok: false, error: "CSRF token missing or invalid" });
+        return res.status(403).json({ ok: false, error: "CSRF token missing or invalid" });
     }
-
     next();
 }
 
-// Ensure CSRF token cookie exists
 router.get("/csrf", (req, res) => {
     const cookies = parseCookies(req);
     if (!cookies[CSRF_COOKIE_NAME]) {
         res.cookie(CSRF_COOKIE_NAME, crypto.randomBytes(20).toString("base64url"), {
-            httpOnly: false,
-            secure: COOKIE_SECURE,
-            sameSite: COOKIE_SAMESITE,
-            domain: COOKIE_DOMAIN,
-            path: "/",
+            httpOnly: false, secure: COOKIE_SECURE, sameSite: COOKIE_SAMESITE, domain: COOKIE_DOMAIN, path: "/",
         });
     }
-    res.json({ ok: true });
+    sendOk(res, { ok: true });
 });
 
-// --- Schemas ---
-const emailSchema = z
-    .string()
-    .email()
-    .transform((e) => e.trim().toLowerCase());
-
 const loginSchema = z.object({
-    email: emailSchema,
+    email: z.string().email().transform((e) => e.trim().toLowerCase()),
     password: z.string().min(8).max(200),
 });
 
-// --- Rate limiting for auth-sensitive endpoints ---
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 10, // per IP
+    max: 10,
     message: { ok: false, error: "Too many attempts. Try again later." },
 });
 
-// --- Login ---
 router.post("/login", authLimiter, ensureCsrf, async (req, res) => {
     const parsed = loginSchema.safeParse(req.body);
-    if (!parsed.success) {
-        return res.status(400).json({ ok: false, error: "Invalid input" });
-    }
-
+    if (!parsed.success) return sendBadRequest(res, "Invalid input");
     const { email, password } = parsed.data;
+    const invalid = () => sendUnauthorized(res, "Invalid email or password");
 
-    const invalid = () =>
-        res.status(401).json({ ok: false, error: "Invalid email or password" });
-
-    const user = await prisma.user.findUnique({
-        where: { email },
-        include: { roles: true, member: true },
-    });
+    const user = await prisma.user.findUnique({ where: { email }, include: { roles: true, member: true } });
     if (!user) return invalid();
-
     const ok = await argon2.verify(user.passwordHash, password);
     if (!ok) return invalid();
 
     const roles = user.roles.map((r) => r.role);
     const accessToken = signAccessToken(user, roles);
-
     const { raw: refreshRaw, hash: refreshHash } = genRefreshToken();
-    const expiresAt = new Date(
-        Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
-    );
+    const expiresAt = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
 
     await prisma.session.create({
-        data: {
-            userId: user.id,
-            refreshTokenHash: refreshHash,
-            userAgent: req.get("user-agent") || null,
-            ip: req.ip || null,
-            expiresAt,
-        },
+        data: { userId: user.id, refreshTokenHash: refreshHash, userAgent: req.get("user-agent") || null, ip: req.ip || null, expiresAt },
     });
+    setCookie(res, REFRESH_COOKIE_NAME, refreshRaw, { httpOnly: true, expires: expiresAt });
 
-    setCookie(res, REFRESH_COOKIE_NAME, refreshRaw, {
-        httpOnly: true,
-        expires: expiresAt,
-    });
-
-    return res.json({
+    sendOk(res, {
         ok: true,
         accessToken,
         user: {
             id: user.id,
             email: user.email,
             roles,
-            member: user.member
-                ? {
-                    slug: user.member.slug,
-                    name: user.member.name,
-                    avatarUrl: abs(user.member.avatarUrl || null, req),
-                    focusArea: user.member.focusArea || null,
-                }
-                : null,
+            member: user.member ? { slug: user.member.slug, name: user.member.name, avatarUrl: abs(user.member.avatarUrl || null, req), focusArea: user.member.focusArea || null } : null,
         },
     });
 });
 
-// --- Refresh ---
 router.post("/refresh", ensureCsrf, async (req, res) => {
     const cookies = parseCookies(req);
     const token = cookies[REFRESH_COOKIE_NAME];
-    if (!token) {
-        return res
-            .status(401)
-            .json({ ok: false, error: "Missing refresh token" });
-    }
+    if (!token) return sendUnauthorized(res, "Missing refresh token");
 
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     const session = await prisma.session.findFirst({
-        where: {
-            refreshTokenHash: tokenHash,
-            expiresAt: { gt: new Date() },
-        },
-        include: {
-            user: {
-                include: { roles: true, member: true },
-            },
-        },
+        where: { refreshTokenHash: tokenHash, expiresAt: { gt: new Date() } },
+        include: { user: { include: { roles: true, member: true } } },
     });
-
-    if (!session) {
-        return res
-            .status(401)
-            .json({ ok: false, error: "Invalid refresh token" });
-    }
+    if (!session) return sendUnauthorized(res, "Invalid refresh token");
 
     const roles = session.user.roles.map((r) => r.role);
     const accessToken = signAccessToken(session.user, roles);
-
     const { raw: refreshRaw, hash: refreshHash } = genRefreshToken();
-    const newExpiry = new Date(
-        Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
-    );
+    const newExpiry = new Date(Date.now() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000);
 
     await prisma.session.update({
         where: { id: session.id },
-        data: {
-            refreshTokenHash: refreshHash,
-            expiresAt: newExpiry,
-            userAgent: req.get("user-agent") || session.userAgent,
-            ip: req.ip || session.ip,
-        },
+        data: { refreshTokenHash: refreshHash, expiresAt: newExpiry, userAgent: req.get("user-agent") || session.userAgent, ip: req.ip || session.ip },
     });
-
-    setCookie(res, REFRESH_COOKIE_NAME, refreshRaw, {
-        httpOnly: true,
-        expires: newExpiry,
-    });
-
-    return res.json({ ok: true, accessToken });
+    setCookie(res, REFRESH_COOKIE_NAME, refreshRaw, { httpOnly: true, expires: newExpiry });
+    sendOk(res, { ok: true, accessToken });
 });
 
-// --- Logout ---
 router.post("/logout", ensureCsrf, async (req, res) => {
     const cookies = parseCookies(req);
     const token = cookies[REFRESH_COOKIE_NAME];
-
     if (token) {
         const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-        await prisma.session
-            .deleteMany({ where: { refreshTokenHash: tokenHash } })
-            .catch(() => {});
+        await prisma.session.deleteMany({ where: { refreshTokenHash: tokenHash } }).catch(() => {});
     }
-
     clearCookie(res, REFRESH_COOKIE_NAME);
-    res.json({ ok: true });
+    sendOk(res, { ok: true });
 });
 
-// --- Invite consumption (project + event) ---
 router.post("/invite/consume", authLimiter, ensureCsrf, async (req, res) => {
     const schema = z.object({
         token: z.string().min(20),
@@ -553,49 +471,25 @@ router.post("/invite/consume", authLimiter, ensureCsrf, async (req, res) => {
 router.get("/me", async (req, res) => {
     const auth = req.get("authorization") || "";
     const m = auth.match(/^Bearer (.+)$/i);
-    if (!m) {
-        return res
-            .status(401)
-            .json({ ok: false, error: "Missing access token" });
-    }
+    if (!m) return sendUnauthorized(res, "Missing access token");
 
     try {
-        const decoded = jwt.verify(m[1], JWT_ACCESS_SECRET, {
-            algorithms: ["HS256"],
-        });
-
-        const user = await prisma.user.findUnique({
-            where: { id: decoded.sub },
-            include: { roles: true, member: true },
-        });
-        if (!user) {
-            return res
-                .status(401)
-                .json({ ok: false, error: "Unknown user" });
-        }
+        const decoded = jwt.verify(m[1], JWT_ACCESS_SECRET, { algorithms: ["HS256"] });
+        const user = await prisma.user.findUnique({ where: { id: decoded.sub }, include: { roles: true, member: true } });
+        if (!user) return sendUnauthorized(res, "Unknown user");
 
         const roles = user.roles.map((r) => r.role);
-
-        res.json({
+        sendOk(res, {
             ok: true,
             user: {
                 id: user.id,
                 email: user.email,
                 roles,
-                member: user.member
-                    ? {
-                        slug: user.member.slug,
-                        name: user.member.name,
-                        avatarUrl: abs(user.member.avatarUrl || null, req),
-                        focusArea: user.member.focusArea || null,
-                    }
-                    : null,
+                member: user.member ? { slug: user.member.slug, name: user.member.name, avatarUrl: abs(user.member.avatarUrl || null, req), focusArea: user.member.focusArea || null } : null,
             },
         });
     } catch (e) {
-        return res
-            .status(401)
-            .json({ ok: false, error: "Invalid access token" });
+        return sendUnauthorized(res, "Invalid access token");
     }
 });
 
