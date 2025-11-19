@@ -6,14 +6,7 @@ import { useAuth } from "@/context/AuthProvider";
 import { tClient } from "@/lib/i18n-client";
 
 export default function NewBlogButton() {
-    let ctx: any = null;
-    try {
-        ctx = useAuth?.();
-    } catch {
-        ctx = null;
-    }
-
-    const user = ctx?.user || null;
+    const { user } = useAuth();
     if (!user) return null;
 
     return (

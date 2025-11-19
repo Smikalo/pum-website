@@ -12,6 +12,14 @@ import { me as fetchMe } from "@/lib/authClient";
 import BlogEditorForm from "@/components/BlogEditorForm";
 import { tServer } from "@/lib/i18n-server";
 
+type BlogAuthor = {
+    slug: string;
+    name: string;
+    avatarUrl?: string | null;
+    headline?: string | null;
+    role?: string | null;
+};
+
 type Blog = {
     id: string;
     slug: string;
@@ -24,19 +32,79 @@ type Blog = {
     publishedAt?: string | null;
     tags?: string[];
     techStack?: string[];
-    authors?: {
-        slug: string;
-        name: string;
-        avatarUrl?: string | null;
-        headline?: string | null;
-        role?: string | null;
-    }[];
+    authors?: BlogAuthor[];
     projectSlugs?: string[];
     eventSlugs?: string[];
 };
 
-function normArr(x: any): string[] {
-    if (Array.isArray(x)) return x;
+/**
+ * Narrow representation of the raw blog shape coming from the API.
+ * It intentionally includes only the fields we actually read.
+ */
+type RawBlogAuthor = {
+    member?: {
+        slug?: string;
+        id?: string;
+        name?: string;
+        avatarUrl?: string | null;
+        avatar?: string | null;
+        headline?: string | null;
+        shortBio?: string | null;
+        role?: string | null;
+    } | null;
+    slug?: string;
+    id?: string;
+    name?: string;
+    avatarUrl?: string | null;
+    avatar?: string | null;
+    headline?: string | null;
+    shortBio?: string | null;
+    role?: string | null;
+};
+
+type RawEvent = {
+    slug?: string | null;
+};
+
+type RawBlog = {
+    id?: string | number;
+    slug?: string | number;
+    title?: string;
+    name?: string;
+    summary?: string | null;
+    content?: string | null;
+    body?: string | null;
+    markdown?: string | null;
+    html?: string | null;
+    text?: string | null;
+    cover?: string | null;
+    imageUrl?: string | null;
+    images?: string[];
+    photos?: string[];
+    publishedAt?: string | null;
+    date?: string | null;
+    createdAt?: string | null;
+    tags?: string[] | string;
+    techStack?: string[] | string;
+    tech?: string[] | string;
+    authors?: RawBlogAuthor[];
+    author?: RawBlogAuthor[];
+    projectSlugs?: string[] | string;
+    eventSlugs?: string[] | string;
+    events?: RawEvent[];
+};
+
+type RawBlogContainer = {
+    item?: RawBlog;
+    data?: RawBlog;
+} & RawBlog;
+
+/**
+ * Helper to normalize potentially string/array inputs to a string[].
+ */
+function normArr(x: unknown): string[] {
+    if (Array.isArray(x)) return x.map((s) => String(s)).map((s) => s.trim()).filter(Boolean);
+
     if (typeof x === "string") {
         return x
             .split(",")
@@ -46,41 +114,49 @@ function normArr(x: any): string[] {
     return [];
 }
 
-function normalizeBlog(raw: any): Blog | null {
+function normalizeBlog(raw: unknown): Blog | null {
     if (!raw) return null;
-    const b = raw.item ?? raw.data ?? raw;
+
+    const container = raw as RawBlogContainer;
+    const b: RawBlog =
+        container.item !== undefined
+            ? container.item
+            : container.data !== undefined
+                ? container.data
+                : container;
 
     const images: string[] = Array.isArray(b.images)
         ? b.images
         : Array.isArray(b.photos)
             ? b.photos
             : [];
+
     const cover = b.cover ?? b.imageUrl ?? images[0] ?? null;
 
     const content =
         b.content ?? b.body ?? b.markdown ?? b.html ?? b.text ?? null;
 
-    const authorsInput: any[] = Array.isArray(b.authors)
+    const authorsInput: RawBlogAuthor[] = Array.isArray(b.authors)
         ? b.authors
         : Array.isArray(b.author)
             ? b.author
             : [];
 
-    const normalizeAuthor = (a: any) => {
-        const m = a?.member ?? a ?? {};
+    const normalizeAuthor = (a: RawBlogAuthor): BlogAuthor => {
+        const m = a.member ?? a ?? {};
         return {
             slug: m.slug ?? m.id ?? "",
             name: m.name ?? "",
             avatarUrl: m.avatarUrl ?? m.avatar ?? null,
             headline: m.headline ?? m.shortBio ?? null,
-            role: a?.role ?? m.role ?? null,
+            role: a.role ?? m.role ?? null,
         };
     };
 
     let eventSlugs: string[] = normArr(b.eventSlugs);
     if (!eventSlugs.length && Array.isArray(b.events)) {
-        eventSlugs = (b.events as any[])
-            .map((e) => e?.slug)
+        eventSlugs = b.events
+            .map((e) => e?.slug ?? null)
             .filter(
                 (s): s is string =>
                     typeof s === "string" && s.trim().length > 0,
@@ -143,12 +219,29 @@ function parseCsv(formData: FormData, key: string): string[] {
 
 function isNonEmptyFileLike(value: unknown): value is File {
     if (!value) return false;
-    const file = value as any;
+    const file = value as File;
     if (typeof file.arrayBuffer !== "function") return false;
     const size = file.size;
     if (typeof size === "number" && size <= 0) return false;
     return true;
 }
+
+type UpdateBlogBody = {
+    title: string;
+    summary: string | null;
+    content: string | null;
+    tags: string[];
+    techStack: string[];
+    photos: string[];
+    projectSlugs: string[];
+    eventSlugs: string[];
+    authorSlugs: string[];
+    publishedAt?: string;
+};
+
+type UploadBlogPhotoResponse = {
+    url: string | null;
+};
 
 async function updateBlog(slug: string, formData: FormData) {
     "use server";
@@ -206,8 +299,11 @@ async function updateBlog(slug: string, formData: FormData) {
         const file = f as File;
 
         try {
-            const result = await uploadBlogPhoto(token, file);
-            const url = (result as any)?.url;
+            const result = (await uploadBlogPhoto(
+                token,
+                file,
+            )) as UploadBlogPhotoResponse;
+            const url = result.url;
             if (url) uploadedPhotoUrls.push(url);
         } catch {
             throw new Error("Failed to upload one of the images");
@@ -246,7 +342,7 @@ async function updateBlog(slug: string, formData: FormData) {
         }
     }
 
-    const body: any = {
+    const body: UpdateBlogBody = {
         title: title || "Untitled",
         summary: summary || null,
         content: content || null,
@@ -286,7 +382,7 @@ async function updateBlog(slug: string, formData: FormData) {
         throw new Error(msg);
     }
 
-    const json = await res.json();
+    const json = (await res.json()) as { slug?: string };
     const newSlug = json?.slug || slug;
 
     redirect(`/blog/${newSlug}`);
@@ -330,6 +426,21 @@ async function deleteBlog(slug: string, formData: FormData) {
     redirect("/blog");
 }
 
+type MeRole = string | { role?: string | null };
+
+type MeMember = {
+    slug?: string | null;
+} | null;
+
+type MeUser = {
+    roles?: MeRole[] | null;
+    member?: MeMember;
+} | null;
+
+type MeResponse = {
+    user?: MeUser;
+};
+
 export default async function EditBlogPage({
                                                params,
                                            }: {
@@ -350,15 +461,19 @@ export default async function EditBlogPage({
     let canEdit = false;
 
     try {
-        const meData: any = await fetchMe(token);
-        const rawUser = meData?.user ?? null;
-        const rawUserRoles = Array.isArray(rawUser?.roles)
+        const meData = (await fetchMe(token)) as MeResponse;
+        const rawUser: MeUser = meData.user ?? null;
+        const rawUserRoles: MeRole[] = Array.isArray(rawUser?.roles)
             ? rawUser.roles
             : [];
-        const rawRoles: string[] =
-            typeof rawUserRoles[0] === "string"
-                ? rawUserRoles
-                : rawUserRoles.map((r: any) => r.role ?? r);
+
+        const rawRoles: string[] = rawUserRoles
+            .map((r) => {
+                if (typeof r === "string") return r;
+                if (typeof r?.role === "string") return r.role;
+                return "";
+            })
+            .filter((r): r is string => r.length > 0);
 
         const upperRoles = rawRoles
             .filter(Boolean)

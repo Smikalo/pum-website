@@ -1,4 +1,3 @@
-// web/app/projects/[slug]/page.tsx
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
@@ -311,53 +310,136 @@ type Project = {
     updatedAt?: string | null;
 };
 
+/* ---------- API shapes ---------- */
+
+type ApiProjectMember = {
+    slug?: string | null;
+    memberSlug?: string | null;
+    name?: string | null;
+    avatarUrl?: string | null;
+    avatar?: string | null;
+    role?: string | null;
+    isCreator?: boolean | null;
+};
+
+type ApiProjectEvent = {
+    slug?: string | null;
+    id?: string | null;
+    name?: string | null;
+    dateStart?: string | null;
+    startDate?: string | null;
+    dateEnd?: string | null;
+    endDate?: string | null;
+    locationName?: string | null;
+    location_name?: string | null;
+    description?: string | null;
+    summary?: string | null;
+    cover?: string | null;
+    imageUrl?: string | null;
+    photos?: string[] | null;
+    tags?: (string | null)[] | null;
+};
+
+type ApiBlogPost = {
+    slug?: string | null;
+    title?: string | null;
+    summary?: string | null;
+    cover?: string | null;
+    imageUrl?: string | null;
+    publishedAt?: string | null;
+    tags?: (string | null)[] | null;
+};
+
+type ApiInvite = {
+    id?: string | number | null;
+    email?: string | null;
+    role?: string | null;
+    status?: string | null;
+    createdAt?: string | null;
+    tokenHash?: string | null;
+};
+
+type ApiProjectLinks = Record<string, string | null | undefined>;
+
+type ApiProjectDetail = {
+    id?: string | null;
+    slug: string;
+    title?: string | null;
+    name?: string | null;
+    tags?: (string | null)[] | null;
+    techStack?: (string | null)[] | null;
+    tech?: (string | null)[] | null;
+    members?: ApiProjectMember[] | null;
+    imageUrl?: string | null;
+    summary?: string | null;
+    description?: string | null;
+    year?: number | null;
+    cover?: string | null;
+    demoUrl?: string | null;
+    repoUrl?: string | null;
+    status?: string | null;
+    events?: ApiProjectEvent[] | null;
+    event?: ApiProjectEvent | null;
+    gallery?: string[] | null;
+    images?: string[] | null;
+    blogPosts?: ApiBlogPost[] | null;
+    links?: ApiProjectLinks | null;
+    invites?: ApiInvite[] | null;
+    createdAt?: string | null;
+    updatedAt?: string | null;
+};
+
 /* ---------- API ---------- */
 async function getProjectBySlug(slug: string): Promise<Project | null> {
     const res = await fetch(`${API_BASE}/api/projects/${slug}`, { cache: "no-store" });
     if (res.status === 404) return null;
     if (!res.ok) throw new Error("Failed to load project");
-    const p = await res.json();
+    const p = (await res.json()) as ApiProjectDetail;
     return normalizeProjectDetail(p);
 }
 
-function normalizeProjectDetail(p: any): Project {
-    const eventsSource: any[] = Array.isArray(p.events)
+function normalizeProjectDetail(p: ApiProjectDetail): Project {
+    const eventsSource: ApiProjectEvent[] = Array.isArray(p.events)
         ? p.events
         : p.event
             ? [p.event]
             : [];
 
-    const events: ProjectEvent[] = eventsSource.map((e: any) => {
+    const events: ProjectEvent[] = eventsSource.map((e) => {
         const photos: string[] = Array.isArray(e.photos) ? e.photos : [];
         const cover = e.cover ?? e.imageUrl ?? (photos.length > 0 ? photos[0] : null);
 
         return {
-            slug: e.slug ?? e.id,
-            name: e.name,
+            slug: (e.slug ?? e.id ?? "") || "",
+            name: e.name ?? undefined,
             dateStart: e.dateStart ?? e.startDate ?? null,
             dateEnd: e.dateEnd ?? e.endDate ?? null,
             locationName: e.locationName ?? e.location_name ?? null,
             description: e.description ?? e.summary ?? null,
-            cover,
+            cover: cover ?? undefined,
             photos,
-            tags: Array.isArray(e.tags) ? e.tags : [],
+            tags: (e.tags ?? []).filter(
+                (t): t is string => typeof t === "string",
+            ),
         };
     });
 
     const blogPosts: BlogPost[] = Array.isArray(p.blogPosts)
-        ? p.blogPosts.map((b: any) => ({
-            slug: b.slug,
-            title: b.title,
+        ? p.blogPosts.map((b) => ({
+            slug: (b.slug ?? "") || "",
+            title: (b.title ?? "") || "",
             summary: b.summary ?? null,
             cover: b.cover ?? b.imageUrl ?? null,
             imageUrl: b.imageUrl ?? null,
             publishedAt: b.publishedAt ?? null,
-            tags: Array.isArray(b.tags) ? b.tags : [],
+            tags: (b.tags ?? []).filter(
+                (t): t is string => typeof t === "string",
+            ),
         }))
         : [];
 
     const invites: ProjectInvite[] = Array.isArray(p.invites)
-        ? p.invites.map((inv: any) => ({
+        ? p.invites.map((inv) => ({
             id: String(inv.id ?? inv.email ?? inv.tokenHash ?? Math.random()),
             email: inv.email ?? "",
             role: inv.role ?? null,
@@ -366,31 +448,56 @@ function normalizeProjectDetail(p: any): Project {
         }))
         : [];
 
+    const members: ProjectMember[] = (p.members ?? []).map((m) => ({
+        slug: m.slug ?? m.memberSlug ?? undefined,
+        name: m.name ?? undefined,
+        avatarUrl: m.avatarUrl ?? m.avatar ?? undefined,
+        role: m.role ?? null,
+        isCreator: Boolean(m.isCreator ?? false),
+    }));
+
+    const tags = (p.tags ?? []).filter(
+        (t): t is string => typeof t === "string",
+    );
+    const techStackSource = p.techStack ?? p.tech ?? [];
+    const techStack = techStackSource.filter(
+        (t): t is string => typeof t === "string",
+    );
+
+    const gallery = Array.isArray(p.images)
+        ? p.images
+        : Array.isArray(p.gallery)
+            ? p.gallery
+            : [];
+
+    const links: ProjectLinks | null = p.links
+        ? Object.entries(p.links).reduce<ProjectLinks>((acc, [k, v]) => {
+            if (typeof v === "string" && v) {
+                acc[k] = v;
+            }
+            return acc;
+        }, {})
+        : null;
+
     return {
         id: p.id ?? p.slug,
         slug: p.slug,
         title: p.title ?? p.name ?? p.slug,
-        tags: p.tags ?? [],
-        techStack: p.techStack ?? p.tech ?? [],
-        members: (p.members ?? []).map((m: any) => ({
-            slug: m.slug ?? m.memberSlug,
-            name: m.name,
-            avatarUrl: m.avatarUrl ?? m.avatar,
-            role: m.role,
-            isCreator: !!m.isCreator,
-        })),
-        imageUrl: p.imageUrl ?? p.cover,
-        summary: p.summary,
-        description: p.description,
+        tags,
+        techStack,
+        members,
+        imageUrl: p.imageUrl ?? p.cover ?? undefined,
+        summary: p.summary ?? undefined,
+        description: p.description ?? undefined,
         year: typeof p.year === "number" ? p.year : undefined,
-        cover: p.cover ?? p.imageUrl,
-        demoUrl: p.demoUrl,
-        repoUrl: p.repoUrl,
+        cover: p.cover ?? p.imageUrl ?? undefined,
+        demoUrl: p.demoUrl ?? undefined,
+        repoUrl: p.repoUrl ?? undefined,
         status: p.status ?? null,
         events,
-        gallery: Array.isArray(p.images) ? p.images : p.gallery ?? [],
+        gallery,
         blogPosts,
-        links: (p.links as ProjectLinks | null) ?? null,
+        links,
         invites,
         createdAt: p.createdAt ?? null,
         updatedAt: p.updatedAt ?? null,
@@ -557,7 +664,7 @@ export default async function ProjectDetailPage({
                         <h1 className="display">{project.title}</h1>
                         <div className="mt-2 text-white/70 text-sm flex flex-wrap items-center gap-2">
                             {project.status && (
-                                <span className="inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-medium uppercase tracking-wide">
+                                <span className="inline-flex items-center rounded-full bg白/10 px-3 py-1 text-xs font-medium uppercase tracking-wide">
                                     {project.status}
                                 </span>
                             )}

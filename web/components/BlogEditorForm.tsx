@@ -1,14 +1,62 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { API_BASE } from "@/lib/config";
 import { tClient } from "@/lib/i18n-client";
 
+type BlogAuthor = {
+    slug: string;
+    name: string;
+    avatarUrl?: string | null;
+    headline?: string | null;
+    role?: string | null;
+};
+
+type BlogProjectRef = {
+    slug?: string | null;
+};
+
+type BlogEventRef = {
+    slug?: string | null;
+};
+
+type BlogProjectFull = {
+    slug?: string | null;
+    title?: string | null;
+    cover?: string | null;
+    year?: number | null;
+};
+
+type BlogEventFull = {
+    slug?: string | null;
+    name?: string | null;
+    cover?: string | null;
+    dateStart?: string | null;
+};
+
+type BlogDraft = {
+    title?: string;
+    summary?: string | null;
+    content?: string | null;
+    tags?: string[];
+    techStack?: string[];
+    authors?: BlogAuthor[];
+    images?: string[];
+    publishedAt?: string | Date | null;
+    projectSlugs?: (string | null | undefined)[];
+    projects?: BlogProjectFull[];
+    eventSlugs?: (string | null | undefined)[];
+    events?: BlogEventFull[];
+    cover?: string | null;
+    imageUrl?: string | null;
+};
+
 type BlogEditorFormProps = {
     mode: "create" | "edit";
-    initialBlog?: any;
+    initialBlog?: BlogDraft;
     onSubmit: (formData: FormData) => void | Promise<void>;
 };
 
@@ -34,7 +82,35 @@ type EventOption = {
     dateStart?: string | null;
 };
 
-const emptyArr: any[] = [];
+type MembersApiResponse = {
+    items?: {
+        slug: string;
+        name: string;
+        avatarUrl?: string | null;
+        headline?: string | null;
+        shortBio?: string | null;
+    }[];
+};
+
+type ProjectsApiResponse = {
+    items?: {
+        slug: string;
+        title: string;
+        cover?: string | null;
+        year?: number | null;
+    }[];
+};
+
+type EventsApiResponse = {
+    items?: {
+        slug: string;
+        name: string;
+        cover?: string | null;
+        dateStart?: string | null;
+    }[];
+};
+
+const emptyAuthors: MemberOption[] = [];
 
 function searchInputCls() {
     return "w-full rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30";
@@ -49,9 +125,11 @@ const ALLOWED_IMAGE_MIME = [
     "image/gif",
 ] as const;
 
+type AllowedImageMime = (typeof ALLOWED_IMAGE_MIME)[number];
+
 function isAllowedImage(file: File) {
-    const t = (file.type || "").toLowerCase();
-    return ALLOWED_IMAGE_MIME.includes(t as any);
+    const t = (file.type || "").toLowerCase() as AllowedImageMime | "";
+    return ALLOWED_IMAGE_MIME.includes(t as AllowedImageMime);
 }
 
 const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
@@ -70,7 +148,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         : [];
     const initialAuthors: MemberOption[] = Array.isArray(initialBlog?.authors)
         ? initialBlog.authors
-        : emptyArr;
+        : emptyAuthors;
     const initialImages: string[] = Array.isArray(initialBlog?.images)
         ? initialBlog.images
         : [];
@@ -79,31 +157,34 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
             ? new Date(initialBlog.publishedAt).toISOString().slice(0, 10)
             : "";
 
+    function cleanSlugArray(slugs: (string | null | undefined)[] | undefined): string[] {
+        if (!Array.isArray(slugs)) return [];
+        return slugs
+            .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+            .map((s) => s.trim());
+    }
+
     // Existing related project connections
-    const initialProjectSlugs: string[] = Array.isArray(
-        initialBlog?.projectSlugs,
-    )
-        ? (initialBlog.projectSlugs as any[])
-            .filter((s) => typeof s === "string" && s.trim().length > 0)
-            .map((s) => s.trim())
-        : Array.isArray(initialBlog?.projects)
-            ? (initialBlog.projects as any[])
-                .map((p) => p?.slug)
-                .filter((s) => typeof s === "string" && s.trim().length > 0)
-                .map((s) => s.trim())
-            : [];
+    let initialProjectSlugs: string[] = [];
+    if (Array.isArray(initialBlog?.projectSlugs)) {
+        initialProjectSlugs = cleanSlugArray(initialBlog.projectSlugs);
+    } else if (Array.isArray(initialBlog?.projects)) {
+        const slugsFromProjects = (initialBlog.projects as BlogProjectRef[]).map(
+            (p) => p.slug ?? null,
+        );
+        initialProjectSlugs = cleanSlugArray(slugsFromProjects);
+    }
 
     // Existing related event connections
-    const initialEventSlugs: string[] = Array.isArray(initialBlog?.eventSlugs)
-        ? (initialBlog.eventSlugs as any[])
-            .filter((s) => typeof s === "string" && s.trim().length > 0)
-            .map((s) => s.trim())
-        : Array.isArray(initialBlog?.events)
-            ? (initialBlog.events as any[])
-                .map((e) => e?.slug)
-                .filter((s) => typeof s === "string" && s.trim().length > 0)
-                .map((s) => s.trim())
-            : [];
+    let initialEventSlugs: string[] = [];
+    if (Array.isArray(initialBlog?.eventSlugs)) {
+        initialEventSlugs = cleanSlugArray(initialBlog.eventSlugs);
+    } else if (Array.isArray(initialBlog?.events)) {
+        const slugsFromEvents = (initialBlog.events as BlogEventRef[]).map(
+            (e) => e.slug ?? null,
+        );
+        initialEventSlugs = cleanSlugArray(slugsFromEvents);
+    }
 
     const [content, setContent] = useState<string>(initialContent);
     const [members, setMembers] = useState<MemberOption[]>([]);
@@ -165,18 +246,18 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     credentials: "include",
                 });
                 if (!res.ok) return;
-                const json = await res.json();
+                const json = (await res.json()) as MembersApiResponse;
                 if (!cancelled) {
-                    const items: any[] = Array.isArray(json.items)
-                        ? json.items
-                        : [];
+                    const items = Array.isArray(json.items) ? json.items : [];
                     setMembers(
-                        items.map((m) => ({
-                            slug: m.slug,
-                            name: m.name,
-                            avatarUrl: m.avatarUrl || null,
-                            headline: m.headline || m.shortBio || null,
-                        })),
+                        items.map(
+                            (m): MemberOption => ({
+                                slug: m.slug,
+                                name: m.name,
+                                avatarUrl: m.avatarUrl || null,
+                                headline: m.headline || m.shortBio || null,
+                            }),
+                        ),
                     );
                 }
             } catch {
@@ -197,19 +278,19 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     credentials: "include",
                 });
                 if (!res.ok) return;
-                const json = await res.json();
+                const json = (await res.json()) as ProjectsApiResponse;
                 if (!cancelled) {
-                    const items: any[] = Array.isArray(json.items)
-                        ? json.items
-                        : [];
+                    const items = Array.isArray(json.items) ? json.items : [];
                     setProjects(
-                        items.map((p) => ({
-                            slug: p.slug,
-                            title: p.title,
-                            cover: p.cover || null,
-                            year:
-                                typeof p.year === "number" ? p.year : null,
-                        })),
+                        items.map(
+                            (p): ProjectOption => ({
+                                slug: p.slug,
+                                title: p.title,
+                                cover: p.cover || null,
+                                year:
+                                    typeof p.year === "number" ? p.year : null,
+                            }),
+                        ),
                     );
                 }
             } catch {
@@ -230,18 +311,18 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                     credentials: "include",
                 });
                 if (!res.ok) return;
-                const json = await res.json();
+                const json = (await res.json()) as EventsApiResponse;
                 if (!cancelled) {
-                    const items: any[] = Array.isArray(json.items)
-                        ? json.items
-                        : [];
+                    const items = Array.isArray(json.items) ? json.items : [];
                     setEvents(
-                        items.map((e) => ({
-                            slug: e.slug,
-                            name: e.name,
-                            cover: e.cover || null,
-                            dateStart: e.dateStart || null,
-                        })),
+                        items.map(
+                            (e): EventOption => ({
+                                slug: e.slug,
+                                name: e.name,
+                                cover: e.cover || null,
+                                dateStart: e.dateStart || null,
+                            }),
+                        ),
                     );
                 }
             } catch {
@@ -573,12 +654,14 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                     className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-white/5 text-left"
                                 >
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
+                                    <Image
                                         src={
                                             m.avatarUrl ||
                                             "/avatars/default.png"
                                         }
                                         alt={m.name}
+                                        width={24}
+                                        height={24}
                                         className="w-6 h-6 rounded-full object-cover ring-1 ring-white/10"
                                     />
                                     <div className="min-w-0">
@@ -608,12 +691,14 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                     className="inline-flex items-center gap-2 rounded-full bg-white/5 ring-1 ring-white/10 px-2 py-1 text-xs"
                                 >
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
+                                    <Image
                                         src={
                                             a.avatarUrl ||
                                             "/avatars/default.png"
                                         }
                                         alt={a.name}
+                                        width={24}
+                                        height={24}
                                         className="w-6 h-6 rounded-full object-cover ring-1 ring-white/10"
                                     />
                                     <span className="max-w-[120px] truncate">
@@ -672,9 +757,11 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                         >
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
                                             {p.cover && (
-                                                <img
+                                                <Image
                                                     src={p.cover}
                                                     alt={p.title}
+                                                    width={32}
+                                                    height={32}
                                                     className="w-8 h-8 rounded-md object-cover ring-1 ring-white/10"
                                                 />
                                             )}
@@ -751,9 +838,11 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                     >
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                         {ev.cover && (
-                                            <img
+                                            <Image
                                                 src={ev.cover}
-                                                alt={ev.name}
+                                                alt={ev.name ?? ""}
+                                                width={32}
+                                                height={32}
                                                 className="w-8 h-8 rounded-md object-cover ring-1 ring-white/10"
                                             />
                                         )}
@@ -864,7 +953,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                 }`}
                                             >
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img
+                                                <Image
                                                     src={src}
                                                     alt={tClient(
                                                         "blog.editor.photos.existingAlt",
@@ -872,6 +961,8 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                         "{index}",
                                                         String(idx + 1),
                                                     )}
+                                                    width={160}
+                                                    height={80}
                                                     className="w-full h-20 object-cover"
                                                 />
                                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex flex-col justify-between p-1 text-[10px]">
@@ -941,10 +1032,13 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                 }`}
                                             >
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img
+                                                <Image
                                                     src={url}
                                                     alt={file.name}
+                                                    width={160}
+                                                    height={80}
                                                     className="w-full h-20 object-cover"
+                                                    unoptimized
                                                 />
                                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex flex-col justify-between p-1 text-[10px]">
                                                     <button
@@ -973,11 +1067,10 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                     >
                                                         {tClient(
                                                             "blog.editor.photos.removeNew",
-                                                        )
-                                                            .replace(
-                                                                "{name}",
-                                                                file.name,
-                                                            )}
+                                                        ).replace(
+                                                            "{name}",
+                                                            file.name,
+                                                        )}
                                                     </button>
                                                 </div>
                                             </div>

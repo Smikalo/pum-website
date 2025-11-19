@@ -37,6 +37,104 @@ type MemberProfile = {
     userRoles: string[];
 };
 
+type ApiMemberLike = {
+    id?: unknown;
+    slug?: unknown;
+    name?: unknown;
+    headline?: unknown;
+    shortBio?: unknown;
+    markdown?: unknown;
+    bio?: unknown;
+    links?: unknown;
+    focusArea?: unknown;
+    skills?: unknown;
+    techStack?: unknown;
+    cvUrl?: unknown;
+    avatarUrl?: unknown;
+    avatar?: unknown;
+    userRoles?: unknown;
+    roles?: unknown;
+};
+
+function normalizeMemberFromApi(m: unknown): MemberProfile {
+    const src = (m ?? {}) as ApiMemberLike;
+
+    const rawSkills = Array.isArray(src.skills) ? src.skills : [];
+    const rawTech = Array.isArray(src.techStack) ? src.techStack : [];
+
+    const skillsArr = rawSkills
+        .map((s) => (typeof s === "string" ? s.trim() : ""))
+        .filter(Boolean);
+    const techArr = rawTech
+        .map((s) => (typeof s === "string" ? s.trim() : ""))
+        .filter(Boolean);
+
+    const linksObj: Record<string, string> = {};
+    if (src.links && typeof src.links === "object") {
+        for (const [label, url] of Object.entries(
+            src.links as Record<string, unknown>,
+        )) {
+            if (typeof url === "string" && label.trim()) {
+                linksObj[label] = url;
+            }
+        }
+    }
+
+    let focus: Area | null = null;
+    if (
+        typeof src.focusArea === "string" &&
+        (AREAS as readonly string[]).includes(src.focusArea)
+    ) {
+        focus = src.focusArea as Area;
+    }
+
+    const rawRoles = Array.isArray(src.userRoles)
+        ? src.userRoles
+        : Array.isArray(src.roles)
+            ? src.roles
+            : [];
+    const userRoles = rawRoles
+        .map((r) => (typeof r === "string" ? r.trim().toUpperCase() : ""))
+        .filter(Boolean);
+
+    let normalizedAvatarUrl: string | null = null;
+    if (typeof src.avatarUrl === "string") {
+        normalizedAvatarUrl = src.avatarUrl;
+    } else if (typeof src.avatar === "string") {
+        normalizedAvatarUrl = src.avatar;
+    }
+
+    const cv = typeof src.cvUrl === "string" ? src.cvUrl : null;
+
+    const headlineVal =
+        typeof src.headline === "string" ? src.headline : null;
+    const shortBioVal =
+        typeof src.shortBio === "string" ? src.shortBio : null;
+
+    const markdownVal =
+        typeof src.markdown === "string"
+            ? src.markdown
+            : typeof src.bio === "string"
+                ? src.bio
+                : "";
+
+    return {
+        id: String(src.id ?? ""),
+        slug: String(src.slug ?? ""),
+        name: String(src.name ?? ""),
+        headline: headlineVal,
+        shortBio: shortBioVal,
+        markdown: markdownVal,
+        links: linksObj,
+        focusArea: focus,
+        skills: skillsArr,
+        techStack: techArr,
+        cvUrl: cv,
+        avatarUrl: normalizedAvatarUrl,
+        userRoles,
+    };
+}
+
 type LinkRow = { label: string; url: string };
 
 type MemberAdminEditorProps = {
@@ -45,6 +143,21 @@ type MemberAdminEditorProps = {
 };
 
 type AccessRole = "" | "MODERATOR" | "MEMBER";
+
+function getErrorMessage(err: unknown, fallback: string): string {
+    if (
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof (err as { message?: unknown }).message === "string"
+    ) {
+        return (err as { message: string }).message;
+    }
+    if (err instanceof Error && err.message) {
+        return err.message;
+    }
+    return fallback;
+}
 
 export default function MemberAdminEditor({
                                               slug,
@@ -92,8 +205,6 @@ export default function MemberAdminEditor({
 
     const isAdmin = !!user?.roles?.includes("ADMIN");
 
-    // --------------------------- helpers ---------------------------
-
     const inputCls = (field?: string) =>
         [
             "w-full rounded-md bg-white/5 px-3 py-2 text-sm text-white",
@@ -102,65 +213,6 @@ export default function MemberAdminEditor({
                 ? "ring-red-400 focus:ring-red-400/80"
                 : "ring-white/10 focus:ring-white/30",
         ].join(" ");
-
-    function normalizeMemberFromApi(m: any): MemberProfile {
-        const rawSkills: unknown[] = Array.isArray(m?.skills) ? m.skills : [];
-        const rawTech: unknown[] = Array.isArray(m?.techStack) ? m.techStack : [];
-        const linksObj: Record<string, string> =
-            m && typeof m.links === "object" && m.links !== null ? m.links : {};
-
-        const skillsArr = rawSkills
-            .map((s) => (typeof s === "string" ? s.trim() : ""))
-            .filter(Boolean);
-        const techArr = rawTech
-            .map((s) => (typeof s === "string" ? s.trim() : ""))
-            .filter(Boolean);
-
-        const focus: Area | null =
-            typeof m?.focusArea === "string" &&
-            (AREAS as readonly string[]).includes(m.focusArea)
-                ? (m.focusArea as Area)
-                : null;
-
-        const rawRoles: unknown[] = Array.isArray(m?.userRoles)
-            ? m.userRoles
-            : Array.isArray(m?.roles)
-                ? m.roles
-                : [];
-        const userRoles = rawRoles
-            .map((r) => (typeof r === "string" ? r.trim().toUpperCase() : ""))
-            .filter(Boolean);
-
-        const avatarUrl: string | null =
-            typeof m?.avatarUrl === "string"
-                ? m.avatarUrl
-                : typeof m?.avatar === "string"
-                    ? m.avatar
-                    : null;
-
-        return {
-            id: String(m?.id ?? ""),
-            slug: String(m?.slug ?? ""),
-            name: String(m?.name ?? ""),
-            headline:
-                typeof m?.headline === "string" ? m.headline : m?.headline ?? null,
-            shortBio:
-                typeof m?.shortBio === "string" ? m.shortBio : m?.shortBio ?? null,
-            markdown:
-                typeof m?.markdown === "string"
-                    ? m.markdown
-                    : typeof m?.bio === "string"
-                        ? m.bio
-                        : "",
-            links: linksObj,
-            focusArea: focus,
-            skills: skillsArr,
-            techStack: techArr,
-            cvUrl: typeof m?.cvUrl === "string" ? m.cvUrl : null,
-            avatarUrl,
-            userRoles,
-        };
-    }
 
     function linksObjectToRows(obj: Record<string, string>): LinkRow[] {
         return Object.entries(obj || {}).map(([label, url]) => ({
@@ -208,8 +260,6 @@ export default function MemberAdminEditor({
         return "";
     }
 
-    // --------------------------- load member ---------------------------
-
     React.useEffect(() => {
         let cancelled = false;
 
@@ -224,7 +274,9 @@ export default function MemberAdminEditor({
                     cache: "no-store",
                 });
                 if (!res.ok) {
-                    throw new Error(tClient("admin.member.error.loadProfile"));
+                    throw new Error(
+                        tClient("admin.member.error.loadProfile"),
+                    );
                 }
                 const json = await res.json();
                 if (cancelled) return;
@@ -243,10 +295,13 @@ export default function MemberAdminEditor({
                 setCvUrl(prof.cvUrl);
                 setAvatarUrl(prof.avatarUrl ?? null);
                 setAccessRole(deriveAccessRole(prof.userRoles));
-            } catch (err: any) {
+            } catch (err: unknown) {
                 if (cancelled) return;
                 setError(
-                    err?.message || tClient("admin.member.error.loadProfile"),
+                    getErrorMessage(
+                        err,
+                        tClient("admin.member.error.loadProfile"),
+                    ),
                 );
             } finally {
                 if (!cancelled) setLoading(false);
@@ -260,8 +315,6 @@ export default function MemberAdminEditor({
         };
     }, [slug]);
 
-    // --------------------------- save handler ---------------------------
-
     async function onSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!accessToken) {
@@ -271,7 +324,9 @@ export default function MemberAdminEditor({
 
         const nextErrors: Record<string, string> = {};
         if (!name.trim()) {
-            nextErrors.name = tClient("admin.member.validation.nameRequired");
+            nextErrors.name = tClient(
+                "admin.member.validation.nameRequired",
+            );
         }
 
         setErrors(nextErrors);
@@ -286,7 +341,19 @@ export default function MemberAdminEditor({
             .map((s) => s.trim())
             .filter(Boolean);
 
-        const body: any = {
+        type UpdateMemberRequestBody = {
+            name: string;
+            headline: string | null;
+            shortBio: string | null;
+            markdown: string;
+            links: Record<string, string>;
+            skills: string[];
+            techStack: string[];
+            focusArea: Area | null;
+            accessRole?: AccessRole | null;
+        };
+
+        const body: UpdateMemberRequestBody = {
             name: name.trim(),
             headline: headline.trim() || null,
             shortBio: shortBio.trim() || null,
@@ -297,9 +364,8 @@ export default function MemberAdminEditor({
             focusArea: focusArea || null,
         };
 
-        // only admins can change roles; send desired role as accessRole
         if (isAdmin) {
-            body.accessRole = accessRole || null; // "MODERATOR" | "MEMBER" | null
+            body.accessRole = accessRole || null;
         }
 
         setSaving(true);
@@ -307,29 +373,32 @@ export default function MemberAdminEditor({
         setHint(null);
 
         try {
-            const res: any = await api.updateMemberProfile(
+            const res = await api.updateMemberProfile(
                 accessToken,
                 slug,
                 body,
             );
-            if (res && res.member) {
-                const prof = normalizeMemberFromApi(res.member);
+            if (res && typeof res === "object" && "member" in res) {
+                const memberFromResponse = (res as { member: unknown })
+                    .member;
+                const prof = normalizeMemberFromApi(memberFromResponse);
                 setProfile(prof);
                 setCvUrl(prof.cvUrl);
                 setAvatarUrl(prof.avatarUrl ?? null);
                 setAccessRole(deriveAccessRole(prof.userRoles));
             }
             setHint(tClient("admin.member.feedback.updated"));
-        } catch (err: any) {
+        } catch (err: unknown) {
             setError(
-                err?.message || tClient("admin.member.error.updateProfile"),
+                getErrorMessage(
+                    err,
+                    tClient("admin.member.error.updateProfile"),
+                ),
             );
         } finally {
             setSaving(false);
         }
     }
-
-    // --------------------------- avatar handlers ---------------------------
 
     async function onUploadAvatar() {
         if (!accessToken) {
@@ -351,34 +420,59 @@ export default function MemberAdminEditor({
         setHint(null);
 
         try {
-            const res: any = await api.uploadMemberAvatar(
+            const res = await api.uploadMemberAvatar(
                 accessToken,
                 slug,
                 avatarFile,
             );
-            if (res?.url || res?.avatarUrl) {
-                setAvatarUrl(res.url || res.avatarUrl);
-                setHint(tClient("admin.member.feedback.avatarUpdated"));
-                setAvatarFile(null);
-            } else if (res?.member) {
-                const prof = normalizeMemberFromApi(res.member);
-                setProfile(prof);
-                setAvatarUrl(prof.avatarUrl ?? null);
-                setHint(tClient("admin.member.feedback.avatarUpdated"));
+
+            if (res && typeof res === "object") {
+                if ("url" in res || "avatarUrl" in res) {
+                    const cast = res as {
+                        url?: string;
+                        avatarUrl?: string;
+                    };
+                    setAvatarUrl(cast.url ?? cast.avatarUrl ?? null);
+                    setHint(
+                        tClient(
+                            "admin.member.feedback.avatarUpdated",
+                        ),
+                    );
+                    setAvatarFile(null);
+                } else if ("member" in res) {
+                    const prof = normalizeMemberFromApi(
+                        (res as { member: unknown }).member,
+                    );
+                    setProfile(prof);
+                    setAvatarUrl(prof.avatarUrl ?? null);
+                    setHint(
+                        tClient(
+                            "admin.member.feedback.avatarUpdated",
+                        ),
+                    );
+                } else {
+                    setHint(
+                        tClient(
+                            "admin.member.feedback.avatarUploaded",
+                        ),
+                    );
+                }
             } else {
-                setHint(tClient("admin.member.feedback.avatarUploaded"));
+                setHint(
+                    tClient("admin.member.feedback.avatarUploaded"),
+                );
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             setError(
-                err?.message ||
-                tClient("admin.member.error.avatarUploadFailed"),
+                getErrorMessage(
+                    err,
+                    tClient("admin.member.error.avatarUploadFailed"),
+                ),
             );
         } finally {
             setUploadingAvatar(false);
         }
     }
-
-    // --------------------------- CV handlers ---------------------------
 
     async function onUploadCv() {
         if (!accessToken) {
@@ -399,32 +493,38 @@ export default function MemberAdminEditor({
         setHint(null);
 
         try {
-            const res: any = await api.uploadMemberCv(
+            const res = await api.uploadMemberCv(
                 accessToken,
                 slug,
                 cvFile,
             );
-            if (res?.url) {
-                setCvUrl(res.url);
-                setHint(tClient("admin.member.feedback.cvUploaded"));
-                setCvFile(null);
-            } else if (res?.cvUrl) {
-                setCvUrl(res.cvUrl);
-                setHint(tClient("admin.member.feedback.cvUploaded"));
-                setCvFile(null);
+            if (res && typeof res === "object") {
+                const cast = res as { url?: string; cvUrl?: string };
+                if (cast.url || cast.cvUrl) {
+                    setCvUrl(cast.url ?? cast.cvUrl ?? null);
+                    setHint(
+                        tClient("admin.member.feedback.cvUploaded"),
+                    );
+                    setCvFile(null);
+                } else {
+                    setHint(
+                        tClient("admin.member.feedback.cvUploaded"),
+                    );
+                }
             } else {
                 setHint(tClient("admin.member.feedback.cvUploaded"));
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             setError(
-                err?.message || tClient("admin.member.error.cvUploadFailed"),
+                getErrorMessage(
+                    err,
+                    tClient("admin.member.error.cvUploadFailed"),
+                ),
             );
         } finally {
             setUploadingCv(false);
         }
     }
-
-    // --------------------------- delete handler ---------------------------
 
     async function onDelete() {
         if (!accessToken) {
@@ -434,7 +534,9 @@ export default function MemberAdminEditor({
 
         const trimmed = deleteConfirmSlug.trim();
         if (!trimmed) {
-            setError(tClient("admin.member.delete.error.emptyConfirm"));
+            setError(
+                tClient("admin.member.delete.error.emptyConfirm"),
+            );
             return;
         }
         if (trimmed !== slug) {
@@ -460,16 +562,17 @@ export default function MemberAdminEditor({
             await api.deleteMember(accessToken, slug, trimmed);
             setHint(tClient("admin.member.delete.success"));
             router.push("/members");
-        } catch (err: any) {
+        } catch (err: unknown) {
             setError(
-                err?.message || tClient("admin.member.delete.error.generic"),
+                getErrorMessage(
+                    err,
+                    tClient("admin.member.delete.error.generic"),
+                ),
             );
         } finally {
             setDeleting(false);
         }
     }
-
-    // --------------------------- link list helpers ---------------------------
 
     function addLinkRow() {
         setLinks((prev) => [...prev, { label: "", url: "" }]);
@@ -477,15 +580,15 @@ export default function MemberAdminEditor({
 
     function updateLinkRow(index: number, patch: Partial<LinkRow>) {
         setLinks((prev) =>
-            prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+            prev.map((row, i) =>
+                i === index ? { ...row, ...patch } : row,
+            ),
         );
     }
 
     function removeLinkRow(index: number) {
         setLinks((prev) => prev.filter((_, i) => i !== index));
     }
-
-    // --------------------------- render ---------------------------
 
     return (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm">
@@ -533,7 +636,7 @@ export default function MemberAdminEditor({
                 ) : (
                     <form onSubmit={onSubmit} className="space-y-6">
                         <div className="grid gap-6 md:grid-cols-2">
-                            {/* Left column: basic info + avatar */}
+                            {/* Left column */}
                             <div className="space-y-4">
                                 <div className="card p-4 space-y-4">
                                     {/* Avatar */}
@@ -544,26 +647,35 @@ export default function MemberAdminEditor({
                                                 <img
                                                     src={avatarUrl}
                                                     alt={
-                                                        name || profile.name || tClient("account.editor.avatar.altFallback")
+                                                        name ||
+                                                        profile.name ||
+                                                        tClient(
+                                                            "account.editor.avatar.altFallback",
+                                                        )
                                                     }
                                                     className="h-16 w-16 rounded-full object-cover border border-white/20 bg-white/10"
                                                 />
                                             ) : (
                                                 <div className="h-16 w-16 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-xs text-white/50">
-                                                    {tClient("admin.member.avatar.none")}
+                                                    {tClient(
+                                                        "admin.member.avatar.none",
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
                                         <div className="flex-1 space-y-2">
                                             <label className="block text-sm">
-                                                {tClient("admin.member.avatar.label")}
+                                                {tClient(
+                                                    "admin.member.avatar.label",
+                                                )}
                                             </label>
                                             <input
                                                 type="file"
                                                 accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
                                                 onChange={(e) =>
                                                     setAvatarFile(
-                                                        e.target.files?.[0] || null,
+                                                        e.target.files?.[0] ||
+                                                        null,
                                                     )
                                                 }
                                                 className="block w-full text-xs text-white file:mr-3 file:rounded-md file:border-0 file:bg.white/10 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:text-white hover:file:bg-white/20"
@@ -572,23 +684,32 @@ export default function MemberAdminEditor({
                                                 type="button"
                                                 onClick={onUploadAvatar}
                                                 disabled={
-                                                    uploadingAvatar || !avatarFile
+                                                    uploadingAvatar ||
+                                                    !avatarFile
                                                 }
                                                 className="btn-secondary text-xs disabled:opacity-60 disabled:cursor-not-allowed"
                                             >
                                                 {uploadingAvatar
-                                                    ? tClient("admin.member.avatar.uploading")
-                                                    : tClient("admin.member.avatar.upload")}
+                                                    ? tClient(
+                                                        "admin.member.avatar.uploading",
+                                                    )
+                                                    : tClient(
+                                                        "admin.member.avatar.upload",
+                                                    )}
                                             </button>
                                             <p className="text-[11px] text-white/45">
-                                                {tClient("admin.member.avatar.helper")}
+                                                {tClient(
+                                                    "admin.member.avatar.helper",
+                                                )}
                                             </p>
                                         </div>
                                     </div>
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            {tClient("account.editor.name.label")}
+                                            {tClient(
+                                                "account.editor.name.label",
+                                            )}
                                         </label>
                                         <input
                                             type="text"
@@ -611,7 +732,9 @@ export default function MemberAdminEditor({
 
                                     <div>
                                         <label className="block text.sm mb-1">
-                                            {tClient("account.editor.headline.label")}
+                                            {tClient(
+                                                "account.editor.headline.label",
+                                            )}
                                         </label>
                                         <input
                                             type="text"
@@ -628,7 +751,9 @@ export default function MemberAdminEditor({
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            {tClient("account.editor.shortBio.label")}
+                                            {tClient(
+                                                "account.editor.shortBio.label",
+                                            )}
                                         </label>
                                         <textarea
                                             value={shortBio}
@@ -644,14 +769,17 @@ export default function MemberAdminEditor({
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            {tClient("account.editor.focusArea.label")}
+                                            {tClient(
+                                                "account.editor.focusArea.label",
+                                            )}
                                         </label>
                                         <select
                                             value={focusArea}
                                             onChange={(e) =>
                                                 setFocusArea(
                                                     e.target.value
-                                                        ? (e.target.value as Area)
+                                                        ? (e.target
+                                                            .value as Area)
                                                         : "",
                                                 )
                                             }
@@ -696,7 +824,9 @@ export default function MemberAdminEditor({
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            {tClient("account.editor.tech.label")}
+                                            {tClient(
+                                                "account.editor.tech.label",
+                                            )}
                                         </label>
                                         <input
                                             type="text"
@@ -710,13 +840,17 @@ export default function MemberAdminEditor({
                                             )}
                                         />
                                         <p className="mt-1 text-xs text-white/40">
-                                            {tClient("admin.member.tech.helper")}
+                                            {tClient(
+                                                "admin.member.tech.helper",
+                                            )}
                                         </p>
                                     </div>
 
                                     <div>
                                         <label className="block text-sm mb-1">
-                                            {tClient("account.editor.links.label")}
+                                            {tClient(
+                                                "account.editor.links.label",
+                                            )}
                                         </label>
                                         <div className="space-y-2">
                                             {links.map((row, idx) => (
@@ -728,10 +862,14 @@ export default function MemberAdminEditor({
                                                         type="text"
                                                         value={row.label}
                                                         onChange={(e) =>
-                                                            updateLinkRow(idx, {
-                                                                label: e.target
-                                                                    .value,
-                                                            })
+                                                            updateLinkRow(
+                                                                idx,
+                                                                {
+                                                                    label: e
+                                                                        .target
+                                                                        .value,
+                                                                },
+                                                            )
                                                         }
                                                         className={inputCls()}
                                                         placeholder={tClient(
@@ -742,10 +880,14 @@ export default function MemberAdminEditor({
                                                         type="text"
                                                         value={row.url}
                                                         onChange={(e) =>
-                                                            updateLinkRow(idx, {
-                                                                url: e.target
-                                                                    .value,
-                                                            })
+                                                            updateLinkRow(
+                                                                idx,
+                                                                {
+                                                                    url: e
+                                                                        .target
+                                                                        .value,
+                                                                },
+                                                            )
                                                         }
                                                         className={inputCls()}
                                                         placeholder={tClient(
@@ -777,7 +919,6 @@ export default function MemberAdminEditor({
                                         </div>
                                     </div>
 
-                                    {/* Access role (admin only) */}
                                     {isAdmin && (
                                         <div className="mt-2 border-t border.white/10 border-t border-white/10 pt-3">
                                             <label className="block text-sm mb-1">
@@ -821,7 +962,7 @@ export default function MemberAdminEditor({
                                 </div>
                             </div>
 
-                            {/* Right column: markdown + CV + delete */}
+                            {/* Right column */}
                             <div className="space-y-4">
                                 <div className="card p-4 space-y-3">
                                     <div className="flex items-center justify-between">
@@ -859,7 +1000,6 @@ export default function MemberAdminEditor({
                                     </div>
                                 </div>
 
-                                {/* CV management */}
                                 <div className="card p-4 space-y-3">
                                     <h3 className="text-sm font-semibold text-white">
                                         {tClient("admin.member.cv.title")}
@@ -896,7 +1036,8 @@ export default function MemberAdminEditor({
                                             accept="application/pdf"
                                             onChange={(e) =>
                                                 setCvFile(
-                                                    e.target.files?.[0] || null,
+                                                    e.target.files?.[0] ||
+                                                    null,
                                                 )
                                             }
                                             className="block w-full text-xs text-white file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:text-white hover:file:bg-white/20"
@@ -904,7 +1045,9 @@ export default function MemberAdminEditor({
                                         <button
                                             type="button"
                                             onClick={onUploadCv}
-                                            disabled={uploadingCv || !cvFile}
+                                            disabled={
+                                                uploadingCv || !cvFile
+                                            }
                                             className="btn-secondary text-xs disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
                                             {uploadingCv
@@ -916,17 +1059,23 @@ export default function MemberAdminEditor({
                                                 )}
                                         </button>
                                         <p className="text-[11px] text-white/45">
-                                            {tClient("admin.member.cv.helper")}
+                                            {tClient(
+                                                "admin.member.cv.helper",
+                                            )}
                                         </p>
                                     </div>
                                 </div>
 
                                 <div className="card p-4 space-y-2 border border-red-500/40 bg-red-950/30">
                                     <h3 className="text-sm font-semibold text-red-100">
-                                        {tClient("admin.member.delete.title")}
+                                        {tClient(
+                                            "admin.member.delete.title",
+                                        )}
                                     </h3>
                                     <p className="text-xs text-red-200/80">
-                                        {tClient("admin.member.delete.body")}
+                                        {tClient(
+                                            "admin.member.delete.body",
+                                        )}
                                     </p>
 
                                     <label className="block text-xs text-red-100 mt-2 mb-1">
@@ -938,7 +1087,9 @@ export default function MemberAdminEditor({
                                         type="text"
                                         value={deleteConfirmSlug}
                                         onChange={(e) =>
-                                            setDeleteConfirmSlug(e.target.value)
+                                            setDeleteConfirmSlug(
+                                                e.target.value,
+                                            )
                                         }
                                         className={inputCls()}
                                         placeholder={slug}

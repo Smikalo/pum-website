@@ -1,4 +1,3 @@
-// ./web/components/EditProjectButton.tsx
 "use client";
 
 import React from "react";
@@ -15,14 +14,10 @@ export default function EditProjectButton({
                                               slug,
                                               creatorSlug,
                                           }: EditProjectButtonProps) {
-    let ctx: any = null;
-    try {
-        ctx = useAuth?.();
-    } catch {
-        ctx = null;
-    }
+    // useAuth must be called unconditionally (no try/catch / conditionals)
+    const ctx = useAuth();
+    const user = ctx?.user ?? null;
 
-    const user = ctx?.user || null;
     if (!user) return null;
 
     const roles: string[] = Array.isArray(user.roles)
@@ -33,7 +28,7 @@ export default function EditProjectButton({
 
     const isAdmin = roles.includes("ADMIN");
     const isModerator = roles.includes("MODERATOR");
-    const currentMemberSlug = user.member?.slug || null;
+    const currentMemberSlug = user.member?.slug ?? null;
     const isCreator =
         !!creatorSlug &&
         !!currentMemberSlug &&

@@ -24,29 +24,48 @@ async function ensureCsrf(): Promise<void> {
     });
 }
 
-type ConsumeResult =
-    | {
+type ProjectEventSlugs = {
+    eventSlug?: string | null;
+    projectSlug?: string | null;
+};
+
+type ConsumeSuccessResult = ProjectEventSlugs & {
     ok: true;
     newUser?: boolean;
-    eventSlug?: string | null;
-    projectSlug?: string | null;
-}
-    | {
-    needsPassword: true;
-    email: string;
-    eventSlug?: string | null;
-    projectSlug?: string | null;
-    error?: string;
-}
-    | {
-    ok?: false;
+    email?: string;
     error?: string;
 };
+
+type ConsumeErrorBase = ProjectEventSlugs & {
+    ok: false;
+    error?: string;
+};
+
+type ConsumeNeedsPasswordResult = ConsumeErrorBase & {
+    needsPassword: true;
+    email: string;
+};
+
+type ConsumeNeedsNameResult = ConsumeErrorBase & {
+    needsName: true;
+    email: string;
+};
+
+type ConsumeGenericErrorResult = ConsumeErrorBase & {
+    needsPassword?: false;
+    needsName?: false;
+};
+
+type ConsumeResult =
+    | ConsumeSuccessResult
+    | ConsumeNeedsPasswordResult
+    | ConsumeNeedsNameResult
+    | ConsumeGenericErrorResult;
 
 function AcceptInviteInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const token = searchParams.get("token") || "";
+    const token = searchParams.get("token") ?? "";
     const { t } = useI18n();
 
     const [state, setState] = React.useState<
@@ -63,19 +82,13 @@ function AcceptInviteInner() {
     const [error, setError] = React.useState<string | null>(null);
     const [submitting, setSubmitting] = React.useState(false);
 
-    function redirectFor(result: {
-        eventSlug?: string | null;
-        projectSlug?: string | null;
-    }) {
-        if (result.projectSlug) return `/projects/${result.projectSlug}`;
-        if (result.eventSlug) return `/events/${result.eventSlug}`;
+    function redirectFor(slugs: ProjectEventSlugs) {
+        if (slugs.projectSlug) return `/projects/${slugs.projectSlug}`;
+        if (slugs.eventSlug) return `/events/${slugs.eventSlug}`;
         return "/account";
     }
 
-    function deriveKind(slugs: {
-        eventSlug?: string | null;
-        projectSlug?: string | null;
-    }): "event" | "project" | null {
+    function deriveKind(slugs: ProjectEventSlugs): "event" | "project" | null {
         if (slugs.projectSlug) return "project";
         if (slugs.eventSlug) return "event";
         return null;
@@ -101,7 +114,7 @@ function AcceptInviteInner() {
                         credentials: "include",
                         headers: {
                             "Content-Type": "application/json",
-                            "X-CSRF-Token": csrf || "",
+                            "X-CSRF-Token": csrf ?? "",
                         },
                         body: JSON.stringify({ token }),
                     },
@@ -109,31 +122,43 @@ function AcceptInviteInner() {
 
                 const data: ConsumeResult = await res.json();
 
-                if (res.ok && (data as any)?.ok) {
-                    const dest = redirectFor(data as any);
+                if (res.ok && data.ok) {
+                    const dest = redirectFor({
+                        projectSlug: data.projectSlug ?? null,
+                        eventSlug: data.eventSlug ?? null,
+                    });
                     router.replace(dest);
                     setState("done");
                     return;
                 }
 
-                if ((data as any)?.needsPassword) {
-                    const d = data as any;
-                    setEmail(d.email || "");
-                    setTargetSlug(d.projectSlug || d.eventSlug || "");
-                    setTargetKind(deriveKind(d));
+                if ("needsPassword" in data && data.needsPassword) {
+                    setEmail(data.email);
+                    const slugs: ProjectEventSlugs = {
+                        projectSlug: data.projectSlug ?? null,
+                        eventSlug: data.eventSlug ?? null,
+                    };
+                    setTargetSlug(
+                        slugs.projectSlug ??
+                        slugs.eventSlug ??
+                        "",
+                    );
+                    setTargetKind(deriveKind(slugs));
                     setState("needsPassword");
                     return;
                 }
 
                 setError(
-                    (data as any)?.error ||
+                    data.error ??
                     t("acceptInvite.error.invalidOrExpired"),
                 );
                 setState("done");
-            } catch (err: any) {
-                setError(
-                    err?.message || t("acceptInvite.error.generic"),
-                );
+            } catch (err) {
+                const message =
+                    err instanceof Error
+                        ? err.message
+                        : t("acceptInvite.error.generic");
+                setError(message);
                 setState("done");
             }
         })();
@@ -153,40 +178,52 @@ function AcceptInviteInner() {
             await ensureCsrf();
             const csrf = readCookie("XSRF-TOKEN");
 
-            const res = await fetch(`${API_BASE}/api/auth/invite/consume`, {
-                method: "POST",
-                credentials: "include",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRF-Token": csrf || "",
+            const res = await fetch(
+                `${API_BASE}/api/auth/invite/consume`,
+                {
+                    method: "POST",
+                    credentials: "include",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-Token": csrf ?? "",
+                    },
+                    body: JSON.stringify({
+                        token,
+                        name,
+                        password,
+                        passwordRepeat,
+                    }),
                 },
-                body: JSON.stringify({
-                    token,
-                    name,
-                    password,
-                    passwordRepeat,
-                }),
-            });
+            );
 
             const data: ConsumeResult = await res.json();
 
-            if (res.ok && (data as any)?.ok) {
-                router.replace(redirectFor(data as any));
-            } else if ((data as any)?.needsPassword) {
+            if (res.ok && data.ok) {
+                const dest = redirectFor({
+                    projectSlug: data.projectSlug ?? null,
+                    eventSlug: data.eventSlug ?? null,
+                });
+                router.replace(dest);
+            } else if (
+                "needsPassword" in data &&
+                data.needsPassword
+            ) {
                 setError(
-                    (data as any).error ||
+                    data.error ??
                     t("acceptInvite.error.checkInputs"),
                 );
             } else {
                 setError(
-                    (data as any)?.error ||
+                    data.error ??
                     t("acceptInvite.error.invalidOrExpired"),
                 );
             }
-        } catch (err: any) {
-            setError(
-                err?.message || t("acceptInvite.error.generic"),
-            );
+        } catch (err) {
+            const message =
+                err instanceof Error
+                    ? err.message
+                    : t("acceptInvite.error.generic");
+            setError(message);
         } finally {
             setSubmitting(false);
         }

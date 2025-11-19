@@ -1,11 +1,15 @@
-// ./web/lib/actions.ts
 import { API_BASE } from "@/lib/config";
 
-type Json = Record<string, any>;
+export type Json = Record<string, unknown>;
 
-function isFormData(body: any): body is FormData {
+function isFormData(body: unknown): body is FormData {
     return typeof FormData !== "undefined" && body instanceof FormData;
 }
+
+type AuthFetchOptions = Omit<RequestInit, "headers"> & {
+    token: string;
+    headers?: HeadersInit;
+};
 
 /**
  * Generic authenticated fetch that:
@@ -13,36 +17,28 @@ function isFormData(body: any): body is FormData {
  * - Sets JSON Content-Type when body is not FormData
  * - Throws on non-2xx with best-effort error message
  */
-async function fetchAuth(
+async function fetchAuth<TResponse = unknown>(
     path: string,
-    opts: RequestInit & { token: string },
-) {
-    const headers: Record<string, string> = {
-        Authorization: `Bearer ${opts.token}`,
-    };
+    opts: AuthFetchOptions,
+): Promise<TResponse> {
+    const { token, headers: initHeaders, ...rest } = opts;
+
+    const headers = new Headers(initHeaders ?? undefined);
+    headers.set("Authorization", `Bearer ${token}`);
 
     // Only set JSON Content-Type when not sending FormData
-    if (!isFormData((opts as any).body)) {
-        headers["Content-Type"] = "application/json";
-    }
-
-    // Keep any caller-provided headers
-    if (opts.headers) {
-        for (const [k, v] of Object.entries(
-            opts.headers as Record<string, string>,
-        )) {
-            if (typeof v !== "undefined") headers[k] = v as any;
-        }
+    if (!isFormData(rest.body) && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
     }
 
     let res: Response;
     try {
         res = await fetch(`${API_BASE}${path}`, {
-            ...opts,
+            ...rest,
             credentials: "include",
             headers,
         });
-    } catch (e) {
+    } catch {
         // Connection/CORS/network
         throw new Error(
             "Network error. Check API_BASE, server status, and CORS.",
@@ -51,16 +47,23 @@ async function fetchAuth(
 
     if (!res.ok) {
         let msg = res.statusText;
+
         try {
-            const j = await res.json();
-            msg = (j as any)?.error || msg;
+            const data: unknown = await res.json();
+            if (data && typeof data === "object" && "error" in data) {
+                const { error } = data as { error?: unknown };
+                if (typeof error === "string" && error.trim().length > 0) {
+                    msg = error;
+                }
+            }
         } catch {
             // ignore JSON parse error
         }
+
         throw new Error(msg || `HTTP ${res.status}`);
     }
 
-    return res.json();
+    return (await res.json()) as TResponse;
 }
 
 /**
@@ -73,15 +76,12 @@ function appendFileWithName(
     file: File,
     fallbackBaseName: string,
 ) {
-    const anyFile = file as any;
-
-    let baseName =
-        typeof anyFile.name === "string" && anyFile.name.trim().length
-            ? anyFile.name.trim()
-            : fallbackBaseName;
+    const candidate =
+        typeof file.name === "string" ? file.name.trim() : "";
+    const baseName = candidate.length > 0 ? candidate : fallbackBaseName;
 
     // If there is no extension, just leave it as-is; backend usually doesn't rely on extension.
-    fd.append(field, file as any, baseName);
+    fd.append(field, file, baseName);
 }
 
 /* ---------------------------- Account / Me ---------------------------- */
@@ -104,7 +104,7 @@ export async function uploadAvatar(token: string, file: File) {
     return fetchAuth("/api/account/avatar", {
         method: "POST",
         token,
-        body: fd as any,
+        body: fd,
     });
 }
 
@@ -115,7 +115,7 @@ export async function uploadCv(token: string, file: File) {
     return fetchAuth("/api/account/cv", {
         method: "POST",
         token,
-        body: fd as any,
+        body: fd,
     });
 }
 
@@ -128,7 +128,7 @@ export async function uploadEventPhoto(token: string, file: File) {
     return fetchAuth("/api/uploads/event-photo", {
         method: "POST",
         token,
-        body: fd as any,
+        body: fd,
     });
 }
 
@@ -141,7 +141,7 @@ export async function uploadProjectPhoto(token: string, file: File) {
     return fetchAuth("/api/uploads/project-photo", {
         method: "POST",
         token,
-        body: fd as any,
+        body: fd,
     });
 }
 
@@ -258,7 +258,7 @@ export async function uploadMemberCv(
     return fetchAuth(`/api/members/${slug}/cv`, {
         method: "POST",
         token,
-        body: fd as any,
+        body: fd,
     });
 }
 
@@ -273,7 +273,7 @@ export async function uploadMemberAvatar(
     return fetchAuth(`/api/members/${slug}/avatar`, {
         method: "POST",
         token,
-        body: fd as any,
+        body: fd,
     });
 }
 
@@ -310,7 +310,10 @@ export async function updateBlog(
  *   - Treat `400 { error: "No file uploaded" }` as a soft "no-op" instead of
  *     throwing and breaking the entire blog save.
  */
-export async function uploadBlogPhoto(token: string, file: File) {
+export async function uploadBlogPhoto(
+    token: string,
+    file: File,
+): Promise<{ url: string | null }> {
     const fd = new FormData();
     appendFileWithName(fd, "photo", file, "blog-photo");
 
@@ -323,36 +326,48 @@ export async function uploadBlogPhoto(token: string, file: File) {
                 Authorization: `Bearer ${token}`,
                 // DO NOT set Content-Type here; let fetch / FormData set boundary
             },
-            body: fd as any,
+            body: fd,
         });
-    } catch (e) {
+    } catch {
         throw new Error("Network error while uploading blog photo");
     }
 
     if (!res.ok) {
-        // Try to parse JSON error to detect "No file uploaded"
+        let parsed: unknown;
         try {
-            const data: any = await res.json();
-
-            if (data?.error === "No file uploaded") {
-                // This is the "empty file field" / placeholder case.
-                // We treat it as a no-op instead of an error.
-                return { url: null as string | null };
-            }
-
-            throw new Error(data?.error || `HTTP ${res.status}`);
-        } catch (err) {
-            // If parsing JSON fails or anything else goes wrong, throw a generic error.
-            if (err instanceof Error) {
-                throw new Error(
-                    `Failed to upload blog photo: ${err.message}`,
-                );
-            }
+            parsed = await res.json();
+        } catch {
             throw new Error(
                 `Failed to upload blog photo (HTTP ${res.status})`,
             );
         }
+
+        if (parsed && typeof parsed === "object" && "error" in parsed) {
+            const { error } = parsed as { error?: unknown };
+
+            if (error === "No file uploaded") {
+                // This is the "empty file field" / placeholder case.
+                // We treat it as a no-op instead of an error.
+                return { url: null };
+            }
+
+            if (typeof error === "string" && error.trim().length > 0) {
+                throw new Error(error);
+            }
+        }
+
+        throw new Error(
+            `Failed to upload blog photo (HTTP ${res.status})`,
+        );
     }
 
-    return res.json();
+    const data: unknown = await res.json();
+    if (!data || typeof data !== "object" || !("url" in data)) {
+        return { url: null };
+    }
+
+    const { url } = data as { url?: unknown };
+    return {
+        url: typeof url === "string" ? url : null,
+    };
 }

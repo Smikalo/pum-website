@@ -29,7 +29,7 @@ function parseCsv(formData: FormData, key: string): string[] {
 
 function isNonEmptyFileLike(value: unknown): value is File {
     if (!value) return false;
-    const file = value as any;
+    const file = value as File;
 
     if (typeof file.arrayBuffer !== "function") return false;
 
@@ -40,6 +40,30 @@ function isNonEmptyFileLike(value: unknown): value is File {
 
     return true;
 }
+
+type CreateBlogBody = {
+    title: string;
+    summary: string | null;
+    content: string | null;
+    tags: string[];
+    techStack: string[];
+    photos: string[];
+    projectSlugs: string[];
+    eventSlugs: string[];
+    authorSlugs: string[];
+    publishedAt?: string;
+};
+
+type UploadBlogPhotoResponse = {
+    url: string | null;
+};
+
+type CreateBlogResponse = {
+    slug?: string;
+    blog?: {
+        slug?: string;
+    };
+};
 
 async function createBlog(formData: FormData) {
     "use server";
@@ -85,8 +109,11 @@ async function createBlog(formData: FormData) {
         const file = f as File;
 
         try {
-            const result = await uploadBlogPhoto(token, file);
-            const url = (result as any)?.url;
+            const result = (await uploadBlogPhoto(
+                token,
+                file,
+            )) as UploadBlogPhotoResponse;
+            const url = result.url;
             if (url) uploadedPhotoUrls.push(url);
         } catch {
             throw new Error("Failed to upload one of the images");
@@ -103,11 +130,13 @@ async function createBlog(formData: FormData) {
         const cover = uploadedPhotoUrls[headerNewIndex];
         photos = [
             cover,
-            ...uploadedPhotoUrls.filter((u, i) => i !== headerNewIndex),
+            ...uploadedPhotoUrls.filter(
+                (u, i) => i !== headerNewIndex,
+            ),
         ];
     }
 
-    const body: any = {
+    const body: CreateBlogBody = {
         title,
         summary: summary || null,
         content: content || null,
@@ -139,7 +168,9 @@ async function createBlog(formData: FormData) {
     if (!res.ok) {
         let msg = "Failed to create blog post";
         try {
-            const json = await res.json();
+            const json = (await res.json()) as {
+                error?: string;
+            };
             if (json?.error) msg = json.error;
         } catch {
             // ignore JSON parse errors
@@ -147,10 +178,12 @@ async function createBlog(formData: FormData) {
         throw new Error(msg);
     }
 
-    const json = await res.json();
-    const slug = json?.slug || json?.blog?.slug;
+    const json = (await res.json()) as CreateBlogResponse;
+    const slug = json.slug || json.blog?.slug;
     if (!slug) {
-        throw new Error("Blog created but slug missing from response");
+        throw new Error(
+            "Blog created but slug missing from response",
+        );
     }
 
     redirect(`/blog/${slug}`);

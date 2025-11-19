@@ -6,13 +6,7 @@ import { useAuth } from "@/context/AuthProvider";
 import { tClient } from "@/lib/i18n-client";
 
 export default function NewProjectButton() {
-    let user: any = null;
-    try {
-        user = useAuth?.().user ?? null;
-    } catch {
-        user = null;
-    }
-
+    const { user } = useAuth();
     if (!user) return null;
 
     return (

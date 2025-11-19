@@ -314,6 +314,73 @@ type Errors = Partial<
 }
 >;
 
+/* ----------------------------- API helper types ----------------------------- */
+
+type MembersApiItem = {
+    id?: string | number;
+    slug?: string;
+    name?: string;
+    avatarUrl?: string | null;
+};
+
+type EventsApiItem = {
+    id?: string | number;
+    slug?: string;
+    name?: string;
+    dateStart?: string | null;
+    locationName?: string | null;
+    photos?: unknown[];
+    cover?: string | null;
+};
+
+type BlogsApiItem = {
+    id?: string | number;
+    slug?: string;
+    title?: string;
+    summary?: string | null;
+    cover?: string | null;
+    imageUrl?: string | null;
+};
+
+interface ProjectApiMember {
+    memberSlug?: string;
+    slug?: string;
+    avatarUrl?: string | null;
+    role?: string | null;
+    isCreator?: boolean;
+}
+
+interface ProjectApiEvent {
+    slug?: string;
+}
+
+interface ProjectApiBlog {
+    slug?: string;
+}
+
+interface ProjectApi {
+    id?: string | number;
+    slug?: string;
+    title?: string;
+    summary?: string | null;
+    description?: string | null;
+    year?: number | null;
+    status?: string | null;
+    demoUrl?: string | null;
+    repoUrl?: string | null;
+    photos?: unknown[];
+    images?: unknown[];
+    cover?: string | null;
+    members?: unknown[];
+    events?: unknown[];
+    blogs?: unknown[];
+    relatedBlogs?: unknown[];
+    blogPosts?: unknown[];
+    links?: unknown;
+    tags?: unknown[];
+    techStack?: unknown[];
+}
+
 /* ----------------------------- Helpers ----------------------------- */
 
 function inputCls(hasError: boolean) {
@@ -354,6 +421,120 @@ function uniqueBySlug<T extends { slug: string }>(items: T[]): T[] {
     return out;
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+    if (error instanceof Error && error.message) return error.message;
+    if (typeof error === "string" && error) return error;
+    return fallback;
+}
+
+function normalizeMembersPayload(payload: unknown): Member[] {
+    const root = payload as { items?: unknown } | unknown[];
+    const items: unknown[] = Array.isArray(root)
+        ? root
+        : Array.isArray(root.items)
+            ? (root.items as unknown[])
+            : [];
+    const result: Member[] = [];
+    for (const item of items) {
+        if (!item || typeof item !== "object") continue;
+        const { id, slug, name, avatarUrl } = item as MembersApiItem;
+        if (typeof slug !== "string" || typeof name !== "string") continue;
+        const normalizedId =
+            typeof id === "string"
+                ? id
+                : typeof id === "number"
+                    ? String(id)
+                    : slug;
+        result.push({
+            id: normalizedId,
+            slug,
+            name,
+            avatarUrl: avatarUrl ?? null,
+        });
+    }
+    return result;
+}
+
+function normalizeEventsPayload(payload: unknown): EventRef[] {
+    const root = payload as { items?: unknown } | unknown[];
+    const items: unknown[] = Array.isArray(root)
+        ? root
+        : Array.isArray(root.items)
+            ? (root.items as unknown[])
+            : [];
+    const result: EventRef[] = [];
+    for (const item of items) {
+        if (!item || typeof item !== "object") continue;
+        const { id, slug, name, dateStart, locationName, photos, cover } =
+            item as EventsApiItem;
+        if (typeof slug !== "string" || typeof name !== "string") continue;
+        const normalizedId =
+            typeof id === "string"
+                ? id
+                : typeof id === "number"
+                    ? String(id)
+                    : slug;
+
+        let normalizedCover: string | null = null;
+        if (typeof cover === "string" && cover) {
+            normalizedCover = cover;
+        } else if (Array.isArray(photos) && photos.length) {
+            const first = photos[0];
+            if (typeof first === "string") {
+                normalizedCover = first;
+            }
+        }
+
+        result.push({
+            id: normalizedId,
+            slug,
+            name,
+            dateStart: dateStart ?? null,
+            locationName: locationName ?? null,
+            cover: normalizedCover,
+        });
+    }
+    return result;
+}
+
+function normalizeBlogsPayload(payload: unknown): BlogRef[] {
+    const root = payload as { items?: unknown } | unknown[];
+    const items: unknown[] = Array.isArray(root)
+        ? root
+        : Array.isArray(root.items)
+            ? (root.items as unknown[])
+            : [];
+    const result: BlogRef[] = [];
+    for (const item of items) {
+        if (!item || typeof item !== "object") continue;
+        const { id, slug, title, summary, cover, imageUrl } =
+            item as BlogsApiItem;
+        if (typeof slug !== "string" || typeof title !== "string") continue;
+        const normalizedId =
+            typeof id === "string"
+                ? id
+                : typeof id === "number"
+                    ? String(id)
+                    : slug;
+
+        let normalizedCover: string | null = null;
+        if (typeof cover === "string" && cover) {
+            normalizedCover = cover;
+        } else if (typeof imageUrl === "string" && imageUrl) {
+            normalizedCover = imageUrl;
+        }
+
+        result.push({
+            id: normalizedId,
+            slug,
+            title,
+            summary: summary ?? null,
+            cover: normalizedCover,
+        });
+    }
+    return result;
+}
+
 /* ----------------------------- Component ----------------------------- */
 
 const emptyState: FormState = {
@@ -369,6 +550,10 @@ const emptyState: FormState = {
     techStack: [],
     techInput: "",
 };
+
+type ProjectMutationResult = {
+    slug?: string;
+} | null | undefined;
 
 export default function ProjectForm({ mode, slug }: ProjectFormProps) {
     const router = useRouter();
@@ -438,21 +623,16 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 if (!res.ok) {
                     throw new Error(tClient("projects.form.load.membersFailed"));
                 }
-                const data = await res.json();
-                const items: any[] = Array.isArray(data) ? data : data.items ?? [];
+                const data = (await res.json()) as unknown;
                 if (cancelled) return;
-                setMembers(
-                    items.map((m) => ({
-                        id: m.id,
-                        slug: m.slug,
-                        name: m.name,
-                        avatarUrl: m.avatarUrl || null,
-                    })),
-                );
-            } catch (e: any) {
+                setMembers(normalizeMembersPayload(data));
+            } catch (error: unknown) {
                 if (cancelled) return;
                 setMembersError(
-                    e?.message || tClient("projects.form.load.membersFailed"),
+                    getErrorMessage(
+                        error,
+                        tClient("projects.form.load.membersFailed"),
+                    ),
                 );
             } finally {
                 if (!cancelled) setMembersLoading(false);
@@ -469,23 +649,16 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 if (!res.ok) {
                     throw new Error(tClient("projects.form.load.eventsFailed"));
                 }
-                const data = await res.json();
-                const items: any[] = Array.isArray(data) ? data : data.items ?? [];
+                const data = (await res.json()) as unknown;
                 if (cancelled) return;
-                setEvents(
-                    items.map((e) => ({
-                        id: e.id,
-                        slug: e.slug,
-                        name: e.name,
-                        dateStart: e.dateStart,
-                        locationName: e.locationName,
-                        cover: Array.isArray(e.photos) && e.photos.length ? e.photos[0] : null,
-                    })),
-                );
-            } catch (e: any) {
+                setEvents(normalizeEventsPayload(data));
+            } catch (error: unknown) {
                 if (cancelled) return;
                 setEventsError(
-                    e?.message || tClient("projects.form.load.eventsFailed"),
+                    getErrorMessage(
+                        error,
+                        tClient("projects.form.load.eventsFailed"),
+                    ),
                 );
             } finally {
                 if (!cancelled) setEventsLoading(false);
@@ -502,22 +675,16 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 if (!res.ok) {
                     throw new Error(tClient("projects.form.load.blogsFailed"));
                 }
-                const data = await res.json();
-                const items: any[] = Array.isArray(data) ? data : data.items ?? [];
+                const data = (await res.json()) as unknown;
                 if (cancelled) return;
-                setBlogs(
-                    items.map((b) => ({
-                        id: b.id,
-                        slug: b.slug,
-                        title: b.title,
-                        summary: b.summary || null,
-                        cover: b.cover || b.imageUrl || null,
-                    })),
-                );
-            } catch (e: any) {
+                setBlogs(normalizeBlogsPayload(data));
+            } catch (error: unknown) {
                 if (cancelled) return;
                 setBlogsError(
-                    e?.message || tClient("projects.form.load.blogsFailed"),
+                    getErrorMessage(
+                        error,
+                        tClient("projects.form.load.blogsFailed"),
+                    ),
                 );
             } finally {
                 if (!cancelled) setBlogsLoading(false);
@@ -557,38 +724,59 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 if (!res.ok) {
                     throw new Error(tClient("projects.form.load.error.generic"));
                 }
-                const p = await res.json();
+                const json = (await res.json()) as unknown;
                 if (cancelled) return;
+
+                const p = json as ProjectApi;
+
+                const title =
+                    typeof p.title === "string" && p.title.trim()
+                        ? p.title
+                        : typeof p.slug === "string"
+                            ? p.slug
+                            : "";
 
                 setState((s) => ({
                     ...s,
-                    title: p.title ?? p.slug ?? "",
-                    summary: p.summary ?? "",
-                    description: p.description ?? "",
-                    year: typeof p.year === "number" ? String(p.year) : "",
-                    status: p.status ?? "",
-                    demoUrl: p.demoUrl ?? "",
-                    repoUrl: p.repoUrl ?? "",
-                    tags: Array.isArray(p.tags) ? p.tags : [],
+                    title,
+                    summary: typeof p.summary === "string" ? p.summary : "",
+                    description:
+                        typeof p.description === "string" ? p.description : "",
+                    year:
+                        typeof p.year === "number" && Number.isFinite(p.year)
+                            ? String(p.year)
+                            : "",
+                    status: typeof p.status === "string" ? p.status : "",
+                    demoUrl:
+                        typeof p.demoUrl === "string" ? p.demoUrl : "",
+                    repoUrl:
+                        typeof p.repoUrl === "string" ? p.repoUrl : "",
+                    tags: Array.isArray(p.tags)
+                        ? p.tags.filter((tag): tag is string => typeof tag === "string")
+                        : [],
                     tagInput: "",
-                    techStack: Array.isArray(p.techStack) ? p.techStack : [],
+                    techStack: Array.isArray(p.techStack)
+                        ? p.techStack.filter(
+                            (tech): tech is string => typeof tech === "string",
+                        )
+                        : [],
                     techInput: "",
                 }));
 
-                // Prefer p.photos (new API), fall back to p.images for backwards compatibility
-                const rawPhotos: any[] = Array.isArray(p.photos)
+                const photoSources = Array.isArray(p.photos)
                     ? p.photos
                     : Array.isArray(p.images)
                         ? p.images
                         : [];
-                const existing = rawPhotos.filter(
-                    (u: any) => typeof u === "string" && u,
+                const existing = photoSources.filter(
+                    (u): u is string =>
+                        typeof u === "string" && u.length > 0,
                 );
 
                 setExistingPhotos(existing);
 
                 let headerIdx: number | null = null;
-                if (p.cover && existing.length) {
+                if (typeof p.cover === "string" && existing.length) {
                     const idx = existing.indexOf(p.cover);
                     headerIdx = idx >= 0 ? idx : 0;
                 } else if (existing.length) {
@@ -597,32 +785,36 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 setHeaderExistingIndex(headerIdx);
                 setHeaderNewIndex(null);
 
-                // team members – map backend project.members (slug, name, avatarUrl, role, isCreator)
+                // team members
                 if (Array.isArray(p.members) && members.length) {
                     const entries: TeamEntry[] = [];
-                    for (const raw of p.members as any[]) {
-                        const m: any = raw;
-                        const slugVal: string | undefined = m.memberSlug || m.slug || undefined;
-                        if (!slugVal) continue;
-
-                        const found = members.find((mm) => mm.slug === slugVal);
+                    for (const raw of p.members) {
+                        if (!raw || typeof raw !== "object") continue;
+                        const m = raw as ProjectApiMember;
+                        const slugValRaw = m.memberSlug || m.slug;
+                        if (!slugValRaw) continue;
+                        const slugVal = String(slugValRaw);
+                        const found = members.find(
+                            (mm) => mm.slug === slugVal,
+                        );
                         if (!found) continue;
 
                         const isCreator = !!m.isCreator;
+                        const role =
+                            typeof m.role === "string" && m.role.trim()
+                                ? m.role
+                                : isCreator
+                                    ? "Creator"
+                                    : "Contributor";
 
                         entries.push({
                             member: {
                                 id: found.id,
                                 slug: found.slug,
                                 name: found.name,
-                                avatarUrl: found.avatarUrl || m.avatarUrl || null,
+                                avatarUrl: m.avatarUrl ?? found.avatarUrl ?? null,
                             },
-                            role:
-                                typeof m.role === "string" && m.role.trim()
-                                    ? m.role
-                                    : isCreator
-                                        ? "Creator"
-                                        : "Contributor",
+                            role,
                             isCreator,
                         });
                     }
@@ -631,49 +823,82 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                     }
                 }
 
-                // related events (API should provide p.events)
+                // related events
                 if (Array.isArray(p.events)) {
                     const slugs = p.events
-                        .map((e: any) => e.slug)
-                        .filter((x: any) => typeof x === "string");
+                        .map((e) => {
+                            if (!e || typeof e !== "object") return undefined;
+                            const ev = e as ProjectApiEvent;
+                            return typeof ev.slug === "string"
+                                ? ev.slug.trim()
+                                : undefined;
+                        })
+                        .filter(
+                            (value): value is string =>
+                                typeof value === "string" && value.length > 0,
+                        );
                     setSelectedEventSlugs(slugs);
                 }
 
                 // related blogs
-                const blogsRaw: any[] = Array.isArray((p as any).blogs)
-                    ? (p as any).blogs
-                    : Array.isArray((p as any).relatedBlogs)
-                        ? (p as any).relatedBlogs
-                        : Array.isArray((p as any).blogPosts)
-                            ? (p as any).blogPosts
-                            : [];
+                const blogCollections: unknown[][] = [];
+                if (Array.isArray(p.blogs)) blogCollections.push(p.blogs);
+                if (Array.isArray(p.relatedBlogs))
+                    blogCollections.push(p.relatedBlogs);
+                if (Array.isArray(p.blogPosts))
+                    blogCollections.push(p.blogPosts);
+                const blogsRaw = blogCollections.flat();
+
                 if (blogsRaw.length) {
                     const slugs = blogsRaw
-                        .map((b: any) => b.slug)
-                        .filter((x: any) => typeof x === "string");
+                        .map((b) => {
+                            if (!b || typeof b !== "object") return undefined;
+                            const blog = b as ProjectApiBlog;
+                            return typeof blog.slug === "string"
+                                ? blog.slug.trim()
+                                : undefined;
+                        })
+                        .filter(
+                            (value): value is string =>
+                                typeof value === "string" && value.length > 0,
+                        );
                     setSelectedBlogSlugs(slugs);
                 }
 
-                // links (if server exposes them)
-                const linksRaw = (p as any).links;
-                const parsed: LinkEntry[] = [];
+                // links
+                const linksRaw = p.links;
+                const parsedLinks: LinkEntry[] = [];
                 if (Array.isArray(linksRaw)) {
                     for (const l of linksRaw) {
-                        if (!l) continue;
-                        if (typeof l.url === "string") {
-                            parsed.push({ label: l.label || "", url: l.url });
-                        }
+                        if (!l || typeof l !== "object") continue;
+                        const obj = l as { label?: unknown; url?: unknown };
+                        const label =
+                            typeof obj.label === "string" ? obj.label : "";
+                        const url =
+                            typeof obj.url === "string" ? obj.url : "";
+                        if (!label && !url) continue;
+                        parsedLinks.push({ label, url });
                     }
                 } else if (linksRaw && typeof linksRaw === "object") {
-                    for (const [label, url] of Object.entries(linksRaw)) {
-                        if (typeof url === "string") parsed.push({ label, url });
+                    for (const [labelKey, urlVal] of Object.entries(
+                        linksRaw as Record<string, unknown>,
+                    )) {
+                        if (typeof urlVal === "string") {
+                            parsedLinks.push({
+                                label: labelKey,
+                                url: urlVal,
+                            });
+                        }
                     }
                 }
-                setLinks(parsed.length ? parsed : [{ label: "", url: "" }]);
-            } catch (e: any) {
+                setLinks(parsedLinks.length ? parsedLinks : [{ label: "", url: "" }]);
+            } catch (error: unknown) {
                 if (cancelled) return;
                 setLoadError(
-                    e?.message || tClient("projects.form.load.error.generic"),
+                    getErrorMessage(
+                        error,
+                        tClient("projects.form.load.error.generic"),
+                    ),
                 );
             } finally {
                 if (!cancelled) setLoadingProject(false);
@@ -993,7 +1218,7 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                     value: email,
                 }));
 
-            const payload: any = {
+            const payload = {
                 title: state.title.trim(),
                 summary: state.summary.trim() || null,
                 description: state.description.trim() || null,
@@ -1013,22 +1238,37 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
                 links: cleanLinks,
             };
 
-            let result: any;
+            let result: ProjectMutationResult;
             if (isEdit) {
                 if (!slug) throw new Error("Missing project slug for edit.");
-                result = await api.updateProject(accessToken, slug, payload);
+                result = (await api.updateProject(
+                    accessToken,
+                    slug,
+                    payload,
+                )) as ProjectMutationResult;
                 setHint(tClient("projects.form.submit.success.edit"));
             } else {
-                result = await api.createProject(accessToken, payload);
+                result = (await api.createProject(
+                    accessToken,
+                    payload,
+                )) as ProjectMutationResult;
                 setHint(tClient("projects.form.submit.success.create"));
             }
 
+            const fallbackSlug = state.title
+                .trim()
+                .toLowerCase()
+                .replace(/\s+/g, "-");
             const nextSlug: string =
-                result?.slug || slug || state.title.toLowerCase().replace(/\s+/g, "-");
+                result?.slug || slug || fallbackSlug || "project";
+
             router.replace(`/projects/${encodeURIComponent(nextSlug)}`);
-        } catch (err: any) {
+        } catch (error: unknown) {
             setSubmitError(
-                err?.message || tClient("projects.form.submit.error"),
+                getErrorMessage(
+                    error,
+                    tClient("projects.form.submit.error"),
+                ),
             );
         } finally {
             setSubmitting(false);
@@ -1049,7 +1289,10 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
         }
         if (deleteConfirm.trim() !== slug) {
             setSubmitError(
-                tClient("projects.form.delete.error.mismatch").replace("{slug}", slug),
+                tClient("projects.form.delete.error.mismatch").replace(
+                    "{slug}",
+                    slug,
+                ),
             );
             return;
         }
@@ -1062,9 +1305,12 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
             await api.deleteProject(accessToken, slug, deleteConfirm.trim());
             setHint(tClient("projects.form.delete.success"));
             router.replace("/projects");
-        } catch (err: any) {
+        } catch (error: unknown) {
             setSubmitError(
-                err?.message || tClient("projects.form.delete.error.generic"),
+                getErrorMessage(
+                    error,
+                    tClient("projects.form.delete.error.generic"),
+                ),
             );
         } finally {
             setDeleting(false);
@@ -1116,8 +1362,6 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
         .slice(0, 8);
 
     /* ------------------------------- Render ------------------------------- */
-
-    const isCreate = !isEdit;
 
     return (
         <section className="section">

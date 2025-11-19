@@ -1,4 +1,3 @@
-// web/app/projects/page.tsx
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
@@ -22,6 +21,31 @@ type Project = {
     description?: string;
     year?: number;
     cover?: string;
+};
+
+/* ---------- API shapes ---------- */
+type ApiProjectMember = {
+    memberId?: string | null;
+    id?: string | null;
+    memberSlug?: string | null;
+    slug?: string | null;
+    role?: string | null;
+};
+
+type ApiProjectListItem = {
+    id?: string | null;
+    slug: string;
+    title?: string | null;
+    name?: string | null;
+    tags?: (string | null)[] | null;
+    techStack?: (string | null)[] | null;
+    tech?: (string | null)[] | null;
+    members?: ApiProjectMember[] | null;
+    imageUrl?: string | null;
+    cover?: string | null;
+    summary?: string | null;
+    description?: string | null;
+    year?: number | null;
 };
 
 /* ---------- Helpers ---------- */
@@ -63,6 +87,10 @@ function highlight(text: string | undefined, q: string) {
     );
 }
 
+function isString(x: unknown): x is string {
+    return typeof x === "string";
+}
+
 /* ---------- API ---------- */
 async function fetchApiProjects(): Promise<Project[]> {
     try {
@@ -70,30 +98,37 @@ async function fetchApiProjects(): Promise<Project[]> {
             cache: "no-store",
         });
         if (!res.ok) return [];
-        const json = await res.json();
-        const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+        const json = (await res.json()) as { items?: ApiProjectListItem[] } | ApiProjectListItem[];
+        const items: ApiProjectListItem[] = Array.isArray(json) ? json : json.items ?? [];
         return items.map(normalizeProject);
     } catch {
         return [];
     }
 }
-function normalizeProject(p: any): Project {
+
+function normalizeProject(p: ApiProjectListItem): Project {
+    const tags = (p.tags ?? []).filter(isString);
+    const techStackSource = p.techStack ?? p.tech ?? [];
+    const techStack = techStackSource.filter(isString);
+
+    const members: Project["members"] = (p.members ?? []).map((m) => ({
+        memberId: m.memberId ?? m.id ?? undefined,
+        memberSlug: m.memberSlug ?? m.slug ?? undefined,
+        role: m.role ?? undefined,
+    }));
+
     return {
         id: p.id ?? p.slug,
         slug: p.slug,
-        title: p.title ?? p.name,
-        tags: p.tags ?? [],
-        techStack: p.techStack ?? p.tech ?? [],
-        members: (p.members ?? []).map((m: any) => ({
-            memberId: m.memberId ?? m.id,
-            memberSlug: m.memberSlug ?? m.slug,
-            role: m.role,
-        })),
-        imageUrl: p.imageUrl ?? p.cover,
-        summary: p.summary,
-        description: p.description,
+        title: p.title ?? p.name ?? p.slug,
+        tags,
+        techStack,
+        members,
+        imageUrl: p.imageUrl ?? p.cover ?? undefined,
+        summary: p.summary ?? undefined,
+        description: p.description ?? undefined,
         year: typeof p.year === "number" ? p.year : undefined,
-        cover: p.cover ?? p.imageUrl,
+        cover: p.cover ?? p.imageUrl ?? undefined,
     };
 }
 
@@ -157,8 +192,11 @@ export default async function ProjectsPage({
                     />
                 </div>
                 <div className="flex items-center gap-2">
-                    {["newest", "az"].map((s) => {
-                        const p = new URLSearchParams(searchParams as any);
+                    {(["newest", "az"] as const).map((s) => {
+                        const p = new URLSearchParams();
+                        if (q) p.set("q", q);
+                        if (tagsSel.length) p.set("tag", tagsSel.join(","));
+                        if (techSel.length) p.set("tech", techSel.join(","));
                         p.set("sort", s);
                         const href = `/projects?${p.toString()}`;
                         const active = sort === s;

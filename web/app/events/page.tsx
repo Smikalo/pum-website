@@ -22,26 +22,61 @@ type Event = {
     tags?: string[];
 };
 
+type RawEvent = {
+    id?: string | number;
+    slug?: string | number;
+    name?: string;
+    dateStart?: string;
+    dateEnd?: string;
+    locationName?: string;
+    lat?: number | string;
+    lng?: number | string;
+    description?: string;
+    photos?: string[];
+    tags?: string[];
+};
+
 // --- utils ---
-function formatDateRange(a?: string, b?: string) {
+function formatDateRange(
+    a?: string,
+    b?: string,
+) {
     if (!a && !b) return "";
-    if (a && !b) return new Date(a).toLocaleDateString();
-    if (!a && b) return new Date(b).toLocaleDateString();
+    if (a && !b)
+        return new Date(a).toLocaleDateString();
+    if (!a && b)
+        return new Date(b).toLocaleDateString();
     const da = new Date(a!);
     const db = new Date(b!);
-    const opts: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" };
-    return `${da.toLocaleDateString(undefined, opts)} – ${db.toLocaleDateString(undefined, opts)}`;
+    const opts: Intl.DateTimeFormatOptions = {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+    };
+    return `${da.toLocaleDateString(
+        undefined,
+        opts,
+    )} – ${db.toLocaleDateString(
+        undefined,
+        opts,
+    )}`;
 }
 
 function highlight(text: string | undefined, q: string) {
     if (!text) return null;
     if (!q) return text;
-    const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const esc = q.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+    );
     const re = new RegExp(`(${esc})`, "ig");
     const parts = text.split(re);
     return parts.map((p, i) =>
         re.test(p) ? (
-            <mark key={i} className="px-0.5 rounded bg-yellow-300/30 text-yellow-200">
+            <mark
+                key={i}
+                className="px-0.5 rounded bg-yellow-300/30 text-yellow-200"
+            >
                 {p}
             </mark>
         ) : (
@@ -53,8 +88,15 @@ function highlight(text: string | undefined, q: string) {
 function matchesQuery(e: Event, q: string) {
     if (!q) return true;
     const n = q.toLowerCase();
-    const fields = [e.name || "", e.locationName || "", e.description || "", ...(e.tags || [])];
-    return fields.some((f) => f.toLowerCase().includes(n));
+    const fields = [
+        e.name || "",
+        e.locationName || "",
+        e.description || "",
+        ...(e.tags || []),
+    ];
+    return fields.some((f) =>
+        f.toLowerCase().includes(n),
+    );
 }
 
 function parseYear(s?: string) {
@@ -63,27 +105,49 @@ function parseYear(s?: string) {
     return Number.isFinite(y) ? y : undefined;
 }
 
-// --- merge helpers: API-only list, seed fills gaps for same slug (e.g. lat/lng) ---
-const uniq = <T,>(arr: T[]) => Array.from(new Set(arr));
+const uniq = <T,>(arr: T[]): T[] =>
+    Array.from(new Set(arr));
 
-function normalizeEvent(e: any): Event {
+function normalizeEvent(e: RawEvent): Event {
     return {
-        id: String(e.id ?? e.slug),
-        slug: String(e.slug ?? e.id),
-        name: String(e.name ?? e.slug ?? e.id ?? ""),
+        id: String(e.id ?? e.slug ?? ""),
+        slug: String(e.slug ?? e.id ?? ""),
+        name:
+            e.name ??
+            String(e.slug ?? e.id ?? ""),
         dateStart: e.dateStart ?? undefined,
         dateEnd: e.dateEnd ?? undefined,
         locationName: e.locationName ?? undefined,
-        lat: typeof e.lat === "number" ? e.lat : typeof e.lat === "string" ? Number(e.lat) : undefined,
-        lng: typeof e.lng === "number" ? e.lng : typeof e.lng === "string" ? Number(e.lng) : undefined,
+        lat:
+            typeof e.lat === "number"
+                ? e.lat
+                : typeof e.lat === "string"
+                    ? Number(e.lat)
+                    : undefined,
+        lng:
+            typeof e.lng === "number"
+                ? e.lng
+                : typeof e.lng === "string"
+                    ? Number(e.lng)
+                    : undefined,
         description: e.description ?? undefined,
-        photos: Array.isArray(e.photos) ? e.photos : undefined,
+        photos: Array.isArray(e.photos)
+            ? e.photos
+            : undefined,
         tags: Array.isArray(e.tags) ? e.tags : undefined,
     };
 }
 
-function mergeApiWithSeed(api: Event[], seeds: Event[]): Event[] {
-    const seedBySlug = new Map(seeds.map((s) => [s.slug, normalizeEvent(s)]));
+function mergeApiWithSeed(
+    api: Event[],
+    seeds: Event[],
+): Event[] {
+    const seedBySlug = new Map(
+        seeds.map((s) => [
+            s.slug,
+            normalizeEvent(s),
+        ]),
+    );
     // IMPORTANT: only return API slugs; merge seed fields per slug to fill gaps
     return api.map((a) => {
         const s = seedBySlug.get(a.slug);
@@ -93,14 +157,29 @@ function mergeApiWithSeed(api: Event[], seeds: Event[]): Event[] {
             id: an.id || s.id,
             slug: an.slug || s.slug,
             name: an.name || s.name,
-            dateStart: an.dateStart ?? s.dateStart,
+            dateStart:
+                an.dateStart ?? s.dateStart,
             dateEnd: an.dateEnd ?? s.dateEnd,
-            locationName: an.locationName ?? s.locationName,
-            lat: typeof an.lat === "number" ? an.lat : s.lat,
-            lng: typeof an.lng === "number" ? an.lng : s.lng,
-            description: an.description ?? s.description,
-            photos: uniq([...(s.photos || []), ...(an.photos || [])]),
-            tags: uniq([...(s.tags || []), ...(an.tags || [])]),
+            locationName:
+                an.locationName ?? s.locationName,
+            lat:
+                typeof an.lat === "number"
+                    ? an.lat
+                    : s.lat,
+            lng:
+                typeof an.lng === "number"
+                    ? an.lng
+                    : s.lng,
+            description:
+                an.description ?? s.description,
+            photos: uniq([
+                ...(s.photos || []),
+                ...(an.photos || []),
+            ]),
+            tags: uniq([
+                ...(s.tags || []),
+                ...(an.tags || []),
+            ]),
         };
     });
 }
@@ -110,10 +189,18 @@ async function fetchAllEventsFromApi(): Promise<Event[]> {
     try {
         const url = new URL("/api/events", API_BASE);
         url.searchParams.set("size", "999");
-        const res = await fetch(url.toString(), { cache: "no-store" });
+        const res = await fetch(url.toString(), {
+            cache: "no-store",
+        });
         if (!res.ok) return [];
-        const json = (await res.json()) as { items?: Event[] };
-        return (json.items || []).map(normalizeEvent);
+        const json =
+            (await res.json()) as {
+                items?: RawEvent[];
+            };
+        const items = (json.items || []).map(
+            normalizeEvent,
+        );
+        return items;
     } catch {
         return [];
     }
@@ -130,35 +217,67 @@ export default async function EventsPage({
     const apiEvents = await fetchAllEventsFromApi();
 
     // ONLY API slugs; enrich with seed values for the *same* slugs (keeps map pins).
-    const allEvents = mergeApiWithSeed(apiEvents, SEED_EVENTS);
+    const allEvents = mergeApiWithSeed(
+        apiEvents,
+        SEED_EVENTS as unknown as Event[],
+    );
 
     // Year chips
     const years = Array.from(
-        new Set(allEvents.map((e) => (e.dateStart ? String(e.dateStart).slice(0, 4) : "")).filter(Boolean)),
-    ).sort((a, b) => Number(b) - Number(a));
+        new Set(
+            allEvents
+                .map((e) =>
+                    e.dateStart
+                        ? String(
+                            e.dateStart,
+                        ).slice(0, 4)
+                        : "",
+                )
+                .filter(Boolean),
+        ),
+    ).sort(
+        (a, b) => Number(b) - Number(a),
+    );
 
     // Filter
     const filtered = allEvents.filter((e) => {
         const byQ = matchesQuery(e, q);
-        const byYear = year ? parseYear(e.dateStart) === Number(year) : true;
+        const byYear = year
+            ? parseYear(e.dateStart) ===
+            Number(year)
+            : true;
         return byQ && byYear;
     });
 
     const count = filtered.length;
     const countLabel =
         count === 1
-            ? tServer("events.list.count.singular")
-            : tServer("events.list.count.plural");
+            ? tServer(
+                "events.list.count.singular",
+            )
+            : tServer(
+                "events.list.count.plural",
+            );
 
     return (
         <section className="section">
             <header className="mb-6">
-                <p className="kicker">{tServer("events.list.kicker")}</p>
+                <p className="kicker">
+                    {tServer(
+                        "events.list.kicker",
+                    )}
+                </p>
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <h1 className="display">{tServer("events.list.title")}</h1>
+                        <h1 className="display">
+                            {tServer(
+                                "events.list.title",
+                            )}
+                        </h1>
                         <p className="mt-3 text-white/70 max-w-2xl">
-                            {tServer("events.list.subtitle")}
+                            {tServer(
+                                "events.list.subtitle",
+                            )}
                         </p>
                     </div>
                     {/* Visible only for logged-in users */}
@@ -170,12 +289,18 @@ export default async function EventsPage({
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
                 <div className="flex-1">
                     <MembersSearchBar
-                        placeholder={tServer("events.list.search.placeholder")}
+                        placeholder={tServer(
+                            "events.list.search.placeholder",
+                        )}
                         paramKey="q"
                     />
                 </div>
                 <div className="flex items-center gap-2">
-                    <YearChips years={years} selected={year} params={{ q }} />
+                    <YearChips
+                        years={years}
+                        selected={year}
+                        params={{ q }}
+                    />
                 </div>
             </div>
 
@@ -190,8 +315,12 @@ export default async function EventsPage({
                 {year ? (
                     <>
                         {" "}
-                        {tServer("events.list.count.inYear")}{" "}
-                        <span className="font-semibold">{year}</span>
+                        {tServer(
+                            "events.list.count.inYear",
+                        )}{" "}
+                        <span className="font-semibold">
+                            {year}
+                        </span>
                     </>
                 ) : null}
             </div>
@@ -206,26 +335,44 @@ export default async function EventsPage({
                             {highlight(e.name, q)}
                         </div>
                         <div className="mt-1 text-sm text-white/70">
-                            {formatDateRange(e.dateStart, e.dateEnd)}
+                            {formatDateRange(
+                                e.dateStart,
+                                e.dateEnd,
+                            )}
                         </div>
                         <div className="mt-1 text-sm text-white/60">
-                            {highlight(e.locationName || "", q)}
+                            {highlight(
+                                e.locationName ||
+                                "",
+                                q,
+                            )}
                         </div>
-                        {!!(e.tags && e.tags.length) && (
+                        {!!(
+                            e.tags &&
+                            e.tags.length
+                        ) && (
                             <div className="mt-2 flex flex-wrap gap-1.5">
-                                {e.tags!.slice(0, 6).map((t) => (
-                                    <span
-                                        key={t}
-                                        className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
-                                    >
-                                        {highlight(t, q)}
-                                    </span>
-                                ))}
+                                {e.tags
+                                    .slice(0, 6)
+                                    .map((t) => (
+                                        <span
+                                            key={t}
+                                            className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                        >
+                                            {highlight(
+                                                t,
+                                                q,
+                                            )}
+                                        </span>
+                                    ))}
                             </div>
                         )}
                         {e.description ? (
                             <div className="mt-3 text-sm text-white/70 line-clamp-3">
-                                {highlight(e.description, q)}
+                                {highlight(
+                                    e.description,
+                                    q,
+                                )}
                             </div>
                         ) : null}
                     </Link>
@@ -237,18 +384,27 @@ export default async function EventsPage({
                 <div className="card p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                     <div>
                         <h2 className="text-lg font-semibold">
-                            {tServer("events.list.cta.title")}
+                            {tServer(
+                                "events.list.cta.title",
+                            )}
                         </h2>
                         <p className="text-sm text-white/70 max-w-xl">
-                            {tServer("events.list.cta.body")}
+                            {tServer(
+                                "events.list.cta.body",
+                            )}
                         </p>
                     </div>
                     <Link
                         href="/contact"
                         className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white text-black text-sm font-semibold hover:bg-white/90 transition"
                     >
-                        {tServer("events.list.cta.button")}
-                        <span aria-hidden className="ml-1">
+                        {tServer(
+                            "events.list.cta.button",
+                        )}
+                        <span
+                            aria-hidden
+                            className="ml-1"
+                        >
                             →
                         </span>
                     </Link>
@@ -267,9 +423,11 @@ function YearChips({
     selected?: string;
     params: Record<string, string>;
 }) {
-    const makeHref = (year?: string) => {
-        const p = new URLSearchParams({ ...params });
-        if (year) p.set("year", year);
+    const makeHref = (yearValue?: string) => {
+        const p = new URLSearchParams({
+            ...params,
+        });
+        if (yearValue) p.set("year", yearValue);
         else p.delete("year");
         const qs = p.toString();
         return `/events${qs ? `?${qs}` : ""}`;
@@ -281,7 +439,9 @@ function YearChips({
                     href={makeHref("")}
                     className="px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 bg-white/10"
                 >
-                    {tServer("events.list.yearChips.clear")}
+                    {tServer(
+                        "events.list.yearChips.clear",
+                    )}
                 </Link>
             ) : null}
             {years.map((y) => (
@@ -289,9 +449,15 @@ function YearChips({
                     key={y}
                     href={makeHref(y)}
                     className={`px-2.5 py-1.5 rounded-full text-xs ring-1 ring-white/10 ${
-                        selected === y ? "bg-white text-black font-semibold" : "bg-white/5 hover:bg-white/10"
+                        selected === y
+                            ? "bg-white text-black font-semibold"
+                            : "bg-white/5 hover:bg-white/10"
                     }`}
-                    aria-current={selected === y ? "page" : undefined}
+                    aria-current={
+                        selected === y
+                            ? "page"
+                            : undefined
+                    }
                 >
                     {y}
                 </Link>

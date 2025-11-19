@@ -24,8 +24,9 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
         let lastIndex = 0;
         let m: RegExpExecArray | null;
         while ((m = fence.exec(input))) {
-            if (m.index > lastIndex)
+            if (m.index > lastIndex) {
                 out.push({ type: "text", content: input.slice(lastIndex, m.index) });
+            }
             out.push({
                 type: "code",
                 content: m[2].replace(/\n$/, ""),
@@ -33,8 +34,9 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
             });
             lastIndex = fence.lastIndex;
         }
-        if (lastIndex < input.length)
+        if (lastIndex < input.length) {
             out.push({ type: "text", content: input.slice(lastIndex) });
+        }
         return out;
     }
 
@@ -270,27 +272,26 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
     return (
         <div className="space-y-3 leading-relaxed text-white/90">
             {segments.map((seg, i) =>
-                    seg.type === "code" ? (
-                        <pre
-                            key={`code-${i}`}
-                            className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
-                            aria-label={
-                                seg.lang
-                                    ? tClient("events.edit.markdown.codeBlockWithLang").replace(
-                                        "{lang}",
-                                        seg.lang,
-                                    )
-                                    : tClient("events.edit.markdown.codeBlock")
-                            }
-                        >
-            <code>{seg.content}</code>
-          </pre>
-                    ) : (
-                        <BlockText
-                            key={`txt-${i}`}
-                            text={seg.content}
-                        />
-                    ),
+                seg.type === "code" ? (
+                    <pre
+                        key={`code-${i}`}
+                        className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
+                        aria-label={
+                            seg.lang
+                                ? tClient(
+                                    "events.edit.markdown.codeBlockWithLang",
+                                ).replace("{lang}", seg.lang)
+                                : tClient("events.edit.markdown.codeBlock")
+                        }
+                    >
+                        <code>{seg.content}</code>
+                    </pre>
+                ) : (
+                    <BlockText
+                        key={`txt-${i}`}
+                        text={seg.content}
+                    />
+                ),
             )}
         </div>
     );
@@ -367,6 +368,91 @@ type BlogRef = {
     publishedAt?: string | null;
 };
 
+/* --------------------------- Raw API types --------------------------- */
+
+type RawMember = {
+    id?: string;
+    slug?: string;
+    name?: string;
+    avatarUrl?: string | null;
+    avatar?: string | null;
+    photo?: string | null;
+    image?: string | null;
+    headline?: string | null;
+    shortBio?: string | null;
+    email?: string | null;
+};
+
+type MembersResponse = RawMember[] | { items?: RawMember[] };
+
+type RawProject = {
+    id?: string;
+    slug?: string;
+    title?: string;
+    cover?: string | null;
+    imageUrl?: string | null;
+    year?: number | string | null;
+    summary?: string | null;
+};
+
+type ProjectsResponse = RawProject[] | { items?: RawProject[] };
+
+type RawBlogSummary = {
+    id?: string | number;
+    slug?: string | number;
+    title?: string;
+    name?: string;
+    summary?: string | null;
+    cover?: string | null;
+    imageUrl?: string | null;
+    images?: string[];
+    photos?: string[];
+    publishedAt?: string | null;
+    date?: string | null;
+    createdAt?: string | null;
+};
+
+type BlogsResponse = RawBlogSummary[] | { items?: RawBlogSummary[] };
+
+type RawEventAttendee = {
+    pending?: boolean;
+    email?: string | null;
+    slug?: string | null;
+    memberSlug?: string | null;
+    memberId?: string | null;
+    id?: string | null;
+    name?: string | null;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    avatar?: string | null;
+    photo?: string | null;
+    headline?: string | null;
+    title?: string | null;
+    role?: string | null;
+};
+
+type RawEventProjectRef = {
+    slug?: string | null;
+};
+
+type RawEventBlogRef = {
+    slug?: string | null;
+};
+
+type RawEvent = {
+    name?: string | null;
+    locationName?: string | null;
+    dateStart?: string | null;
+    dateEnd?: string | null;
+    lat?: number | string | null;
+    lng?: number | string | null;
+    description?: string | null;
+    photos?: string[];
+    attendees?: RawEventAttendee[];
+    projects?: RawEventProjectRef[];
+    blogs?: RawEventBlogRef[];
+};
+
 /* ---------------------------- Map preview ---------------------------- */
 
 function MapPreview({
@@ -419,6 +505,10 @@ function MapPreview({
 /* ------------------------------ Page ------------------------------ */
 
 type Props = { params: { slug: string } };
+
+function isMemberAttendee(a: Attendee): a is { kind: "member"; member: Member } {
+    return a.kind === "member";
+}
 
 export default function EditEventPage({ params }: Props) {
     const { user, accessToken } = useAuth();
@@ -493,11 +583,8 @@ export default function EditEventPage({ params }: Props) {
             try {
                 const results = await geocode(searchQ, controller.signal);
                 setHits(results);
-            } catch (err) {
-                if ((err as any)?.name !== "AbortError") {
-                    // eslint-disable-next-line no-console
-                    // console.error("[EditEvent] geocode error", err);
-                }
+            } catch {
+                // swallow errors; aborts and network issues are non-fatal here
             } finally {
                 setSearching(false);
             }
@@ -518,12 +605,14 @@ export default function EditEventPage({ params }: Props) {
             try {
                 const res = await fetch("/api/members?size=999");
                 if (!res.ok) throw new Error("Failed to load members");
-                const json = await res.json();
-                const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+                const json = (await res.json()) as MembersResponse;
+                const items: RawMember[] = Array.isArray(json)
+                    ? json
+                    : json.items ?? [];
                 const mapped: Member[] = items.map((m) => ({
-                    id: m.id ?? m.slug,
-                    slug: m.slug ?? m.id,
-                    name: m.name,
+                    id: (m.id ?? m.slug ?? "") as string,
+                    slug: (m.slug ?? m.id ?? "") as string,
+                    name: m.name ?? "",
                     avatarUrl:
                         m.avatarUrl ??
                         m.avatar ??
@@ -537,10 +626,8 @@ export default function EditEventPage({ params }: Props) {
                     setMembers(mapped);
                     setMembersError(null);
                 }
-            } catch (err) {
+            } catch {
                 if (!cancelled) {
-                    // eslint-disable-next-line no-console
-                    // console.error("[EditEvent] members load error", err);
                     setMembersError(tClient("events.edit.members.error"));
                 }
             } finally {
@@ -563,24 +650,29 @@ export default function EditEventPage({ params }: Props) {
             try {
                 const res = await fetch("/api/projects?size=999");
                 if (!res.ok) throw new Error("Failed to load projects");
-                const json = await res.json();
-                const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+                const json = (await res.json()) as ProjectsResponse;
+                const items: RawProject[] = Array.isArray(json)
+                    ? json
+                    : json.items ?? [];
                 const mapped: ProjectRef[] = items.map((p) => ({
-                    id: p.id ?? p.slug,
-                    slug: p.slug ?? p.id,
-                    title: p.title,
+                    id: (p.id ?? p.slug ?? "") as string,
+                    slug: (p.slug ?? p.id ?? "") as string,
+                    title: p.title ?? (p.slug ?? "") ?? "",
                     cover: p.cover ?? p.imageUrl ?? null,
-                    year: p.year ?? null,
+                    year:
+                        typeof p.year === "number"
+                            ? p.year
+                            : typeof p.year === "string"
+                                ? Number(p.year)
+                                : null,
                     summary: p.summary ?? null,
                 }));
                 if (!cancelled) {
                     setProjects(mapped);
                     setProjectsError(null);
                 }
-            } catch (err) {
+            } catch {
                 if (!cancelled) {
-                    // eslint-disable-next-line no-console
-                    // console.error("[EditEvent] projects load error", err);
                     setProjectsError(tClient("events.edit.projects.error"));
                 }
             } finally {
@@ -603,8 +695,10 @@ export default function EditEventPage({ params }: Props) {
             try {
                 const res = await fetch("/api/blogs?size=999");
                 if (!res.ok) throw new Error("Failed to load blogs");
-                const json = await res.json();
-                const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+                const json = (await res.json()) as BlogsResponse;
+                const items: RawBlogSummary[] = Array.isArray(json)
+                    ? json
+                    : json.items ?? [];
                 const mapped: BlogRef[] = items
                     .map((b) => {
                         const images: string[] = Array.isArray(b.images)
@@ -620,16 +714,14 @@ export default function EditEventPage({ params }: Props) {
                             summary: b.summary ?? null,
                             publishedAt:
                                 b.publishedAt ?? b.date ?? b.createdAt ?? null,
-                        } as BlogRef;
+                        };
                     })
                     .filter((b) => !!b.slug && !!b.title);
                 if (!cancelled) {
                     setBlogs(mapped);
                 }
-            } catch (err) {
+            } catch {
                 if (!cancelled) {
-                    // eslint-disable-next-line no-console
-                    // console.error("[EditEvent] blogs load error", err);
                     // blogs are optional; we do NOT surface a red error
                 }
             } finally {
@@ -666,17 +758,14 @@ export default function EditEventPage({ params }: Props) {
                     }
                     return;
                 }
-                const ev: any = await res.json();
+                const ev = (await res.json()) as RawEvent;
                 if (cancelled) return;
 
-                const toInputValue = (
-                    iso: string | null | undefined,
-                ): string => {
+                const toInputValue = (iso: string | null | undefined): string => {
                     if (!iso) return "";
                     const d = new Date(iso);
                     if (Number.isNaN(d.getTime())) return "";
-                    const pad = (n: number) =>
-                        n.toString().padStart(2, "0");
+                    const pad = (n: number) => n.toString().padStart(2, "0");
                     return `${d.getFullYear()}-${pad(
                         d.getMonth() + 1,
                     )}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
@@ -688,8 +777,8 @@ export default function EditEventPage({ params }: Props) {
                     ...prev,
                     name: ev.name || "",
                     locationName: ev.locationName || "",
-                    dateStart: toInputValue(ev.dateStart),
-                    dateEnd: toInputValue(ev.dateEnd),
+                    dateStart: toInputValue(ev.dateStart ?? null),
+                    dateEnd: toInputValue(ev.dateEnd ?? null),
                     lat:
                         typeof ev.lat === "number"
                             ? String(ev.lat)
@@ -706,7 +795,7 @@ export default function EditEventPage({ params }: Props) {
                 }));
 
                 if (Array.isArray(ev.photos)) {
-                    setExistingPhotos(ev.photos as string[]);
+                    setExistingPhotos(ev.photos);
                     if (ev.photos.length > 0) {
                         // assume first photo is current header
                         setHeaderExistingIndex(0);
@@ -718,23 +807,25 @@ export default function EditEventPage({ params }: Props) {
                     setHeaderNewIndex(null);
                 }
 
-                const attendeesFromApi: any[] = Array.isArray(ev.attendees)
+                const attendeesFromApi: RawEventAttendee[] = Array.isArray(
+                    ev.attendees,
+                )
                     ? ev.attendees
                     : [];
 
                 const pendingInvites = attendeesFromApi.filter(
-                    (a) => a && a.pending && a.email,
+                    (a) => a.pending && a.email,
                 );
                 const memberAttendees = attendeesFromApi.filter(
-                    (a) => a && !a.pending && (a.slug || a.memberSlug || a.memberId),
+                    (a) => !a.pending && (a.slug || a.memberSlug || a.memberId),
                 );
 
                 setAttendees([
-                    ...memberAttendees.map((a) => ({
-                        kind: "member" as const,
+                    ...memberAttendees.map<Attendee>((a) => ({
+                        kind: "member",
                         member: {
-                            id: a.memberId ?? a.id ?? a.slug,
-                            slug: a.slug ?? a.memberSlug ?? a.id,
+                            id: a.memberId ?? a.id ?? a.slug ?? "",
+                            slug: a.slug ?? a.memberSlug ?? a.id ?? "",
                             name: a.name ?? a.displayName ?? "Unknown",
                             avatarUrl:
                                 a.avatarUrl ??
@@ -743,39 +834,39 @@ export default function EditEventPage({ params }: Props) {
                                 undefined,
                             headline: a.headline ?? a.title ?? undefined,
                             email: a.email ?? undefined,
-                        } as Member,
+                        },
                     })),
-                    ...pendingInvites.map((a) => ({
-                        kind: "invite" as const,
+                    ...pendingInvites.map<Attendee>((a) => ({
+                        kind: "invite",
                         value: String(a.email),
                     })),
                 ]);
 
                 const creator = attendeesFromApi.find(
-                    (a) => a && a.role === "CREATOR" && (a.slug || a.memberSlug),
+                    (a) =>
+                        a.role === "CREATOR" &&
+                        (a.slug || a.memberSlug),
                 );
                 setCreatorSlug(
-                    creator?.slug ?? creator?.memberSlug ?? null,
+                    (creator?.slug ?? creator?.memberSlug) ?? null,
                 );
 
                 // preselect related projects
                 if (Array.isArray(ev.projects)) {
                     const slugs = ev.projects
-                        .map((p: any) => p?.slug)
-                        .filter((s: any) => typeof s === "string");
+                        .map((p) => p?.slug)
+                        .filter((s): s is string => typeof s === "string");
                     setSelectedProjectSlugs(Array.from(new Set(slugs)));
                 }
 
                 // preselect related blogs, if API returns them
                 if (Array.isArray(ev.blogs)) {
                     const slugs = ev.blogs
-                        .map((b: any) => b?.slug)
-                        .filter((s: any) => typeof s === "string");
+                        .map((b) => b?.slug)
+                        .filter((s): s is string => typeof s === "string");
                     setSelectedBlogSlugs(Array.from(new Set(slugs)));
                 }
-            } catch (err) {
-                // eslint-disable-next-line no-console
-                // console.error("[EditEvent] loadEvent error", err);
+            } catch {
                 if (!cancelled)
                     setLoadError(tClient("events.edit.load.error.generic"));
             } finally {
@@ -795,8 +886,8 @@ export default function EditEventPage({ params }: Props) {
     const attendeeSuggestions = React.useMemo(() => {
         const alreadyIds = new Set(
             attendees
-                .filter((a) => a.kind === "member")
-                .map((a) => (a as any).member.id),
+                .filter(isMemberAttendee)
+                .map((a) => a.member.id),
         );
         return members
             .filter((m) => {
@@ -805,12 +896,8 @@ export default function EditEventPage({ params }: Props) {
                 const h = m.headline || "";
                 const email = m.email || "";
                 return (
-                    m.name
-                        .toLowerCase()
-                        .includes(normalizedAttendeeQ) ||
-                    m.slug
-                        .toLowerCase()
-                        .includes(normalizedAttendeeQ) ||
+                    m.name.toLowerCase().includes(normalizedAttendeeQ) ||
+                    m.slug.toLowerCase().includes(normalizedAttendeeQ) ||
                     h.toLowerCase().includes(normalizedAttendeeQ) ||
                     email.toLowerCase().includes(normalizedAttendeeQ)
                 );
@@ -829,12 +916,8 @@ export default function EditEventPage({ params }: Props) {
                 const summary = p.summary || "";
                 const year = p.year ? String(p.year) : "";
                 return (
-                    p.title
-                        .toLowerCase()
-                        .includes(normalizedProjectQ) ||
-                    summary
-                        .toLowerCase()
-                        .includes(normalizedProjectQ) ||
+                    p.title.toLowerCase().includes(normalizedProjectQ) ||
+                    summary.toLowerCase().includes(normalizedProjectQ) ||
                     year.includes(normalizedProjectQ)
                 );
             })
@@ -844,13 +927,8 @@ export default function EditEventPage({ params }: Props) {
     const selectedProjects = React.useMemo(
         () =>
             selectedProjectSlugs
-                .map((slug) =>
-                    projects.find((p) => p.slug === slug),
-                )
-                .filter(
-                    (p): p is ProjectRef =>
-                        !!p,
-                ),
+                .map((slug) => projects.find((p) => p.slug === slug))
+                .filter((p): p is ProjectRef => !!p),
         [selectedProjectSlugs, projects],
     );
 
@@ -998,7 +1076,7 @@ export default function EditEventPage({ params }: Props) {
 
     /* --------------------------- form helpers --------------------------- */
 
-    function set<K extends keyof FormState>(k: K, v: FormState[K]) {
+    function setField<K extends keyof FormState>(k: K, v: FormState[K]) {
         setState((s) => ({ ...s, [k]: v }));
         setErrors((e) => ({ ...e, [k]: undefined })); // clear on change
     }
@@ -1007,15 +1085,9 @@ export default function EditEventPage({ params }: Props) {
         const e: Errors = {};
         if (!state.name.trim())
             e.name = tClient("events.edit.validation.nameRequired");
-        if (
-            state.dateStart &&
-            Number.isNaN(new Date(state.dateStart).getTime())
-        )
+        if (state.dateStart && Number.isNaN(new Date(state.dateStart).getTime()))
             e.dateStart = tClient("events.edit.validation.dateStartInvalid");
-        if (
-            state.dateEnd &&
-            Number.isNaN(new Date(state.dateEnd).getTime())
-        )
+        if (state.dateEnd && Number.isNaN(new Date(state.dateEnd).getTime()))
             e.dateEnd = tClient("events.edit.validation.dateEndInvalid");
         if (state.dateStart && state.dateEnd) {
             const a = new Date(state.dateStart).getTime();
@@ -1023,18 +1095,15 @@ export default function EditEventPage({ params }: Props) {
             if (a > b) e.dateEnd = tClient("events.edit.validation.dateOrder");
         }
 
-        const totalPhotos =
-            existingPhotos.length + photos.length;
+        const totalPhotos = existingPhotos.length + photos.length;
         if (totalPhotos > 12) {
             e.photos = tClient("events.edit.validation.photosTooMany");
         }
 
         for (const f of photos) {
-            const okType =
-                /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
+            const okType = /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
             if (!okType) {
-                e.photos =
-                    tClient("events.edit.validation.photosType");
+                e.photos = tClient("events.edit.validation.photosType");
                 break;
             }
             if (f.size > 8 * 1024 * 1024) {
@@ -1047,13 +1116,7 @@ export default function EditEventPage({ params }: Props) {
 
     function addMemberAttendee(m: Member) {
         setAttendees((prev) => {
-            if (
-                prev.some(
-                    (a) =>
-                        a.kind === "member" &&
-                        a.member.id === m.id,
-                )
-            ) {
+            if (prev.some((a) => a.kind === "member" && a.member.id === m.id)) {
                 return prev;
             }
             return [...prev, { kind: "member", member: m }];
@@ -1080,9 +1143,7 @@ export default function EditEventPage({ params }: Props) {
     }
 
     function removeAttendee(index: number) {
-        setAttendees((prev) =>
-            prev.filter((_, i) => i !== index),
-        );
+        setAttendees((prev) => prev.filter((_, i) => i !== index));
     }
 
     function addProject(p: ProjectRef) {
@@ -1093,9 +1154,7 @@ export default function EditEventPage({ params }: Props) {
     }
 
     function removeProject(slug: string) {
-        setSelectedProjectSlugs((prev) =>
-            prev.filter((s) => s !== slug),
-        );
+        setSelectedProjectSlugs((prev) => prev.filter((s) => s !== slug));
     }
 
     function addBlog(b: BlogRef) {
@@ -1138,14 +1197,10 @@ export default function EditEventPage({ params }: Props) {
                 setHeaderNewIndex(null);
             } else if (
                 headerExistingIndex == null &&
-                (headerNewIndex == null ||
-                    headerNewIndex >= next.length)
+                (headerNewIndex == null || headerNewIndex >= next.length)
             ) {
                 setHeaderNewIndex(0);
-            } else if (
-                headerNewIndex != null &&
-                headerNewIndex >= next.length
-            ) {
+            } else if (headerNewIndex != null && headerNewIndex >= next.length) {
                 setHeaderNewIndex(0);
             }
 
@@ -1157,17 +1212,12 @@ export default function EditEventPage({ params }: Props) {
         setExistingPhotos((prev) => {
             const next = prev.filter((_, i) => i !== index);
             setHeaderExistingIndex((current) =>
-                adjustIndexAfterRemoval(
-                    current,
-                    index,
-                    next.length,
-                ),
+                adjustIndexAfterRemoval(current, index, next.length),
             );
             // if we lost the only header and no existing photos remain, but have new photos, pick a new header from new photos
             if (next.length === 0 && photos.length > 0) {
                 setHeaderExistingIndex(null);
-                if (headerNewIndex == null)
-                    setHeaderNewIndex(0);
+                if (headerNewIndex == null) setHeaderNewIndex(0);
             }
             return next;
         });
@@ -1177,11 +1227,7 @@ export default function EditEventPage({ params }: Props) {
         setPhotos((prev) => {
             const next = prev.filter((_, i) => i !== index);
             setHeaderNewIndex((current) =>
-                adjustIndexAfterRemoval(
-                    current,
-                    index,
-                    next.length,
-                ),
+                adjustIndexAfterRemoval(current, index, next.length),
             );
             return next;
         });
@@ -1218,19 +1264,11 @@ export default function EditEventPage({ params }: Props) {
             let newPhotoUrls: string[] = [];
             if (photos.length) {
                 const uploads = await Promise.all(
-                    photos.map((file) =>
-                        api.uploadEventPhoto(
-                            accessToken,
-                            file,
-                        ),
-                    ),
+                    photos.map((file) => api.uploadEventPhoto(accessToken, file)),
                 );
                 newPhotoUrls = uploads
                     .map((u) => u?.url)
-                    .filter(
-                        (u): u is string =>
-                            !!u,
-                    );
+                    .filter((u): u is string => !!u);
             }
 
             // Determine header & final order
@@ -1239,29 +1277,21 @@ export default function EditEventPage({ params }: Props) {
             const finalNew = [...newPhotoUrls];
 
             // derive actual header choice (fall back to first existing/new if none set)
-            let chosenHeaderExistingIndex =
-                headerExistingIndex;
+            let chosenHeaderExistingIndex = headerExistingIndex;
             let chosenHeaderNewIndex = headerNewIndex;
 
-            if (
-                finalExisting.length === 0 &&
-                finalNew.length === 0
-            ) {
+            if (finalExisting.length === 0 && finalNew.length === 0) {
                 headerUrl = null;
             } else if (
                 chosenHeaderExistingIndex != null &&
                 finalExisting[chosenHeaderExistingIndex]
             ) {
-                headerUrl =
-                    finalExisting[
-                        chosenHeaderExistingIndex
-                        ];
+                headerUrl = finalExisting[chosenHeaderExistingIndex];
             } else if (
                 chosenHeaderNewIndex != null &&
                 finalNew[chosenHeaderNewIndex]
             ) {
-                headerUrl =
-                    finalNew[chosenHeaderNewIndex];
+                headerUrl = finalNew[chosenHeaderNewIndex];
             } else if (finalExisting.length > 0) {
                 headerUrl = finalExisting[0];
                 chosenHeaderExistingIndex = 0;
@@ -1273,57 +1303,33 @@ export default function EditEventPage({ params }: Props) {
             }
 
             const remainingExisting =
-                headerUrl &&
-                chosenHeaderExistingIndex != null
-                    ? finalExisting.filter(
-                        (_,
-                         idx) =>
-                            idx !==
-                            chosenHeaderExistingIndex,
-                    )
+                headerUrl && chosenHeaderExistingIndex != null
+                    ? finalExisting.filter((_, idx) => idx !== chosenHeaderExistingIndex)
                     : finalExisting;
 
             const remainingNew =
                 headerUrl && chosenHeaderNewIndex != null
-                    ? finalNew.filter(
-                        (_,
-                         idx) =>
-                            idx !==
-                            chosenHeaderNewIndex,
-                    )
+                    ? finalNew.filter((_, idx) => idx !== chosenHeaderNewIndex)
                     : finalNew;
 
             const finalPhotoUrls =
                 headerUrl == null
-                    ? [
-                        ...remainingExisting,
-                        ...remainingNew,
-                    ]
-                    : [
-                        headerUrl,
-                        ...remainingExisting,
-                        ...remainingNew,
-                    ];
+                    ? [...remainingExisting, ...remainingNew]
+                    : [headerUrl, ...remainingExisting, ...remainingNew];
 
             // 2) update event
             const body = {
                 name: state.name.trim(),
-                locationName:
-                    state.locationName.trim() || null,
+                locationName: state.locationName.trim() || null,
                 dateStart: state.dateStart
-                    ? new Date(
-                        state.dateStart,
-                    ).toISOString()
+                    ? new Date(state.dateStart).toISOString()
                     : null,
                 dateEnd: state.dateEnd
-                    ? new Date(
-                        state.dateEnd,
-                    ).toISOString()
+                    ? new Date(state.dateEnd).toISOString()
                     : null,
                 lat: state.lat ? Number(state.lat) : null,
                 lng: state.lng ? Number(state.lng) : null,
-                description:
-                    state.description.trim() || null,
+                description: state.description.trim() || null,
                 photos: finalPhotoUrls,
                 attendees: attendees.map((a) =>
                     a.kind === "member"
@@ -1332,9 +1338,7 @@ export default function EditEventPage({ params }: Props) {
                             memberId: a.member.id,
                             memberSlug: a.member.slug,
                             name: a.member.name,
-                            email:
-                                a.member.email ||
-                                null,
+                            email: a.member.email || null,
                         }
                         : {
                             type: "invite" as const,
@@ -1345,30 +1349,23 @@ export default function EditEventPage({ params }: Props) {
                 blogSlugs: selectedBlogSlugs,
             };
 
-            await api.updateEvent(
-                accessToken,
-                params.slug,
-                body,
-            );
+            await api.updateEvent(accessToken, params.slug, body);
             setHint(tClient("events.edit.submit.success"));
             setTimeout(() => {
                 router.push(`/events/${params.slug}`);
             }, 600);
-        } catch (err: any) {
-            // eslint-disable-next-line no-console
-            // console.error("[EditEvent] onSubmit error", err);
-            const msg =
-                err?.message ||
-                tClient("events.edit.submit.error");
+        } catch (err) {
+            let msg = tClient("events.edit.submit.error");
+            if (err instanceof Error && err.message) {
+                msg = err.message;
+            }
             setError(msg);
         } finally {
             setSubmitting(false);
         }
     }
 
-    async function onDelete(
-        e: React.MouseEvent<HTMLButtonElement>,
-    ) {
+    async function onDelete(e: React.MouseEvent<HTMLButtonElement>) {
         e.preventDefault();
         if (!accessToken) return;
 
@@ -1378,15 +1375,11 @@ export default function EditEventPage({ params }: Props) {
         setHint(null);
 
         if (!trimmed) {
-            setError(
-                tClient("events.edit.delete.error.emptyConfirm"),
-            );
+            setError(tClient("events.edit.delete.error.emptyConfirm"));
             return;
         }
         if (trimmed !== params.slug) {
-            setError(
-                tClient("events.edit.delete.error.mismatch"),
-            );
+            setError(tClient("events.edit.delete.error.mismatch"));
             return;
         }
 
@@ -1397,33 +1390,21 @@ export default function EditEventPage({ params }: Props) {
 
         setDeleting(true);
         try {
-            await api.deleteEvent(
-                accessToken,
-                params.slug,
-                trimmed,
-            );
-            setHint(
-                tClient("events.edit.delete.success"),
-            );
+            await api.deleteEvent(accessToken, params.slug, trimmed);
+            setHint(tClient("events.edit.delete.success"));
             router.push("/events");
-        } catch (err: any) {
-            // eslint-disable-next-line no-console
-            // console.error(
-            //     "[EditEvent] delete error",
-            //     err,
-            // );
-            const msg =
-                err?.message ||
-                tClient("events.edit.delete.error.generic");
+        } catch (err) {
+            let msg = tClient("events.edit.delete.error.generic");
+            if (err instanceof Error && err.message) {
+                msg = err.message;
+            }
             setError(msg);
         } finally {
             setDeleting(false);
         }
     }
 
-    const inputCls = (
-        field: keyof FormState | "photos" = "name",
-    ) =>
+    const inputCls = (field: keyof FormState | "photos" = "name") =>
         `w-full rounded-md bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/40 ring-1 outline-none ${
             errors[field]
                 ? "ring-red-400 focus:ring-red-400/80"
@@ -1477,12 +1458,7 @@ export default function EditEventPage({ params }: Props) {
                             <input
                                 required
                                 value={state.name}
-                                onChange={(e) =>
-                                    set(
-                                        "name",
-                                        e.target.value,
-                                    )
-                                }
+                                onChange={(e) => setField("name", e.target.value)}
                                 className={inputCls("name")}
                                 placeholder={tClient("events.edit.form.name.placeholder")}
                                 aria-invalid={!!errors.name}
@@ -1501,14 +1477,9 @@ export default function EditEventPage({ params }: Props) {
                                     {tClient("events.edit.form.description.label")}
                                 </label>
                                 <textarea
-                                    value={
-                                        state.description
-                                    }
+                                    value={state.description}
                                     onChange={(e) =>
-                                        set(
-                                            "description",
-                                            e.target.value,
-                                        )
+                                        setField("description", e.target.value)
                                     }
                                     className={`${inputCls()} min-h-[160px] resize-vertical`}
                                     placeholder={tClient(
@@ -1518,17 +1489,17 @@ export default function EditEventPage({ params }: Props) {
                             </div>
                             <div className="space-y-1">
                                 <div className="flex items-center justify-between text-xs text-white/60">
-                                    <span>{tClient("events.edit.markdown.previewLabel")}</span>
                                     <span>
-                    {tClient("events.edit.markdown.supports")}
-                  </span>
+                                        {tClient(
+                                            "events.edit.markdown.previewLabel",
+                                        )}
+                                    </span>
+                                    <span>
+                                        {tClient("events.edit.markdown.supports")}
+                                    </span>
                                 </div>
                                 <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 min-h-[160px] text-sm">
-                                    <MarkdownPreview
-                                        markdown={
-                                            state.description
-                                        }
-                                    />
+                                    <MarkdownPreview markdown={state.description} />
                                 </div>
                             </div>
                         </div>
@@ -1543,17 +1514,10 @@ export default function EditEventPage({ params }: Props) {
                                     type="datetime-local"
                                     value={state.dateStart}
                                     onChange={(e) =>
-                                        set(
-                                            "dateStart",
-                                            e.target.value,
-                                        )
+                                        setField("dateStart", e.target.value)
                                     }
-                                    className={inputCls(
-                                        "dateStart",
-                                    )}
-                                    aria-invalid={
-                                        !!errors.dateStart
-                                    }
+                                    className={inputCls("dateStart")}
+                                    aria-invalid={!!errors.dateStart}
                                 />
                                 {errors.dateStart && (
                                     <p className="mt-1 text-xs text-red-300">
@@ -1569,17 +1533,10 @@ export default function EditEventPage({ params }: Props) {
                                     type="datetime-local"
                                     value={state.dateEnd}
                                     onChange={(e) =>
-                                        set(
-                                            "dateEnd",
-                                            e.target.value,
-                                        )
+                                        setField("dateEnd", e.target.value)
                                     }
-                                    className={inputCls(
-                                        "dateEnd",
-                                    )}
-                                    aria-invalid={
-                                        !!errors.dateEnd
-                                    }
+                                    className={inputCls("dateEnd")}
+                                    aria-invalid={!!errors.dateEnd}
                                 />
                                 {errors.dateEnd && (
                                     <p className="mt-1 text-xs text-red-300">
@@ -1600,17 +1557,9 @@ export default function EditEventPage({ params }: Props) {
                                 type="file"
                                 multiple
                                 accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
-                                onChange={(e) =>
-                                    handleNewPhotos(
-                                        e.target.files,
-                                    )
-                                }
-                                className={inputCls(
-                                    "photos",
-                                )}
-                                aria-invalid={
-                                    !!errors.photos
-                                }
+                                onChange={(e) => handleNewPhotos(e.target.files)}
+                                className={inputCls("photos")}
+                                aria-invalid={!!errors.photos}
                             />
                             <p className="text-xs text-white/50 mt-1">
                                 {tClient("events.edit.form.photos.helper")}
@@ -1621,166 +1570,158 @@ export default function EditEventPage({ params }: Props) {
                                 </p>
                             )}
 
-                            {(existingPhotos.length > 0 ||
-                                photos.length > 0) && (
+                            {(existingPhotos.length > 0 || photos.length > 0) && (
                                 <div className="mt-3 space-y-3">
-                                    {existingPhotos.length >
-                                        0 && (
-                                            <div>
-                                                <p className="text-[11px] text-white/50 mb-1">
-                                                    {tClient("events.edit.form.photos.existing")}
-                                                </p>
-                                                <div className="grid grid-cols-3 gap-2">
-                                                    {existingPhotos.map(
-                                                        (
-                                                            url,
-                                                            i,
-                                                        ) => (
-                                                            <div
-                                                                key={`existing-${i}`}
-                                                                className={`relative group rounded-md bg-white/5 p-1 ${
-                                                                    headerExistingIndex ===
-                                                                    i
-                                                                        ? "ring-emerald-400/70 ring-2"
-                                                                        : "ring-1 ring-white/10"
-                                                                }`}
-                                                            >
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        removeExistingPhoto(
-                                                                            i,
-                                                                        )
-                                                                    }
-                                                                    className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                    aria-label={tClient(
-                                                                        "events.edit.form.photos.removeExisting",
-                                                                    ).replace("{index}", String(i + 1))}
-                                                                >
-                                                                    ✕
-                                                                </button>
-                                                                <img
-                                                                    src={
-                                                                        url
-                                                                    }
-                                                                    alt={tClient(
-                                                                        "events.edit.form.photos.existingAlt",
-                                                                    ).replace("{index}", String(i + 1))}
-                                                                    className="w-full h-24 object-cover rounded"
-                                                                />
-                                                                <div className="mt-1 flex items-center justify-between gap-1">
-                                <span className="text-[11px] text-white/70 truncate">
-                                  {tClient("events.edit.form.photos.existingLabelPrefix")}
-                                    {i + 1}
-                                </span>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() =>
-                                                                            setHeaderFromExisting(
-                                                                                i,
-                                                                            )
-                                                                        }
-                                                                        className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                                                                            headerExistingIndex ===
-                                                                            i &&
-                                                                            headerNewIndex ==
-                                                                            null
-                                                                                ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
-                                                                                : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
-                                                                        }`}
-                                                                    >
-                                                                        {headerExistingIndex ===
-                                                                        i &&
-                                                                        headerNewIndex ==
-                                                                        null
-                                                                            ? tClient("events.edit.form.photos.headerLabel")
-                                                                            : tClient("events.edit.form.photos.setHeader")}
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        ),
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                    {photos.length > 0 && (
+                                    {existingPhotos.length > 0 && (
                                         <div>
                                             <p className="text-[11px] text-white/50 mb-1">
-                                                {tClient("events.edit.form.photos.newUploads")}
+                                                {tClient(
+                                                    "events.edit.form.photos.existing",
+                                                )}
                                             </p>
                                             <div className="grid grid-cols-3 gap-2">
-                                                {photos.map(
-                                                    (
-                                                        f,
-                                                        i,
-                                                    ) => (
-                                                        <div
-                                                            key={`new-${i}`}
-                                                            className={`relative group rounded-md bg-white/5 p-1 ${
-                                                                headerNewIndex ===
-                                                                i &&
-                                                                headerExistingIndex ==
-                                                                null
-                                                                    ? "ring-emerald-400/70 ring-2"
-                                                                    : "ring-1 ring-white/10"
-                                                            }`}
+                                                {existingPhotos.map((url, i) => (
+                                                    <div
+                                                        key={`existing-${i}`}
+                                                        className={`relative group rounded-md bg-white/5 p-1 ${
+                                                            headerExistingIndex === i
+                                                                ? "ring-emerald-400/70 ring-2"
+                                                                : "ring-1 ring-white/10"
+                                                        }`}
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                removeExistingPhoto(i)
+                                                            }
+                                                            className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            aria-label={tClient(
+                                                                "events.edit.form.photos.removeExisting",
+                                                            ).replace(
+                                                                "{index}",
+                                                                String(i + 1),
+                                                            )}
                                                         >
+                                                            ✕
+                                                        </button>
+                                                        <img
+                                                            src={url}
+                                                            alt={tClient(
+                                                                "events.edit.form.photos.existingAlt",
+                                                            ).replace(
+                                                                "{index}",
+                                                                String(i + 1),
+                                                            )}
+                                                            className="w-full h-24 object-cover rounded"
+                                                        />
+                                                        <div className="mt-1 flex items-center justify-between gap-1">
+                                                            <span className="text-[11px] text-white/70 truncate">
+                                                                {tClient(
+                                                                    "events.edit.form.photos.existingLabelPrefix",
+                                                                )}
+                                                                {i + 1}
+                                                            </span>
                                                             <button
                                                                 type="button"
                                                                 onClick={() =>
-                                                                    removeNewPhoto(
+                                                                    setHeaderFromExisting(
                                                                         i,
                                                                     )
                                                                 }
-                                                                className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                aria-label={tClient(
-                                                                    "events.edit.form.photos.removeNew",
-                                                                ).replace("{name}", f.name)}
+                                                                className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                                                    headerExistingIndex ===
+                                                                    i &&
+                                                                    headerNewIndex == null
+                                                                        ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
+                                                                        : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
+                                                                }`}
                                                             >
-                                                                ✕
+                                                                {headerExistingIndex ===
+                                                                i &&
+                                                                headerNewIndex == null
+                                                                    ? tClient(
+                                                                        "events.edit.form.photos.headerLabel",
+                                                                    )
+                                                                    : tClient(
+                                                                        "events.edit.form.photos.setHeader",
+                                                                    )}
                                                             </button>
-                                                            <img
-                                                                src={URL.createObjectURL(
-                                                                    f,
-                                                                )}
-                                                                alt={
-                                                                    f.name
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {photos.length > 0 && (
+                                        <div>
+                                            <p className="text-[11px] text-white/50 mb-1">
+                                                {tClient(
+                                                    "events.edit.form.photos.newUploads",
+                                                )}
+                                            </p>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {photos.map((f, i) => (
+                                                    <div
+                                                        key={`new-${i}`}
+                                                        className={`relative group rounded-md bg-white/5 p-1 ${
+                                                            headerNewIndex === i &&
+                                                            headerExistingIndex == null
+                                                                ? "ring-emerald-400/70 ring-2"
+                                                                : "ring-1 ring-white/10"
+                                                        }`}
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                removeNewPhoto(i)
+                                                            }
+                                                            className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            aria-label={tClient(
+                                                                "events.edit.form.photos.removeNew",
+                                                            ).replace(
+                                                                "{name}",
+                                                                f.name,
+                                                            )}
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                        <img
+                                                            src={URL.createObjectURL(f)}
+                                                            alt={f.name}
+                                                            className="w-full h-24 object-cover rounded"
+                                                        />
+                                                        <div className="mt-1 flex items-center justify-between gap-1">
+                                                            <div className="text-[11px] truncate text-white/70">
+                                                                {f.name}
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    setHeaderFromNew(i)
                                                                 }
-                                                                className="w-full h-24 object-cover rounded"
-                                                            />
-                                                            <div className="mt-1 flex items-center justify-between gap-1">
-                                                                <div className="text-[11px] truncate text-white/70">
-                                                                    {
-                                                                        f.name
-                                                                    }
-                                                                </div>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        setHeaderFromNew(
-                                                                            i,
-                                                                        )
-                                                                    }
-                                                                    className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                                                                        headerNewIndex ===
-                                                                        i &&
-                                                                        headerExistingIndex ==
-                                                                        null
-                                                                            ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
-                                                                            : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
-                                                                    }`}
-                                                                >
-                                                                    {headerNewIndex ===
+                                                                className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                                                    headerNewIndex ===
                                                                     i &&
                                                                     headerExistingIndex ==
                                                                     null
-                                                                        ? tClient("events.edit.form.photos.headerLabel")
-                                                                        : tClient("events.edit.form.photos.setHeader")}
-                                                                </button>
-                                                            </div>
+                                                                        ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
+                                                                        : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
+                                                                }`}
+                                                            >
+                                                                {headerNewIndex ===
+                                                                i &&
+                                                                headerExistingIndex ==
+                                                                null
+                                                                    ? tClient(
+                                                                        "events.edit.form.photos.headerLabel",
+                                                                    )
+                                                                    : tClient(
+                                                                        "events.edit.form.photos.setHeader",
+                                                                    )}
+                                                            </button>
                                                         </div>
-                                                    ),
-                                                )}
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     )}
@@ -1801,14 +1742,9 @@ export default function EditEventPage({ params }: Props) {
                             <input
                                 value={state.locationName}
                                 onChange={(e) =>
-                                    set(
-                                        "locationName",
-                                        e.target.value,
-                                    )
+                                    setField("locationName", e.target.value)
                                 }
-                                className={inputCls(
-                                    "locationName",
-                                )}
+                                className={inputCls("locationName")}
                                 placeholder={tClient(
                                     "events.edit.form.locationName.placeholder",
                                 )}
@@ -1820,11 +1756,7 @@ export default function EditEventPage({ params }: Props) {
                             <div className="relative">
                                 <input
                                     value={searchQ}
-                                    onChange={(e) =>
-                                        setSearchQ(
-                                            e.target.value,
-                                        )
-                                    }
+                                    onChange={(e) => setSearchQ(e.target.value)}
                                     placeholder={tClient(
                                         "events.edit.map.search.placeholder",
                                     )}
@@ -1832,7 +1764,9 @@ export default function EditEventPage({ params }: Props) {
                                 />
                                 {searching && (
                                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-white/50">
-                                        {tClient("events.edit.map.search.searching")}
+                                        {tClient(
+                                            "events.edit.map.search.searching",
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1843,32 +1777,27 @@ export default function EditEventPage({ params }: Props) {
                                             key={i}
                                             className="p-2 text-sm hover:bg-white/10 cursor-pointer"
                                             onClick={() => {
-                                                set(
-                                                    "lat",
-                                                    h.lat,
-                                                );
-                                                set(
-                                                    "lng",
-                                                    h.lon,
-                                                );
+                                                setField("lat", h.lat);
+                                                setField("lng", h.lon);
                                                 setHits([]);
-                                                setSearchQ(
-                                                    h.display_name,
-                                                );
-                                                set(
+                                                setSearchQ(h.display_name);
+                                                setField(
                                                     "locationName",
                                                     h.display_name,
                                                 );
                                             }}
                                         >
                                             <div className="font-medium text-white">
-                                                {
-                                                    h.display_name
-                                                }
+                                                {h.display_name}
                                             </div>
                                             <div className="text-xs text-white/60 mt-0.5">
-                                                {tClient("events.edit.map.search.latLabel")} {h.lat},{" "}
-                                                {tClient("events.edit.map.search.lngLabel")}{" "}
+                                                {tClient(
+                                                    "events.edit.map.search.latLabel",
+                                                )}{" "}
+                                                {h.lat},{" "}
+                                                {tClient(
+                                                    "events.edit.map.search.lngLabel",
+                                                )}{" "}
                                                 {h.lon}
                                             </div>
                                         </li>
@@ -1885,14 +1814,11 @@ export default function EditEventPage({ params }: Props) {
                                 </label>
                                 <input
                                     value={state.lat}
-                                    onChange={(e) =>
-                                        set(
-                                            "lat",
-                                            e.target.value,
-                                        )
-                                    }
+                                    onChange={(e) => setField("lat", e.target.value)}
                                     className={inputCls("lat")}
-                                    placeholder={tClient("events.edit.form.lat.placeholder")}
+                                    placeholder={tClient(
+                                        "events.edit.form.lat.placeholder",
+                                    )}
                                 />
                             </div>
                             <div>
@@ -1901,14 +1827,11 @@ export default function EditEventPage({ params }: Props) {
                                 </label>
                                 <input
                                     value={state.lng}
-                                    onChange={(e) =>
-                                        set(
-                                            "lng",
-                                            e.target.value,
-                                        )
-                                    }
+                                    onChange={(e) => setField("lng", e.target.value)}
                                     className={inputCls("lng")}
-                                    placeholder={tClient("events.edit.form.lng.placeholder")}
+                                    placeholder={tClient(
+                                        "events.edit.form.lng.placeholder",
+                                    )}
                                 />
                             </div>
                         </div>
@@ -1930,8 +1853,10 @@ export default function EditEventPage({ params }: Props) {
                             </h2>
                             {membersLoading && (
                                 <span className="text-[11px] text-white/50">
-                  {tClient("events.edit.attendees.loadingMembers")}
-                </span>
+                                    {tClient(
+                                        "events.edit.attendees.loadingMembers",
+                                    )}
+                                </span>
                             )}
                         </div>
                         {membersError && (
@@ -1944,29 +1869,16 @@ export default function EditEventPage({ params }: Props) {
                             <div className="flex gap-2">
                                 <input
                                     value={attendeeQ}
-                                    onChange={(e) =>
-                                        setAttendeeQ(
-                                            e.target.value,
-                                        )
-                                    }
+                                    onChange={(e) => setAttendeeQ(e.target.value)}
                                     onKeyDown={(e) => {
-                                        if (
-                                            e.key ===
-                                            "Enter"
-                                        ) {
+                                        if (e.key === "Enter") {
                                             e.preventDefault();
-                                            if (
-                                                attendeeSuggestions[0]
-                                            ) {
+                                            if (attendeeSuggestions[0]) {
                                                 addMemberAttendee(
                                                     attendeeSuggestions[0],
                                                 );
-                                            } else if (
-                                                attendeeQ.trim()
-                                            ) {
-                                                addInviteAttendee(
-                                                    attendeeQ,
-                                                );
+                                            } else if (attendeeQ.trim()) {
+                                                addInviteAttendee(attendeeQ);
                                             }
                                         }
                                     }}
@@ -1977,69 +1889,49 @@ export default function EditEventPage({ params }: Props) {
                                 />
                                 <button
                                     type="button"
-                                    onClick={() =>
-                                        addInviteAttendee(
-                                            attendeeQ,
-                                        )
-                                    }
+                                    onClick={() => addInviteAttendee(attendeeQ)}
                                     className="px-3 py-2 rounded-md bg-white text-black text-xs font-medium disabled:opacity-60"
                                     disabled={!attendeeQ.trim()}
                                 >
-                                    {tClient("events.edit.attendees.addInviteButton")}
+                                    {tClient(
+                                        "events.edit.attendees.addInviteButton",
+                                    )}
                                 </button>
                             </div>
 
                             {!!attendeeSuggestions.length && (
                                 <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
-                                    {attendeeSuggestions.map(
-                                        (m) => (
-                                            <li
-                                                key={
-                                                    m.id
-                                                }
-                                                className="p-2 text-sm hover:bg-white/10 cursor-pointer flex items-center gap-2"
-                                                onClick={() =>
-                                                    addMemberAttendee(
-                                                        m,
-                                                    )
-                                                }
-                                            >
-                                                {m.avatarUrl ? (
-                                                    <img
-                                                        src={
-                                                            m.avatarUrl
-                                                        }
-                                                        alt={
-                                                            m.name
-                                                        }
-                                                        className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20"
-                                                    />
-                                                ) : (
-                                                    <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
-                                                        {m.name
-                                                            .charAt(
-                                                                0,
-                                                            )
-                                                            .toUpperCase()}
+                                    {attendeeSuggestions.map((m) => (
+                                        <li
+                                            key={m.id}
+                                            className="p-2 text-sm hover:bg-white/10 cursor-pointer flex items-center gap-2"
+                                            onClick={() => addMemberAttendee(m)}
+                                        >
+                                            {m.avatarUrl ? (
+                                                <img
+                                                    src={m.avatarUrl}
+                                                    alt={m.name}
+                                                    className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20"
+                                                />
+                                            ) : (
+                                                <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                    {m.name
+                                                        .charAt(0)
+                                                        .toUpperCase()}
+                                                </div>
+                                            )}
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-medium text-white">
+                                                    {m.name}
+                                                </div>
+                                                {m.headline && (
+                                                    <div className="text-[11px] text-white/60 truncate">
+                                                        {m.headline}
                                                     </div>
                                                 )}
-                                                <div className="min-w-0">
-                                                    <div className="text-xs font-medium text-white">
-                                                        {
-                                                            m.name
-                                                        }
-                                                    </div>
-                                                    {m.headline && (
-                                                        <div className="text-[11px] text-white/60 truncate">
-                                                            {
-                                                                m.headline
-                                                            }
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </li>
-                                        ),
-                                    )}
+                                            </div>
+                                        </li>
+                                    ))}
                                 </ul>
                             )}
                         </div>
@@ -2047,81 +1939,61 @@ export default function EditEventPage({ params }: Props) {
                         {attendees.length > 0 && (
                             <div className="mt-3 flex flex-wrap gap-2">
                                 {attendees.map((a, idx) =>
-                                        a.kind === "member" ? (
-                                            <div
-                                                key={`m-${a.member.id}`}
-                                                className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
-                                            >
-                                                {a.member
-                                                    .avatarUrl ? (
-                                                    <img
-                                                        src={
-                                                            a
-                                                                .member
-                                                                .avatarUrl
-                                                        }
-                                                        alt={
-                                                            a
-                                                                .member
-                                                                .name
-                                                        }
-                                                        className="w-6 h-6 rounded-full object-cover ring-1 ring-white/20"
-                                                    />
-                                                ) : (
-                                                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
-                                                        {a.member.name
-                                                            .charAt(
-                                                                0,
-                                                            )
-                                                            .toUpperCase()}
-                                                    </div>
+                                    a.kind === "member" ? (
+                                        <div
+                                            key={`m-${a.member.id}`}
+                                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                        >
+                                            {a.member.avatarUrl ? (
+                                                <img
+                                                    src={a.member.avatarUrl}
+                                                    alt={a.member.name}
+                                                    className="w-6 h-6 rounded-full object-cover ring-1 ring-white/20"
+                                                />
+                                            ) : (
+                                                <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                    {a.member.name
+                                                        .charAt(0)
+                                                        .toUpperCase()}
+                                                </div>
+                                            )}
+                                            <span className="text-xs text-white">
+                                                {a.member.name}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeAttendee(idx)}
+                                                className="text-[11px] text-white/60 hover:text-white"
+                                                aria-label={tClient(
+                                                    "events.edit.attendees.removeMember",
+                                                ).replace(
+                                                    "{name}",
+                                                    a.member.name,
                                                 )}
-                                                <span className="text-xs text-white">
-                        {
-                            a
-                                .member
-                                .name
-                        }
-                      </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        removeAttendee(
-                                                            idx,
-                                                        )
-                                                    }
-                                                    className="text-[11px] text-white/60 hover:text-white"
-                                                    aria-label={tClient(
-                                                        "events.edit.attendees.removeMember",
-                                                    ).replace("{name}", a.member.name)}
-                                                >
-                                                    ✕
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div
-                                                key={`i-${a.value}-${idx}`}
-                                                className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
                                             >
-                      <span className="text-xs text-white/90">
-                        {a.value}
-                      </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        removeAttendee(
-                                                            idx,
-                                                        )
-                                                    }
-                                                    className="text-[11px] text-white/60 hover:text-white"
-                                                    aria-label={tClient(
-                                                        "events.edit.attendees.removeInvite",
-                                                    ).replace("{value}", a.value)}
-                                                >
-                                                    ✕
-                                                </button>
-                                            </div>
-                                        ),
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div
+                                            key={`i-${a.value}-${idx}`}
+                                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
+                                        >
+                                            <span className="text-xs text-white/90">
+                                                {a.value}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeAttendee(idx)}
+                                                className="text-[11px] text-white/60 hover:text-white"
+                                                aria-label={tClient(
+                                                    "events.edit.attendees.removeInvite",
+                                                ).replace("{value}", a.value)}
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ),
                                 )}
                             </div>
                         )}
@@ -2135,8 +2007,8 @@ export default function EditEventPage({ params }: Props) {
                             </h2>
                             {projectsLoading && (
                                 <span className="text-[11px] text-white/50">
-                  {tClient("events.edit.projects.loading")}
-                </span>
+                                    {tClient("events.edit.projects.loading")}
+                                </span>
                             )}
                         </div>
                         {projectsError && (
@@ -2148,11 +2020,7 @@ export default function EditEventPage({ params }: Props) {
                         <div className="space-y-2">
                             <input
                                 value={projectQ}
-                                onChange={(e) =>
-                                    setProjectQ(
-                                        e.target.value,
-                                    )
-                                }
+                                onChange={(e) => setProjectQ(e.target.value)}
                                 placeholder={tClient(
                                     "events.edit.projects.searchPlaceholder",
                                 )}
@@ -2160,105 +2028,67 @@ export default function EditEventPage({ params }: Props) {
                             />
                             {!!projectSuggestions.length && (
                                 <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
-                                    {projectSuggestions.map(
-                                        (p) => (
-                                            <li
-                                                key={
-                                                    p.id
-                                                }
-                                                className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
-                                                onClick={() =>
-                                                    addProject(
-                                                        p,
-                                                    )
-                                                }
-                                            >
-                                                {p.cover ? (
-                                                    <img
-                                                        src={
-                                                            p.cover
-                                                        }
-                                                        alt={
-                                                            p.title
-                                                        }
-                                                        className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
-                                                    />
-                                                ) : (
-                                                    <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
-                                                        {p.title
-                                                            .charAt(
-                                                                0,
-                                                            )
-                                                            .toUpperCase()}
+                                    {projectSuggestions.map((p) => (
+                                        <li
+                                            key={p.id}
+                                            className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                            onClick={() => addProject(p)}
+                                        >
+                                            {p.cover ? (
+                                                <img
+                                                    src={p.cover}
+                                                    alt={p.title}
+                                                    className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
+                                                />
+                                            ) : (
+                                                <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                    {p.title.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-medium text-white truncate">
+                                                    {p.title}
+                                                </div>
+                                                {p.year && (
+                                                    <div className="text-[11px] text-white/60">
+                                                        {p.year}
                                                     </div>
                                                 )}
-                                                <div className="min-w-0">
-                                                    <div className="text-xs font-medium text-white truncate">
-                                                        {
-                                                            p.title
-                                                        }
-                                                    </div>
-                                                    {p.year && (
-                                                        <div className="text-[11px] text-white/60">
-                                                            {
-                                                                p.year
-                                                            }
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </li>
-                                        ),
-                                    )}
+                                            </div>
+                                        </li>
+                                    ))}
                                 </ul>
                             )}
                         </div>
 
                         {selectedProjects.length > 0 && (
                             <div className="mt-3 flex flex-wrap gap-2">
-                                {selectedProjects.map(
-                                    (p) => (
-                                        <button
-                                            key={
-                                                p.slug
-                                            }
-                                            type="button"
-                                            onClick={() =>
-                                                removeProject(
-                                                    p.slug,
-                                                )
-                                            }
-                                            className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
-                                        >
-                                            {p.cover ? (
-                                                <img
-                                                    src={
-                                                        p.cover
-                                                    }
-                                                    alt={
-                                                        p.title
-                                                    }
-                                                    className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
-                                                />
-                                            ) : (
-                                                <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
-                                                    {p.title
-                                                        .charAt(
-                                                            0,
-                                                        )
-                                                        .toUpperCase()}
-                                                </div>
-                                            )}
-                                            <span className="text-xs text-white">
-                        {
-                            p.title
-                        }
-                      </span>
-                                            <span className="text-[11px] text-white/60 group-hover:text-red-300">
-                        ✕
-                      </span>
-                                        </button>
-                                    ),
-                                )}
+                                {selectedProjects.map((p) => (
+                                    <button
+                                        key={p.slug}
+                                        type="button"
+                                        onClick={() => removeProject(p.slug)}
+                                        className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
+                                    >
+                                        {p.cover ? (
+                                            <img
+                                                src={p.cover}
+                                                alt={p.title}
+                                                className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
+                                            />
+                                        ) : (
+                                            <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                {p.title.charAt(0).toUpperCase()}
+                                            </div>
+                                        )}
+                                        <span className="text-xs text-white">
+                                            {p.title}
+                                        </span>
+                                        <span className="text-[11px] text-white/60 group-hover:text-red-300">
+                                            ✕
+                                        </span>
+                                    </button>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -2271,8 +2101,8 @@ export default function EditEventPage({ params }: Props) {
                             </h2>
                             {blogsLoading && (
                                 <span className="text-[11px] text-white/50">
-                  {tClient("events.edit.blogs.loading")}
-                </span>
+                                    {tClient("events.edit.blogs.loading")}
+                                </span>
                             )}
                         </div>
                         <p className="text-xs text-white/60">
@@ -2282,11 +2112,7 @@ export default function EditEventPage({ params }: Props) {
                         <div className="space-y-2">
                             <input
                                 value={blogQ}
-                                onChange={(e) =>
-                                    setBlogQ(
-                                        e.target.value,
-                                    )
-                                }
+                                onChange={(e) => setBlogQ(e.target.value)}
                                 placeholder={tClient(
                                     "events.edit.blogs.searchPlaceholder",
                                 )}
@@ -2294,111 +2120,74 @@ export default function EditEventPage({ params }: Props) {
                             />
                             {!!blogSuggestions.length && (
                                 <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
-                                    {blogSuggestions.map(
-                                        (b) => (
-                                            <li
-                                                key={
-                                                    b.slug
-                                                }
-                                                className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
-                                                onClick={() =>
-                                                    addBlog(
-                                                        b,
-                                                    )
-                                                }
-                                            >
-                                                {b.cover ? (
-                                                    <img
-                                                        src={
-                                                            b.cover
-                                                        }
-                                                        alt={
-                                                            b.title
-                                                        }
-                                                        className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
-                                                    />
-                                                ) : (
-                                                    <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
-                                                        {b.title
-                                                            .charAt(
-                                                                0,
-                                                            )
-                                                            .toUpperCase()}
+                                    {blogSuggestions.map((b) => (
+                                        <li
+                                            key={b.slug}
+                                            className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                            onClick={() => addBlog(b)}
+                                        >
+                                            {b.cover ? (
+                                                <img
+                                                    src={b.cover}
+                                                    alt={b.title}
+                                                    className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
+                                                />
+                                            ) : (
+                                                <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                    {b.title.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-medium text-white truncate">
+                                                    {b.title}
+                                                </div>
+                                                {b.publishedAt && (
+                                                    <div className="text-[11px] text-white/60">
+                                                        {new Date(
+                                                            b.publishedAt,
+                                                        ).toLocaleDateString()}
                                                     </div>
                                                 )}
-                                                <div className="min-w-0">
-                                                    <div className="text-xs font-medium text-white truncate">
-                                                        {
-                                                            b.title
-                                                        }
-                                                    </div>
-                                                    {b.publishedAt && (
-                                                        <div className="text-[11px] text-white/60">
-                                                            {new Date(
-                                                                b.publishedAt,
-                                                            ).toLocaleDateString()}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </li>
-                                        ),
-                                    )}
+                                            </div>
+                                        </li>
+                                    ))}
                                 </ul>
                             )}
-                            {!blogsLoading &&
-                                blogs.length === 0 && (
-                                    <p className="text-[11px] text-white/50">
-                                        {tClient("events.edit.blogs.noneFound")}
-                                    </p>
-                                )}
+                            {!blogsLoading && blogs.length === 0 && (
+                                <p className="text-[11px] text-white/50">
+                                    {tClient("events.edit.blogs.noneFound")}
+                                </p>
+                            )}
                         </div>
 
                         {selectedBlogs.length > 0 && (
                             <div className="mt-3 flex flex-wrap gap-2">
-                                {selectedBlogs.map(
-                                    (b) => (
-                                        <button
-                                            key={
-                                                b.slug
-                                            }
-                                            type="button"
-                                            onClick={() =>
-                                                removeBlog(
-                                                    b.slug,
-                                                )
-                                            }
-                                            className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
-                                        >
-                                            {b.cover ? (
-                                                <img
-                                                    src={
-                                                        b.cover
-                                                    }
-                                                    alt={
-                                                        b.title
-                                                    }
-                                                    className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
-                                                />
-                                            ) : (
-                                                <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
-                                                    {b.title
-                                                        .charAt(
-                                                            0,
-                                                        )
-                                                        .toUpperCase()}
-                                                </div>
-                                            )}
-                                            <span className="text-xs text-white">
-                        {
-                            b.title
-                        }
-                      </span>
-                                            <span className="text-[11px] text-white/60 group-hover:text-red-300">
-                        ✕
-                      </span>
-                                        </button>
-                                    ),
-                                )}
+                                {selectedBlogs.map((b) => (
+                                    <button
+                                        key={b.slug}
+                                        type="button"
+                                        onClick={() => removeBlog(b.slug)}
+                                        className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
+                                    >
+                                        {b.cover ? (
+                                            <img
+                                                src={b.cover}
+                                                alt={b.title}
+                                                className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
+                                            />
+                                        ) : (
+                                            <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                {b.title.charAt(0).toUpperCase()}
+                                            </div>
+                                        )}
+                                        <span className="text-xs text-white">
+                                            {b.title}
+                                        </span>
+                                        <span className="text-[11px] text-white/60 group-hover:text-red-300">
+                                            ✕
+                                        </span>
+                                    </button>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -2432,18 +2221,20 @@ export default function EditEventPage({ params }: Props) {
                                 {tClient("events.edit.delete.body")}
                             </p>
                             <label className="mt-3 block text-xs text-white/70">
-                                {tClient("events.edit.delete.confirmLabel.prefix")}{" "}
+                                {tClient(
+                                    "events.edit.delete.confirmLabel.prefix",
+                                )}{" "}
                                 <code className="rounded bg-white/10 px-1 py-0.5 text-[11px]">
                                     {params.slug}
                                 </code>{" "}
-                                {tClient("events.edit.delete.confirmLabel.suffix")}
+                                {tClient(
+                                    "events.edit.delete.confirmLabel.suffix",
+                                )}
                             </label>
                             <input
                                 value={deleteConfirmSlug}
                                 onChange={(e) =>
-                                    setDeleteConfirmSlug(
-                                        e.target.value,
-                                    )
+                                    setDeleteConfirmSlug(e.target.value)
                                 }
                                 className={`${inputCls()} mt-1`}
                                 placeholder={params.slug}
@@ -2454,8 +2245,7 @@ export default function EditEventPage({ params }: Props) {
                                 disabled={
                                     deleting ||
                                     !accessToken ||
-                                    deleteConfirmSlug.trim() !==
-                                    params.slug
+                                    deleteConfirmSlug.trim() !== params.slug
                                 }
                                 className="mt-3 w-full px-4 py-2 rounded-md bg-red-600 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
                             >

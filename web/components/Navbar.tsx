@@ -4,6 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import Image from "next/image";
 import React from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { toImageSrc } from "@/lib/images";
@@ -49,12 +50,10 @@ export default function Navbar() {
         [pathname],
     );
 
-    // Close mobile drawer on route change
     React.useEffect(() => {
         setMobileOpen(false);
     }, [pathname]);
 
-    // Apply theme class + persist
     React.useEffect(() => {
         if (typeof document === "undefined") return;
         const root = document.documentElement;
@@ -74,12 +73,10 @@ export default function Navbar() {
     const changeLang = (next: "en" | "de") => {
         if (next === lang) return;
 
-        // Update React context
         setLang(next);
 
-        // Ensure cookie is updated immediately so server + tServer see it
         try {
-            const maxAge = 60 * 60 * 24 * 365; // 1 year
+            const maxAge = 60 * 60 * 24 * 365;
             document.cookie = `lang=${encodeURIComponent(
                 next,
             )}; path=/; max-age=${maxAge}; samesite=lax`;
@@ -87,8 +84,6 @@ export default function Navbar() {
             // ignore
         }
 
-        // Re-fetch and re-render the current route so server components
-        // and any tServer/tClient content pick up the new language.
         router.refresh();
     };
 
@@ -134,7 +129,7 @@ export default function Navbar() {
                     })}
                 </nav>
 
-                {/* Right side: theme, language, auth, mobile toggle */}
+                {/* Right side */}
                 <div className="flex items-center gap-2">
                     {/* Theme toggle */}
                     <button
@@ -174,7 +169,7 @@ export default function Navbar() {
                         </button>
                     </div>
 
-                    {/* Auth (desktop) */}
+                    {/* Auth (desktop + mobile burger) */}
                     {!user ? (
                         <>
                             <button
@@ -184,7 +179,6 @@ export default function Navbar() {
                             >
                                 Log in
                             </button>
-                            {/* mobile burger */}
                             <button
                                 type="button"
                                 onClick={() => setMobileOpen(true)}
@@ -241,7 +235,6 @@ export default function Navbar() {
                                 </DropdownMenu.Content>
                             </DropdownMenu.Root>
 
-                            {/* Mobile burger */}
                             <button
                                 type="button"
                                 onClick={() => setMobileOpen(true)}
@@ -318,7 +311,9 @@ export default function Navbar() {
                                 className="inline-flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-xs text-white/80 ring-1 ring-white/10 hover:bg-white/10"
                             >
                                 <ThemeIcon mode={theme} />
-                                <span className="sr-only">Toggle theme</span>
+                                <span className="sr-only">
+                                    Toggle theme
+                                </span>
                             </button>
                         </div>
 
@@ -399,6 +394,21 @@ type LoginFormProps = {
     onSuccess?: () => void;
 };
 
+function getLoginErrorMessage(err: unknown): string {
+    if (
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof (err as { message?: unknown }).message === "string"
+    ) {
+        return (err as { message: string }).message;
+    }
+    if (err instanceof Error && err.message) {
+        return err.message;
+    }
+    return "Login failed";
+}
+
 function LoginForm({ mode, onSuccess }: LoginFormProps) {
     const { login } = useAuth();
     const [email, setEmail] = React.useState("");
@@ -416,8 +426,8 @@ function LoginForm({ mode, onSuccess }: LoginFormProps) {
         try {
             await login(email, password);
             onSuccess?.();
-        } catch (err: any) {
-            setError(err?.message || "Login failed");
+        } catch (err: unknown) {
+            setError(getLoginErrorMessage(err));
         } finally {
             setLoading(false);
         }
@@ -493,9 +503,11 @@ function Avatar({ label, src }: { label: string; src?: string | null }) {
         <div className="grid h-8 w-8 place-items-center overflow-hidden rounded-full bg-white text-xs font-bold text-black">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             {src ? (
-                <img
+                <Image
                     src={src}
                     alt={label}
+                    width={32}
+                    height={32}
                     className="h-full w-full object-cover"
                 />
             ) : (
@@ -545,7 +557,6 @@ function CloseIcon() {
 
 function ThemeIcon({ mode }: { mode: "dark" | "light" }) {
     if (mode === "dark") {
-        // Moon
         return (
             <svg
                 width="16"
@@ -561,7 +572,6 @@ function ThemeIcon({ mode }: { mode: "dark" | "light" }) {
             </svg>
         );
     }
-    // Sun
     return (
         <svg
             width="16"

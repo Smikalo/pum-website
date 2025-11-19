@@ -6,6 +6,14 @@ import NewBlogButton from "@/components/NewBlogButton";
 import { API_BASE } from "@/lib/config";
 import { tServer } from "@/lib/i18n-server";
 
+type BlogAuthorCard = {
+    slug: string;
+    name: string;
+    avatarUrl?: string | null;
+    headline?: string | null;
+    role?: string | null;
+};
+
 type BlogCard = {
     id?: string;
     slug: string;
@@ -16,27 +24,46 @@ type BlogCard = {
     publishedAt?: string | null;
     tags?: string[];
     techStack?: string[];
+    authors?: BlogAuthorCard[];
+};
+
+type RawBlogListItem = {
+    id?: string;
+    slug?: string;
+    title?: string;
+    summary?: string;
+    cover?: string | null;
+    imageUrl?: string | null;
+    publishedAt?: string | null;
+    tags?: string[];
+    techStack?: string[];
     authors?: {
-        slug: string;
-        name: string;
+        slug?: string;
+        name?: string;
         avatarUrl?: string | null;
         headline?: string | null;
         role?: string | null;
     }[];
 };
 
+type BlogListResponse =
+    | RawBlogListItem[]
+    | {
+    items?: RawBlogListItem[];
+};
+
 function uniq<T>(arr: T[]): T[] {
     return Array.from(new Set(arr));
 }
 
-function parseMulti(param?: string) {
+function parseMulti(param?: string): string[] {
     return (param || "")
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
 }
 
-function matchesQuery(b: BlogCard, q: string) {
+function matchesQuery(b: BlogCard, q: string): boolean {
     if (!q) return true;
     const n = q.toLowerCase();
     const fields = [
@@ -48,13 +75,19 @@ function matchesQuery(b: BlogCard, q: string) {
     return fields.some((f) => f.toLowerCase().includes(n));
 }
 
-function includesAll(hay: string[] | undefined, needles: string[]) {
+function includesAll(
+    hay: string[] | undefined,
+    needles: string[],
+): boolean {
     if (!needles.length) return true;
     const h = new Set((hay || []).map((s) => s.toLowerCase()));
     return needles.every((n) => h.has(n.toLowerCase()));
 }
 
-function highlight(text: string | undefined, q: string) {
+function highlight(
+    text: string | undefined,
+    q: string,
+): React.ReactNode {
     if (!text) return null;
     if (!q) return text;
     const esc = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -80,21 +113,28 @@ async function fetchApiBlogs(): Promise<BlogCard[]> {
             cache: "no-store",
         });
         if (!res.ok) return [];
-        const json = await res.json();
-        const items: any[] = Array.isArray(json)
+        const json = (await res.json()) as BlogListResponse;
+        const items: RawBlogListItem[] = Array.isArray(json)
             ? json
             : json.items ?? [];
-        return items.map((b) => ({
+        return items.map((b): BlogCard => ({
             id: b.id,
-            slug: b.slug,
-            title: b.title,
+            slug: b.slug ?? "",
+            title: b.title ?? "",
             summary: b.summary,
-            cover: b.cover || b.imageUrl,
-            imageUrl: b.imageUrl,
-            publishedAt: b.publishedAt,
-            tags: b.tags || [],
-            techStack: b.techStack || [],
-            authors: b.authors || [],
+            cover: b.cover ?? b.imageUrl ?? null,
+            imageUrl: b.imageUrl ?? null,
+            publishedAt: b.publishedAt ?? null,
+            tags: b.tags ?? [],
+            techStack: b.techStack ?? [],
+            authors:
+                b.authors?.map((a) => ({
+                    slug: a.slug ?? "",
+                    name: a.name ?? "",
+                    avatarUrl: a.avatarUrl ?? null,
+                    headline: a.headline ?? null,
+                    role: a.role ?? null,
+                })) ?? [],
         }));
     } catch {
         return [];
@@ -119,7 +159,9 @@ export default async function BlogsPage({
     const all = await fetchApiBlogs();
 
     const allTags = uniq(all.flatMap((b) => b.tags || [])).sort();
-    const allTech = uniq(all.flatMap((b) => b.techStack || [])).sort();
+    const allTech = uniq(
+        all.flatMap((b) => b.techStack || []),
+    ).sort();
 
     const filtered = all
         .filter((b) => matchesQuery(b, q))
@@ -127,11 +169,19 @@ export default async function BlogsPage({
         .filter((b) => includesAll(b.techStack, techSel))
         .sort((a, b) => {
             if (sort === "az")
-                return (a.title || "").localeCompare(b.title || "");
-            const ad = a.publishedAt ? +new Date(a.publishedAt) : 0;
-            const bd = b.publishedAt ? +new Date(b.publishedAt) : 0;
+                return (a.title || "").localeCompare(
+                    b.title || "",
+                );
+            const ad = a.publishedAt
+                ? +new Date(a.publishedAt)
+                : 0;
+            const bd = b.publishedAt
+                ? +new Date(b.publishedAt)
+                : 0;
             if (ad === bd)
-                return (a.title || "").localeCompare(b.title || "");
+                return (a.title || "").localeCompare(
+                    b.title || "",
+                );
             return bd - ad;
         });
 
@@ -163,9 +213,16 @@ export default async function BlogsPage({
                 </div>
                 <div className="flex items-center gap-2">
                     {(["newest", "az"] as const).map((s) => {
-                        const p = new URLSearchParams(
-                            (searchParams || {}) as any,
-                        );
+                        const p = new URLSearchParams();
+                        if (searchParams) {
+                            Object.entries(searchParams).forEach(
+                                ([key, value]) => {
+                                    if (value) {
+                                        p.set(key, value);
+                                    }
+                                },
+                            );
+                        }
                         p.set("sort", s);
                         const href = `/blog?${p.toString()}`;
                         const active = sort === s;
@@ -184,7 +241,7 @@ export default async function BlogsPage({
                                 className={`rounded-lg px-3 py-2 text-sm ring-1 ring-white/10 ${
                                     active
                                         ? "bg-white text-black font-semibold"
-                                        : "bg-white/5 hover:bg-white/10"
+                                        : "bg-white/5 hover:bg.white/10"
                                 }`}
                             >
                                 {label}
@@ -255,17 +312,18 @@ export default async function BlogsPage({
                                     b.publishedAt,
                                 ).toLocaleDateString()
                                 : ""}
-                            {b.authors && b.authors.length > 0 && (
-                                <>
-                                    <span>•</span>
-                                    <span className="truncate">
-                                        {b.authors
-                                            .map((a) => a.name)
-                                            .filter(Boolean)
-                                            .join(", ")}
-                                    </span>
-                                </>
-                            )}
+                            {b.authors &&
+                                b.authors.length > 0 && (
+                                    <>
+                                        <span>•</span>
+                                        <span className="truncate">
+                                            {b.authors
+                                                .map((a) => a.name)
+                                                .filter(Boolean)
+                                                .join(", ")}
+                                        </span>
+                                    </>
+                                )}
                         </div>
                         <div className="mt-0.5 line-clamp-2 text-lg font-semibold">
                             {highlight(b.title, q)}
@@ -331,7 +389,9 @@ function MultiFilterChips({
 }) {
     const makeHref = (nextSelected: string[]) => {
         const p = new URLSearchParams();
-        Object.entries(params).forEach(([k, v]) => v && p.set(k, v));
+        Object.entries(params).forEach(([k, v]) => {
+            if (v) p.set(k, v);
+        });
         if (nextSelected.length)
             p.set(name, nextSelected.join(","));
         const qs = p.toString();

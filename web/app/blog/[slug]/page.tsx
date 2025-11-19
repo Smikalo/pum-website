@@ -50,20 +50,128 @@ type EventCard = {
     date?: string | null;
 };
 
-function normalizeAuthor(a: any): BlogAuthor {
-    const m = a?.member ?? a ?? {};
+/* ------------------------- Raw API shapes ------------------------- */
+
+type RawBlogAuthorMember = {
+    slug?: string;
+    id?: string;
+    name?: string;
+    avatarUrl?: string | null;
+    avatar?: string | null;
+    headline?: string | null;
+    shortBio?: string | null;
+    role?: string | null;
+};
+
+type RawBlogAuthor = {
+    member?: RawBlogAuthorMember | null;
+    slug?: string;
+    id?: string;
+    name?: string;
+    avatarUrl?: string | null;
+    avatar?: string | null;
+    headline?: string | null;
+    shortBio?: string | null;
+    role?: string | null;
+};
+
+type RawBlogEvent = {
+    slug?: string | null;
+};
+
+type RawBlog = {
+    id?: string | number;
+    slug?: string | number;
+    title?: string;
+    name?: string;
+    summary?: string | null;
+    content?: string | null;
+    body?: string | null;
+    markdown?: string | null;
+    html?: string | null;
+    text?: string | null;
+    cover?: string | null;
+    imageUrl?: string | null;
+    images?: string[];
+    photos?: string[];
+    publishedAt?: string | null;
+    date?: string | null;
+    createdAt?: string | null;
+    tags?: string[] | string;
+    techStack?: string[] | string;
+    tech?: string[] | string;
+    authors?: RawBlogAuthor[];
+    author?: RawBlogAuthor[];
+    projectSlugs?: string[] | string;
+    eventSlugs?: string[] | string;
+    events?: RawBlogEvent[];
+};
+
+type RawBlogContainer = {
+    item?: RawBlog;
+    data?: RawBlog;
+} & RawBlog;
+
+type RawProject = {
+    slug?: string;
+    title?: string;
+    photos?: string[];
+    cover?: string | null;
+    year?: number | string | null;
+};
+
+type RawEventSummary = {
+    slug?: string;
+    title?: string;
+    name?: string;
+    photos?: string[];
+    cover?: string | null;
+    date?: string | null;
+    startsAt?: string | null;
+    publishedAt?: string | null;
+    createdAt?: unknown;
+};
+
+/* ------------------------- Helpers ------------------------- */
+
+function normalizeAuthor(a: RawBlogAuthor): BlogAuthor {
+    const m: RawBlogAuthorMember = a.member ?? (a as RawBlogAuthorMember) ?? {};
     return {
         slug: m.slug ?? m.id ?? "",
         name: m.name ?? "",
         avatarUrl: m.avatarUrl ?? m.avatar ?? null,
         headline: m.headline ?? m.shortBio ?? null,
-        role: a?.role ?? m.role ?? null,
+        role: a.role ?? m.role ?? null,
     };
 }
 
-function normalizeBlog(raw: any): Blog | null {
+function normArr(x: unknown): string[] {
+    if (Array.isArray(x)) {
+        return x
+            .map((s) => String(s))
+            .map((s) => s.trim())
+            .filter(Boolean);
+    }
+
+    if (typeof x === "string") {
+        return x
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+    }
+
+    return [];
+}
+
+function normalizeBlog(raw: unknown): Blog | null {
     if (!raw) return null;
-    const b = raw.item ?? raw.data ?? raw;
+    const container = raw as RawBlogContainer;
+    const b: RawBlog =
+        container.item !== undefined
+            ? container.item
+            : container.data !== undefined
+                ? container.data
+                : container;
 
     const images: string[] = Array.isArray(b.images)
         ? b.images
@@ -75,17 +183,7 @@ function normalizeBlog(raw: any): Blog | null {
     const content =
         b.content ?? b.body ?? b.markdown ?? b.html ?? b.text ?? undefined;
 
-    const normArr = (x: any): string[] =>
-        Array.isArray(x)
-            ? x
-            : typeof x === "string"
-                ? x
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean)
-                : [];
-
-    const authorsInput: any[] = Array.isArray(b.authors)
+    const authorsInput: RawBlogAuthor[] = Array.isArray(b.authors)
         ? b.authors
         : Array.isArray(b.author)
             ? b.author
@@ -93,8 +191,8 @@ function normalizeBlog(raw: any): Blog | null {
 
     let eventSlugs: string[] = normArr(b.eventSlugs);
     if (!eventSlugs.length && Array.isArray(b.events)) {
-        eventSlugs = (b.events as any[])
-            .map((e) => e?.slug)
+        eventSlugs = b.events
+            .map((e) => e?.slug ?? null)
             .filter(
                 (s): s is string =>
                     typeof s === "string" && s.trim().length > 0,
@@ -119,6 +217,8 @@ function normalizeBlog(raw: any): Blog | null {
         eventSlugs,
     };
 }
+
+/* ------------------------- Data fetching ------------------------- */
 
 async function fetchBlog(slug: string): Promise<Blog | null> {
     try {
@@ -159,8 +259,8 @@ async function fetchRelatedBlogs(blog: Blog): Promise<Blog[]> {
         const items = Array.isArray(json.items) ? json.items : [];
         const related = items
             .map(normalizeBlog)
-            .filter((b: any): b is Blog => !!b)
-            .filter((b: { slug: string }) => b.slug !== blog.slug);
+            .filter((b: Blog | null): b is Blog => !!b)
+            .filter((b: Blog) => b.slug !== blog.slug);
         return related;
     } catch {
         return [];
@@ -180,14 +280,16 @@ async function fetchProjectsForSlugs(slugs: string[]): Promise<ProjectCard[]> {
         if (!res.ok) return [];
 
         const json = await res.json();
-        const items: any[] = Array.isArray(json.items) ? json.items : [];
+        const items = (Array.isArray(json.items)
+            ? json.items
+            : []) as RawProject[];
 
         const slugSet = new Set(slugs);
         const projects: ProjectCard[] = items
-            .filter((p) => p && slugSet.has(p.slug))
+            .filter((p) => p && p.slug && slugSet.has(p.slug))
             .map((p) => ({
-                slug: p.slug,
-                title: p.title ?? p.slug,
+                slug: p.slug as string,
+                title: p.title ?? p.slug ?? "",
                 cover:
                     Array.isArray(p.photos) && p.photos.length
                         ? p.photos[0]
@@ -195,7 +297,7 @@ async function fetchProjectsForSlugs(slugs: string[]): Promise<ProjectCard[]> {
                 year:
                     typeof p.year === "number"
                         ? p.year
-                        : p.year
+                        : typeof p.year === "string"
                             ? Number(p.year)
                             : null,
             }));
@@ -220,14 +322,16 @@ async function fetchEventsForSlugs(slugs: string[]): Promise<EventCard[]> {
         if (!res.ok) return [];
 
         const json = await res.json();
-        const items: any[] = Array.isArray(json.items) ? json.items : [];
+        const items = (Array.isArray(json.items)
+            ? json.items
+            : []) as RawEventSummary[];
 
         const slugSet = new Set(slugs);
         const events: EventCard[] = items
-            .filter((e) => e && slugSet.has(e.slug))
+            .filter((e) => e && e.slug && slugSet.has(e.slug))
             .map((e) => ({
-                slug: e.slug,
-                title: e.title ?? e.name ?? e.slug,
+                slug: e.slug as string,
+                title: e.title ?? e.name ?? (e.slug as string),
                 cover:
                     Array.isArray(e.photos) && e.photos.length
                         ? e.photos[0]
@@ -247,6 +351,8 @@ async function fetchEventsForSlugs(slugs: string[]): Promise<EventCard[]> {
         return [];
     }
 }
+
+/* ------------------------- Page & metadata ------------------------- */
 
 export async function generateMetadata({
                                            params,
@@ -292,7 +398,8 @@ export default async function BlogDetailPage({
     const relatedPosts = await fetchRelatedBlogs(b);
     const cover = b.cover || b.imageUrl;
     const images = b.images || [];
-    const authorSlugs = b.authors?.map((a) => a.slug).filter(Boolean) ?? [];
+    const authorSlugs =
+        b.authors?.map((a) => a.slug).filter(Boolean) ?? [];
     const relatedProjectSlugs = b.projectSlugs ?? [];
     const relatedEventSlugs = b.eventSlugs ?? [];
 
@@ -301,8 +408,12 @@ export default async function BlogDetailPage({
         fetchEventsForSlugs(relatedEventSlugs),
     ]);
 
-    const slugsWithProjectCards = new Set(relatedProjects.map((p) => p.slug));
-    const slugsWithEventCards = new Set(relatedEvents.map((e) => e.slug));
+    const slugsWithProjectCards = new Set(
+        relatedProjects.map((p) => p.slug),
+    );
+    const slugsWithEventCards = new Set(
+        relatedEvents.map((e) => e.slug),
+    );
     const fallbackProjectSlugs = relatedProjectSlugs.filter(
         (slug) => !slugsWithProjectCards.has(slug),
     );
@@ -417,7 +528,7 @@ export default async function BlogDetailPage({
                                     {b.techStack.map((t) => (
                                         <span
                                             key={t}
-                                            className="rounded-full bg-white/5 px-2 py-1 text-[11px] ring-1 ring-white/10"
+                                            className="rounded-full bg.white/5 px-2 py-1 text-[11px] ring-1 ring-white/10"
                                         >
                                             {t}
                                         </span>
@@ -643,7 +754,7 @@ export default async function BlogDetailPage({
                                         href={`/events/${slug}`}
                                         className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm transition hover:border-white/20 hover:bg-white/10"
                                     >
-                                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-black/40 text-[11px] text-white/60 ring-1 ring-white/10">
+                                        <div className="flex h-10 w-10 flex-shrink-0 items.center justify-center rounded-md bg-black/40 text-[11px] text.white/60 ring-1 ring-white/10">
                                             {tServer(
                                                 "blog.detail.relatedEvents.eventBadge",
                                             )}
@@ -702,20 +813,21 @@ export default async function BlogDetailPage({
                                         ).toLocaleDateString()}
                                     </p>
                                 )}
-                                {post.tags && post.tags.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-1">
-                                        {post.tags
-                                            .slice(0, 3)
-                                            .map((t) => (
-                                                <span
-                                                    key={t}
-                                                    className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] ring-1 ring-white/10"
-                                                >
-                                                    {t}
-                                                </span>
-                                            ))}
-                                    </div>
-                                )}
+                                {post.tags &&
+                                    post.tags.length > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-1">
+                                            {post.tags
+                                                .slice(0, 3)
+                                                .map((t) => (
+                                                    <span
+                                                        key={t}
+                                                        className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] ring-1 ring-white/10"
+                                                    >
+                                                        {t}
+                                                    </span>
+                                                ))}
+                                        </div>
+                                    )}
                             </Link>
                         ))}
                     </div>

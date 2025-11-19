@@ -20,6 +20,8 @@ type User = {
     id: string;
     email: string;
     roles: string[];
+    /** optional legacy field still read in some components */
+    roleNames?: string[];
     member?: MemberLite | null;
 };
 
@@ -37,26 +39,14 @@ const AuthContext = React.createContext<AuthContextValue | undefined>(
 
 const ACCESS_TOKEN_COOKIE_NAME = "access_token";
 
-/**
- * Store the current access token in a regular cookie so that
- * Next.js server actions (which run on the app domain) can read it
- * via `cookies().get("access_token")` and forward it as
- * `Authorization: Bearer <token>` to the API.
- *
- * This is separate from the HTTP-only refresh token the API sets.
- */
 function setAccessTokenCookie(token: string | null) {
     if (typeof document === "undefined") return;
 
     if (!token) {
-        // Clear cookie
         document.cookie = `${ACCESS_TOKEN_COOKIE_NAME}=; path=/; max-age=0`;
         return;
     }
 
-    // Access tokens are short-lived (e.g. ~15–30 minutes).
-    // Using 30 minutes here is fine – if the JWT expires earlier,
-    // the API will reject it and the UI can handle that.
     const maxAgeSeconds = 60 * 30;
 
     document.cookie = `${ACCESS_TOKEN_COOKIE_NAME}=${encodeURIComponent(
@@ -64,24 +54,80 @@ function setAccessTokenCookie(token: string | null) {
     )}; path=/; max-age=${maxAgeSeconds}; SameSite=Lax`;
 }
 
-function normalizeUser(data: any): User {
-    const m = data?.member;
+type ApiMemberLite = {
+    slug?: unknown;
+    id?: unknown;
+    name?: unknown;
+    avatarUrl?: unknown;
+    avatar?: unknown;
+    headline?: unknown;
+    shortBio?: unknown;
+};
+
+type ApiUserLike = {
+    id?: unknown;
+    email?: unknown;
+    roles?: unknown;
+    roleNames?: unknown;
+    member?: unknown;
+};
+
+function normalizeUser(data: unknown): User {
+    const src = (data ?? {}) as ApiUserLike;
+
+    const rawRoles =
+        Array.isArray(src.roles) && src.roles.length
+            ? src.roles
+            : Array.isArray(src.roleNames)
+                ? src.roleNames
+                : [];
+
+    const roles = rawRoles
+        .map((r) => (typeof r === "string" ? r : null))
+        .filter((r): r is string => r !== null);
+
+    const roleNames =
+        Array.isArray(src.roleNames) && src.roleNames.length
+            ? src.roleNames.filter((r): r is string => typeof r === "string")
+            : undefined;
+
+    let member: MemberLite | null = null;
+    if (src.member && typeof src.member === "object") {
+        const m = src.member as ApiMemberLite;
+        const slug = String(m.slug ?? m.id ?? "");
+        const name =
+            typeof m.name === "string"
+                ? m.name
+                : m.name != null
+                    ? String(m.name)
+                    : "";
+        const avatarInput =
+            typeof m.avatarUrl === "string"
+                ? m.avatarUrl
+                : typeof m.avatar === "string"
+                    ? m.avatar
+                    : null;
+        const headline =
+            typeof m.headline === "string"
+                ? m.headline
+                : typeof m.shortBio === "string"
+                    ? m.shortBio
+                    : null;
+
+        member = {
+            slug,
+            name,
+            avatarUrl: toImageSrc(avatarInput),
+            headline,
+        };
+    }
+
     return {
-        id: String(data?.id ?? ""),
-        email: String(data?.email ?? ""),
-        roles: Array.isArray(data?.roles)
-            ? data.roles
-            : Array.isArray(data?.roleNames)
-                ? data.roleNames
-                : [],
-        member: m
-            ? {
-                slug: String(m.slug ?? m.id ?? ""),
-                name: String(m.name ?? ""),
-                avatarUrl: toImageSrc(m.avatarUrl ?? m.avatar ?? null),
-                headline: m.headline ?? m.shortBio ?? null,
-            }
-            : null,
+        id: src.id != null ? String(src.id) : "",
+        email: src.email != null ? String(src.email) : "",
+        roles,
+        roleNames,
+        member,
     };
 }
 
@@ -97,17 +143,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             const me = await apiMe(r.accessToken);
             setUser(normalizeUser(me.user));
-        } catch (err) {
-            // console.warn("[AuthProvider] silent refresh failed", err);
+        } catch (_err: unknown) {
             setAccessToken(null);
             setAccessTokenCookie(null);
             setUser(null);
         }
     }, []);
 
-    // On mount, try to restore the session from the refresh token cookie
     React.useEffect(() => {
-        silentRefresh();
+        void silentRefresh();
     }, [silentRefresh]);
 
     const login = React.useCallback(

@@ -1,18 +1,12 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthProvider";
 import { tClient } from "@/lib/i18n-client";
 
 export default function NewEventButton() {
-    let user: any = null;
-    try {
-        // @ts-ignore
-        user = useAuth?.().user ?? null;
-    } catch {
-        user = null;
-    }
-
+    const { user } = useAuth();
     if (!user) return null;
 
     return (

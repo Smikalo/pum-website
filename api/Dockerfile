@@ -1,25 +1,32 @@
 # api/Dockerfile
-FROM node:20-alpine AS deps
+
+# --- deps stage ---
+FROM node:20-bookworm-slim AS deps
 WORKDIR /srv
 
 # System deps for native modules (argon2, etc.)
-RUN apk add --no-cache python3 make g++ libc6-compat openssl
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       python3 make g++ openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
-# Only copy manifests and Prisma schema for a deterministic install layer
+# Only copy manifests and Prisma schema
 COPY package*.json ./
 COPY prisma ./prisma
 
-# IMPORTANT: we rely on a committed, up-to-date lockfile
-# If lockfile is out of sync, npm ci will fail (as intended).
+# Deterministic install (still runs postinstall -> prisma generate)
 RUN npm ci
 
-# --- Runtime image ---
-FROM node:20-alpine AS app
+# --- runtime image ---
+FROM node:20-bookworm-slim AS app
 WORKDIR /srv
 ENV NODE_ENV=production
 
-# You may keep libc6-compat in runtime because native prebuilds may need it
-RUN apk add --no-cache libc6-compat openssl
+# Install runtime deps Prisma needs (openssl for engine detection)
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy node_modules from deps stage
 COPY --from=deps /srv/node_modules ./node_modules
@@ -27,6 +34,6 @@ COPY --from=deps /srv/node_modules ./node_modules
 # Copy the rest of the source
 COPY . .
 
-# Expose & start
 EXPOSE 3001
 CMD ["node", "src/index.js"]
+

@@ -1,3 +1,4 @@
+// components/AccountEditor.tsx
 "use client";
 
 import React from "react";
@@ -5,10 +6,20 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAuth } from "@/context/AuthProvider";
 import * as api from "@/lib/api";
+import type { AccountProfileApi } from "@/lib/api";
 import { toImageSrc } from "@/lib/images";
 import { tClient } from "@/lib/i18n-client";
 
-const AREAS = ["FRONTEND", "BACKEND", "ML", "DATA", "DEVOPS", "DESIGN", "PM", "OTHER"] as const;
+const AREAS = [
+    "FRONTEND",
+    "BACKEND",
+    "ML",
+    "DATA",
+    "DEVOPS",
+    "DESIGN",
+    "PM",
+    "OTHER",
+] as const;
 type Area = (typeof AREAS)[number];
 
 type Profile = {
@@ -26,8 +37,15 @@ type Profile = {
     cvUrl?: string | null;
 };
 
+type LinkRow = { label: string; url: string };
+
 function mergeCsv(existingCsv: string, adds: string[]) {
-    const set = new Set(existingCsv.split(",").map(s => s.trim()).filter(Boolean));
+    const set = new Set(
+        existingCsv
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+    );
     for (const a of adds) if (a && !set.has(a)) set.add(a);
     return Array.from(set).join(", ");
 }
@@ -54,6 +72,66 @@ function focusAreaLabel(a: Area) {
     }
 }
 
+function getErrorMessage(e: unknown): string | undefined {
+    if (!e || typeof e !== "object") return undefined;
+    if ("message" in e) {
+        const maybeMessage = (e as { message?: unknown }).message;
+        if (
+            typeof maybeMessage === "string" &&
+            maybeMessage.trim().length > 0
+        ) {
+            return maybeMessage;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Normalize the (loosely-typed) API profile into the stricter Profile shape
+ * used by this component.
+ */
+function normalizeProfile(apiProfile: AccountProfileApi): Profile {
+    const idRaw = apiProfile.id;
+    const id =
+        typeof idRaw === "string"
+            ? idRaw
+            : typeof idRaw === "number"
+                ? String(idRaw)
+                : "";
+
+    const skills =
+        Array.isArray(apiProfile.skills) && apiProfile.skills.length
+            ? apiProfile.skills.filter(
+                (s): s is string =>
+                    typeof s === "string" && s.trim().length > 0,
+            )
+            : [];
+
+    const techStack =
+        Array.isArray(apiProfile.techStack) && apiProfile.techStack.length
+            ? apiProfile.techStack.filter(
+                (s): s is string =>
+                    typeof s === "string" && s.trim().length > 0,
+            )
+            : [];
+
+    return {
+        id,
+        slug: apiProfile.slug ?? "",
+        name: apiProfile.name ?? "",
+        headline: apiProfile.headline ?? null,
+        shortBio: apiProfile.shortBio ?? null,
+        markdown: apiProfile.markdown ?? "",
+        links: apiProfile.links ?? {},
+        avatarUrl: apiProfile.avatarUrl ?? null,
+        focusArea:
+            (apiProfile.focusArea as Area | null | undefined) ?? null,
+        skills,
+        techStack,
+        cvUrl: apiProfile.cvUrl ?? null,
+    };
+}
+
 export default function AccountEditor() {
     const { user, accessToken } = useAuth();
     const [loading, setLoading] = React.useState(true);
@@ -68,7 +146,7 @@ export default function AccountEditor() {
     const [headline, setHeadline] = React.useState("");
     const [shortBio, setShortBio] = React.useState("");
     const [markdown, setMarkdown] = React.useState("");
-    const [links, setLinks] = React.useState<{ label: string; url: string }[]>([]);
+    const [links, setLinks] = React.useState<LinkRow[]>([]);
     const [skills, setSkills] = React.useState("");
     const [tech, setTech] = React.useState("");
     const [focusArea, setFocusArea] = React.useState<Area | "">("");
@@ -87,23 +165,32 @@ export default function AccountEditor() {
             try {
                 const data = await api.getMyProfile(accessToken);
                 if (!active) return;
-                const p: Profile = data.profile;
-                const normalized: Profile = { ...p, avatarUrl: toImageSrc(p.avatarUrl) };
+
+                const base = normalizeProfile(data.profile);
+                const normalized: Profile = {
+                    ...base,
+                    avatarUrl: toImageSrc(base.avatarUrl),
+                };
+
                 setProfile(normalized);
                 setName(normalized.name || "");
                 setHeadline(normalized.headline || "");
                 setShortBio(normalized.shortBio || "");
                 setMarkdown(normalized.markdown || "");
-                setLinks(Object.entries(normalized.links || {}).map(([label, url]) => ({ label, url })));
+                setLinks(
+                    Object.entries(normalized.links || {}).map(
+                        ([label, url]): LinkRow => ({ label, url }),
+                    ),
+                );
                 setSkills((normalized.skills || []).join(", "));
                 setTech((normalized.techStack || []).join(", "));
                 setFocusArea((normalized.focusArea as Area) || "");
                 setCvUrl(normalized.cvUrl || null);
-            } catch (e: any) {
-                setError(
-                    e?.message ||
-                    tClient("account.editor.error.loadProfile"),
-                );
+            } catch (e: unknown) {
+                const message =
+                    getErrorMessage(e) ||
+                    tClient("account.editor.error.loadProfile");
+                setError(message);
             } finally {
                 setLoading(false);
             }
@@ -118,34 +205,44 @@ export default function AccountEditor() {
         setSaving(true);
         setError(null);
         try {
-            const body: any = {
+            const body: Record<string, unknown> = {
                 name,
                 headline: headline || null,
                 shortBio: shortBio || null,
                 markdown,
                 links: Object.fromEntries(
                     links
-                        .filter(x => x.label && x.url)
-                        .map(x => [x.label.trim(), x.url.trim()]),
+                        .filter((x) => x.label && x.url)
+                        .map((x) => [x.label.trim(), x.url.trim()]),
                 ),
-                skills: skills.split(",").map(s => s.trim()).filter(Boolean),
-                techStack: tech.split(",").map(s => s.trim()).filter(Boolean),
+                skills: skills
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                techStack: tech
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
             };
-            if (focusArea) body.focusArea = focusArea;
+            if (focusArea) {
+                body.focusArea = focusArea;
+            }
             const res = await api.updateMyProfile(accessToken, body);
+            const base = normalizeProfile(res.profile);
             const updated: Profile = {
-                ...res.profile,
-                avatarUrl: toImageSrc(res.profile?.avatarUrl),
+                ...base,
+                avatarUrl: toImageSrc(base.avatarUrl),
             };
+
             setProfile(updated);
             setCvUrl(updated.cvUrl || null);
             setJustSaved(true);
             setTimeout(() => setJustSaved(false), 1600);
-        } catch (e: any) {
-            setError(
-                e?.message ||
-                tClient("account.editor.error.saveProfile"),
-            );
+        } catch (e: unknown) {
+            const message =
+                getErrorMessage(e) ||
+                tClient("account.editor.error.saveProfile");
+            setError(message);
         } finally {
             setSaving(false);
         }
@@ -160,14 +257,14 @@ export default function AccountEditor() {
         try {
             const { url } = await api.uploadAvatar(accessToken, file);
             const absolute = toImageSrc(url);
-            setProfile(p => (p ? { ...p, avatarUrl: absolute } : p));
+            setProfile((p) => (p ? { ...p, avatarUrl: absolute } : p));
             setJustSaved(true);
             setTimeout(() => setJustSaved(false), 1600);
-        } catch (e: any) {
-            setError(
-                e?.message ||
-                tClient("account.editor.error.avatarUpload"),
-            );
+        } catch (e: unknown) {
+            const message =
+                getErrorMessage(e) ||
+                tClient("account.editor.error.avatarUpload");
+            setError(message);
         } finally {
             setSaving(false);
             e.target.value = "";
@@ -193,11 +290,11 @@ export default function AccountEditor() {
                     ? res.extractedTech
                     : [],
             );
-        } catch (e: any) {
-            setError(
-                e?.message ||
-                tClient("account.editor.error.cvUpload"),
-            );
+        } catch (e: unknown) {
+            const message =
+                getErrorMessage(e) ||
+                tClient("account.editor.error.cvUpload");
+            setError(message);
         } finally {
             setSaving(false);
             e.target.value = "";
@@ -238,11 +335,18 @@ export default function AccountEditor() {
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
                                 src={avatarSrc}
-                                alt={profile.name || tClient("account.editor.avatar.altFallback")}
+                                alt={
+                                    profile.name ||
+                                    tClient(
+                                        "account.editor.avatar.altFallback",
+                                    )
+                                }
                                 className="w-full h-full object-cover"
                             />
                         ) : (
-                            (profile.name || "U").slice(0, 2).toUpperCase()
+                            (profile.name || "U")
+                                .slice(0, 2)
+                                .toUpperCase()
                         )}
                     </div>
                     <div>
@@ -284,17 +388,19 @@ export default function AccountEditor() {
                         ) : null}
                     </div>
 
-                    {(foundSkills.length || foundTech.length) ? (
+                    {foundSkills.length || foundTech.length ? (
                         <div className="mt-2 space-y-2">
                             {foundSkills.length ? (
                                 <div className="text-xs">
                                     <span className="text-white/70 mr-2">
-                                        {tClient("account.editor.cv.skillsFound")}
+                                        {tClient(
+                                            "account.editor.cv.skillsFound",
+                                        )}
                                     </span>
                                     <button
                                         className="mr-2 px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
                                         onClick={() =>
-                                            setSkills(s =>
+                                            setSkills((s) =>
                                                 mergeCsv(s, foundSkills),
                                             )
                                         }
@@ -302,12 +408,14 @@ export default function AccountEditor() {
                                     >
                                         {tClient("account.editor.cv.addAll")}
                                     </button>
-                                    {foundSkills.map(s => (
+                                    {foundSkills.map((s) => (
                                         <button
                                             key={`sk-${s}`}
                                             className="mr-1 mb-1 inline-flex px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
                                             onClick={() =>
-                                                setSkills(v => mergeCsv(v, [s]))
+                                                setSkills((v) =>
+                                                    mergeCsv(v, [s]),
+                                                )
                                             }
                                             title={tClient(
                                                 "account.editor.cv.addSkillTitle",
@@ -322,12 +430,14 @@ export default function AccountEditor() {
                             {foundTech.length ? (
                                 <div className="text-xs">
                                     <span className="text-white/70 mr-2">
-                                        {tClient("account.editor.cv.techFound")}
+                                        {tClient(
+                                            "account.editor.cv.techFound",
+                                        )}
                                     </span>
                                     <button
                                         className="mr-2 px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
                                         onClick={() =>
-                                            setTech(t =>
+                                            setTech((t) =>
                                                 mergeCsv(t, foundTech),
                                             )
                                         }
@@ -335,12 +445,14 @@ export default function AccountEditor() {
                                     >
                                         {tClient("account.editor.cv.addAll")}
                                     </button>
-                                    {foundTech.map(t => (
+                                    {foundTech.map((t) => (
                                         <button
                                             key={`te-${t}`}
                                             className="mr-1 mb-1 inline-flex px-2 py-1 rounded-md ring-1 ring-white/15 hover:bg-white/10"
                                             onClick={() =>
-                                                setTech(v => mergeCsv(v, [t]))
+                                                setTech((v) =>
+                                                    mergeCsv(v, [t]),
+                                                )
                                             }
                                             title={tClient(
                                                 "account.editor.cv.addTechTitle",
@@ -362,7 +474,7 @@ export default function AccountEditor() {
                     </label>
                     <input
                         value={name}
-                        onChange={e => setName(e.target.value)}
+                        onChange={(e) => setName(e.target.value)}
                         className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
                     />
                 </div>
@@ -373,7 +485,7 @@ export default function AccountEditor() {
                     </label>
                     <input
                         value={headline}
-                        onChange={e => setHeadline(e.target.value)}
+                        onChange={(e) => setHeadline(e.target.value)}
                         className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
                     />
                 </div>
@@ -384,7 +496,7 @@ export default function AccountEditor() {
                     </label>
                     <textarea
                         value={shortBio}
-                        onChange={e => setShortBio(e.target.value)}
+                        onChange={(e) => setShortBio(e.target.value)}
                         rows={3}
                         className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
                     />
@@ -396,15 +508,15 @@ export default function AccountEditor() {
                     </label>
                     <select
                         value={focusArea}
-                        onChange={e =>
-                            setFocusArea(e.target.value as Area)
+                        onChange={(e) =>
+                            setFocusArea(e.target.value as Area | "")
                         }
                         className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
                     >
                         <option value="">
                             {tClient("account.editor.focusArea.placeholder")}
                         </option>
-                        {AREAS.map(a => (
+                        {AREAS.map((a) => (
                             <option key={a} value={a}>
                                 {focusAreaLabel(a)}
                             </option>
@@ -421,17 +533,14 @@ export default function AccountEditor() {
                     </label>
                     <div className="space-y-2">
                         {links.map((row, i) => (
-                            <div
-                                key={i}
-                                className="flex gap-2"
-                            >
+                            <div key={i} className="flex gap-2">
                                 <input
                                     placeholder={tClient(
                                         "account.editor.links.labelPlaceholder",
                                     )}
                                     value={row.label}
-                                    onChange={e =>
-                                        setLinks(v =>
+                                    onChange={(e) =>
+                                        setLinks((v) =>
                                             v.map((r, idx) =>
                                                 idx === i
                                                     ? {
@@ -448,8 +557,8 @@ export default function AccountEditor() {
                                 <input
                                     placeholder="https://…"
                                     value={row.url}
-                                    onChange={e =>
-                                        setLinks(v =>
+                                    onChange={(e) =>
+                                        setLinks((v) =>
                                             v.map((r, idx) =>
                                                 idx === i
                                                     ? {
@@ -465,7 +574,7 @@ export default function AccountEditor() {
                                 <button
                                     type="button"
                                     onClick={() =>
-                                        setLinks(v =>
+                                        setLinks((v) =>
                                             v.filter(
                                                 (_r, idx) => idx !== i,
                                             ),
@@ -483,7 +592,7 @@ export default function AccountEditor() {
                         <button
                             type="button"
                             onClick={() =>
-                                setLinks(v => [
+                                setLinks((v) => [
                                     ...v,
                                     { label: "", url: "" },
                                 ])
@@ -501,7 +610,7 @@ export default function AccountEditor() {
                     </label>
                     <input
                         value={skills}
-                        onChange={e => setSkills(e.target.value)}
+                        onChange={(e) => setSkills(e.target.value)}
                         className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
                     />
                 </div>
@@ -512,7 +621,7 @@ export default function AccountEditor() {
                     </label>
                     <input
                         value={tech}
-                        onChange={e => setTech(e.target.value)}
+                        onChange={(e) => setTech(e.target.value)}
                         className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2"
                     />
                 </div>
@@ -542,7 +651,7 @@ export default function AccountEditor() {
                 </label>
                 <textarea
                     value={markdown}
-                    onChange={e => setMarkdown(e.target.value)}
+                    onChange={(e) => setMarkdown(e.target.value)}
                     rows={14}
                     className="w-full rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-2 font-mono text-sm"
                     placeholder={tClient(

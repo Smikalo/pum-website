@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { tClient } from "@/lib/i18n-client";
 
@@ -10,6 +10,12 @@ type Member = {
     name: string;
     skills?: string[];
     avatarUrl?: string;
+
+    /** extra fields that callers may pass (not currently used in the graph) */
+    techStack?: string[];
+    avatar?: string;
+    imageUrl?: string;
+    photoUrl?: string;
 };
 
 type Project = {
@@ -18,6 +24,10 @@ type Project = {
     title: string;
     members?: { memberId?: string; memberSlug?: string }[];
     imageUrl?: string;
+
+    /** extra fields that callers may pass (not currently used in the graph) */
+    techStack?: string[];
+    tags?: string[];
 };
 
 type Node = {
@@ -201,7 +211,7 @@ export default function MembersGraph({
         return { nodes, links, nodeById };
     }, [members, projects]);
 
-    // Force simulation
+    // Force simulation + rendering
     useEffect(() => {
         let raf = 0;
         const canvas = canvasRef.current!;
@@ -229,9 +239,9 @@ export default function MembersGraph({
                     const b = nodes[j];
                     let dx = a.x - b.x;
                     let dy = a.y - b.y;
-                    let dist2 = dx * dx + dy * dy + 0.01;
-                    let f = repulsion / dist2;
-                    let invDist = 1 / Math.sqrt(dist2);
+                    const dist2 = dx * dx + dy * dy + 0.01;
+                    const f = repulsion / dist2;
+                    const invDist = 1 / Math.sqrt(dist2);
                     dx *= invDist;
                     dy *= invDist;
                     if (draggingIdRef.current !== a.id) {
@@ -286,6 +296,7 @@ export default function MembersGraph({
 
             ctx.clearRect(0, 0, w, h);
 
+            // Hover glow
             if (hoverId) {
                 const n = nodeById.get(hoverId);
                 if (n) {
@@ -306,6 +317,7 @@ export default function MembersGraph({
                 }
             }
 
+            // Links
             ctx.lineWidth = 1;
             for (const e of links) {
                 const a = nodeById.get(e.source)!;
@@ -317,6 +329,7 @@ export default function MembersGraph({
                 ctx.stroke();
             }
 
+            // Nodes
             for (const n of nodes) {
                 ctx.beginPath();
                 ctx.fillStyle = hexToRgba(n.color, 0.22);
@@ -335,28 +348,34 @@ export default function MembersGraph({
         return () => cancelAnimationFrame(raf);
     }, [w, h, nodes, links, nodeById, hoverId]);
 
-    function hitNode(x: number, y: number): string | null {
-        let hit: string | null = null;
-        let best = Infinity;
-        for (const n of nodes) {
-            const dx = n.x - x;
-            const dy = n.y - y;
-            const d2 = dx * dx + dy * dy;
-            const thresh = (n.radius * 2.5) ** 2;
-            if (d2 < thresh && d2 < best) {
-                best = d2;
-                hit = n.id;
+    const hitNode = useCallback(
+        (x: number, y: number): string | null => {
+            let hit: string | null = null;
+            let best = Infinity;
+            for (const n of nodes) {
+                const dx = n.x - x;
+                const dy = n.y - y;
+                const d2 = dx * dx + dy * dy;
+                const thresh = (n.radius * 2.5) ** 2;
+                if (d2 < thresh && d2 < best) {
+                    best = d2;
+                    hit = n.id;
+                }
             }
-        }
-        return hit;
-    }
+            return hit;
+        },
+        [nodes],
+    );
 
     useEffect(() => {
-        const container = containerRef.current!;
-        const canvas = canvasRef.current!;
+        const containerEl = containerRef.current;
+        if (!containerEl) return;
 
         function getPos(evt: MouseEvent) {
-            const rect = canvas.getBoundingClientRect();
+            const canvasEl = canvasRef.current;
+            if (!canvasEl) return null;
+
+            const rect = canvasEl.getBoundingClientRect();
             const x = evt.clientX - rect.left;
             const y = evt.clientY - rect.top;
             mouseRef.current = { x, y };
@@ -364,14 +383,20 @@ export default function MembersGraph({
         }
 
         function onMove(evt: MouseEvent) {
-            const { x, y } = getPos(evt);
+            const pos = getPos(evt);
+            if (!pos) return;
+
+            const { x, y } = pos;
             if (draggingIdRef.current) return;
             if (hoverLock) return;
             setHoverId(hitNode(x, y));
         }
 
         function onDown(evt: MouseEvent) {
-            const { x, y } = getPos(evt);
+            const pos = getPos(evt);
+            if (!pos) return;
+
+            const { x, y } = pos;
             const hit = hitNode(x, y);
             if (hit) {
                 draggingIdRef.current = hit;
@@ -388,26 +413,36 @@ export default function MembersGraph({
             draggingIdRef.current = null;
         }
 
-        container.addEventListener("mousemove", onMove);
-        container.addEventListener("mousedown", onDown);
+        containerEl.addEventListener("mousemove", onMove);
+        containerEl.addEventListener("mousedown", onDown);
         window.addEventListener("mouseup", onUp);
-        container.addEventListener("mouseleave", onLeave);
+        containerEl.addEventListener("mouseleave", onLeave);
 
         function onTouchMove(evt: TouchEvent) {
             const t = evt.touches[0];
             if (!t) return;
-            const rect = canvas.getBoundingClientRect();
+
+            const canvasEl = canvasRef.current;
+            if (!canvasEl) return;
+
+            const rect = canvasEl.getBoundingClientRect();
             const x = t.clientX - rect.left;
             const y = t.clientY - rect.top;
             mouseRef.current = { x, y };
+
             if (draggingIdRef.current) return;
             if (hoverLock) return;
             setHoverId(hitNode(x, y));
         }
+
         function onTouchStart(evt: TouchEvent) {
             const t = evt.touches[0];
             if (!t) return;
-            const rect = canvas.getBoundingClientRect();
+
+            const canvasEl = canvasRef.current;
+            if (!canvasEl) return;
+
+            const rect = canvasEl.getBoundingClientRect();
             const x = t.clientX - rect.left;
             const y = t.clientY - rect.top;
             const hit = hitNode(x, y);
@@ -416,26 +451,26 @@ export default function MembersGraph({
                 setHoverId(hit);
             }
         }
+
         function onTouchEnd() {
             draggingIdRef.current = null;
         }
 
-        container.addEventListener("touchmove", onTouchMove, { passive: true });
-        container.addEventListener("touchstart", onTouchStart, {
-            passive: true,
-        });
-        container.addEventListener("touchend", onTouchEnd);
+        containerEl.addEventListener("touchmove", onTouchMove, { passive: true });
+        containerEl.addEventListener("touchstart", onTouchStart, { passive: true });
+        containerEl.addEventListener("touchend", onTouchEnd);
 
         return () => {
-            container.removeEventListener("mousemove", onMove);
-            container.removeEventListener("mousedown", onDown);
+            containerEl.removeEventListener("mousemove", onMove);
+            containerEl.removeEventListener("mousedown", onDown);
             window.removeEventListener("mouseup", onUp);
-            container.removeEventListener("mouseleave", onLeave);
-            container.removeEventListener("touchmove", onTouchMove);
-            container.removeEventListener("touchstart", onTouchStart);
-            container.removeEventListener("touchend", onTouchEnd);
+            containerEl.removeEventListener("mouseleave", onLeave);
+            containerEl.removeEventListener("touchmove", onTouchMove);
+            containerEl.removeEventListener("touchstart", onTouchStart);
+            containerEl.removeEventListener("touchend", onTouchEnd);
         };
-    }, [hoverLock, nodes]);
+    }, [hoverLock, hitNode]);
+
 
     const hoverNode = hoverId ? nodeById.get(hoverId) : null;
 

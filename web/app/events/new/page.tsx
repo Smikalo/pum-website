@@ -11,34 +11,63 @@ import { tClient } from "@/lib/i18n-client";
 
 /* ---------------- Tiny markdown previewer ---------------- */
 
+type FencedSegment =
+    | { type: "text"; content: string }
+    | { type: "code"; content: string; lang?: string };
+
+type InlineSegment = string | { code: string };
+
+type LinkSegment =
+    | string
+    | { label: string; href: string };
+
 function MarkdownPreview({ markdown }: { markdown: string }) {
     const src = (markdown || "").replace(/\r\n/g, "\n");
 
     function splitFenced(
         input: string,
-    ): Array<{ type: "text" | "code"; content: string; lang?: string }> {
-        const out: Array<{ type: "text" | "code"; content: string; lang?: string }> = [];
+    ): FencedSegment[] {
+        const out: FencedSegment[] = [];
         const fence = /```(\w+)?\n([\s\S]*?)```/g;
         let lastIndex = 0;
         let m: RegExpExecArray | null;
         while ((m = fence.exec(input))) {
-            if (m.index > lastIndex)
-                out.push({ type: "text", content: input.slice(lastIndex, m.index) });
-            out.push({ type: "code", content: m[2].replace(/\n$/, ""), lang: m[1] });
+            if (m.index > lastIndex) {
+                out.push({
+                    type: "text",
+                    content: input.slice(
+                        lastIndex,
+                        m.index,
+                    ),
+                });
+            }
+            out.push({
+                type: "code",
+                content: m[2].replace(/\n$/, ""),
+                lang: m[1],
+            });
             lastIndex = fence.lastIndex;
         }
-        if (lastIndex < input.length)
-            out.push({ type: "text", content: input.slice(lastIndex) });
+        if (lastIndex < input.length) {
+            out.push({
+                type: "text",
+                content: input.slice(lastIndex),
+            });
+        }
         return out;
     }
 
-    function splitInline(text: string, re: RegExp): Array<string | { code: string }> {
-        const out: Array<string | { code: string }> = [];
+    function splitInline(
+        text: string,
+        re: RegExp,
+    ): InlineSegment[] {
+        const out: InlineSegment[] = [];
         let last = 0;
         let m: RegExpExecArray | null;
         const rx = new RegExp(re.source, "g");
         while ((m = rx.exec(text))) {
-            if (m.index > last) out.push(text.slice(last, m.index));
+            if (m.index > last)
+                out.push(text.slice(last, m.index));
             out.push({ code: m[1] });
             last = rx.lastIndex;
         }
@@ -48,13 +77,14 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
 
     function splitLinks(
         text: string,
-    ): Array<string | { label: string; href: string }> {
-        const out: Array<string | { label: string; href: string }> = [];
+    ): LinkSegment[] {
+        const out: LinkSegment[] = [];
         const re = /\[([^\]]+)\]\(([^)]+)\)/g;
         let last = 0;
         let m: RegExpExecArray | null;
         while ((m = re.exec(text))) {
-            if (m.index > last) out.push(text.slice(last, m.index));
+            if (m.index > last)
+                out.push(text.slice(last, m.index));
             out.push({ label: m[1], href: m[2] });
             last = re.lastIndex;
         }
@@ -63,13 +93,20 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
     }
 
     function normalizeHref(href: string): string {
-        if (/^https?:\/\//i.test(href) || href.startsWith("mailto:")) return href;
+        if (
+            /^https?:\/\//i.test(href) ||
+            href.startsWith("mailto:")
+        )
+            return href;
         return `https://${href}`;
     }
 
     function inline(text: string): React.ReactNode[] {
         if (!text) return [];
-        const segments = splitInline(text, /`([^`]+)`/);
+        const segments = splitInline(
+            text,
+            /`([^`]+)`/,
+        );
         return segments.flatMap((seg, idx) => {
             if (typeof seg !== "string") {
                 return (
@@ -81,55 +118,69 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                     </code>
                 );
             }
-            const withLinks = splitLinks(seg).flatMap((s, j) => {
-                if (typeof s !== "string") {
-                    const href = normalizeHref(s.href);
-                    return (
-                        <a
-                            key={`a-${idx}-${j}`}
-                            href={href}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="underline underline-offset-4"
-                        >
-                            {s.label}
-                        </a>
+            const withLinks = splitLinks(seg).flatMap(
+                (s, j) => {
+                    if (typeof s !== "string") {
+                        const href = normalizeHref(
+                            s.href,
+                        );
+                        return (
+                            <a
+                                key={`a-${idx}-${j}`}
+                                href={href}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline underline-offset-4"
+                            >
+                                {s.label}
+                            </a>
+                        );
+                    }
+                    return s;
+                },
+            );
+            const bolded = withLinks.flatMap(
+                (s, j) => {
+                    if (typeof s !== "string") return s;
+                    const parts = splitInline(
+                        s,
+                        /\*\*([^*]+)\*\*/,
                     );
-                }
-                return s;
-            });
-            const bolded = withLinks.flatMap((s, j) => {
-                if (typeof s !== "string") return s;
-                const parts = splitInline(s, /\*\*([^*]+)\*\*/);
-                return parts.map((p, k) =>
-                    typeof p === "string" ? (
-                        p
-                    ) : (
-                        <strong
-                            key={`b-${idx}-${j}-${k}`}
-                            className="text-white"
-                        >
-                            {p.code}
-                        </strong>
-                    ),
-                );
-            });
-            const italicized = bolded.flatMap((s, j) => {
-                if (typeof s !== "string") return s;
-                const parts = splitInline(s, /\*([^*]+)\*/);
-                return parts.map((p, k) =>
-                    typeof p === "string" ? (
-                        p
-                    ) : (
-                        <em
-                            key={`i-${idx}-${j}-${k}`}
-                            className="italic"
-                        >
-                            {p.code}
-                        </em>
-                    ),
-                );
-            });
+                    return parts.map((p, k) =>
+                        typeof p === "string" ? (
+                            p
+                        ) : (
+                            <strong
+                                key={`b-${idx}-${j}-${k}`}
+                                className="text-white"
+                            >
+                                {p.code}
+                            </strong>
+                        ),
+                    );
+                },
+            );
+            const italicized = bolded.flatMap(
+                (s, j) => {
+                    if (typeof s !== "string") return s;
+                    const parts = splitInline(
+                        s,
+                        /\*([^*]+)\*/,
+                    );
+                    return parts.map((p, k) =>
+                        typeof p === "string" ? (
+                            p
+                        ) : (
+                            <em
+                                key={`i-${idx}-${j}-${k}`}
+                                className="italic"
+                            >
+                                {p.code}
+                            </em>
+                        ),
+                    );
+                },
+            );
             return italicized;
         });
     }
@@ -144,7 +195,8 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                 i++;
                 continue;
             }
-            const h = /^(#{1,3})\s+(.*)$/.exec(line);
+            const h =
+                /^(#{1,3})\s+(.*)$/.exec(line);
             if (h) {
                 const level = h[1].length;
                 const content = h[2];
@@ -177,8 +229,14 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
             }
             if (/^\s*\d+\.\s+/.test(line)) {
                 const items: React.ReactNode[] = [];
-                while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-                    const item = lines[i].replace(/^\s*\d+\.\s+/, "");
+                while (
+                    i < lines.length &&
+                    /^\s*\d+\.\s+/.test(lines[i])
+                    ) {
+                    const item = lines[i].replace(
+                        /^\s*\d+\.\s+/,
+                        "",
+                    );
                     items.push(
                         <li
                             key={`ol-${i}`}
@@ -201,8 +259,14 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
             }
             if (/^\s*([-*+])\s+/.test(line)) {
                 const items: React.ReactNode[] = [];
-                while (i < lines.length && /^\s*([-*+])\s+/.test(lines[i])) {
-                    const item = lines[i].replace(/^\s*([-*+])\s+/, "");
+                while (
+                    i < lines.length &&
+                    /^\s*([-*+])\s+/.test(lines[i])
+                    ) {
+                    const item = lines[i].replace(
+                        /^\s*([-*+])\s+/,
+                        "",
+                    );
                     items.push(
                         <li
                             key={`ul-${i}`}
@@ -257,11 +321,12 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
                         className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
                         aria-label={
                             seg.lang
-                                ? tClient("events.edit.markdown.codeBlockWithLang").replace(
-                                    "{lang}",
-                                    seg.lang,
+                                ? tClient(
+                                    "events.edit.markdown.codeBlockWithLang",
+                                ).replace("{lang}", seg.lang)
+                                : tClient(
+                                    "events.edit.markdown.codeBlock",
                                 )
-                                : tClient("events.edit.markdown.codeBlock")
                         }
                     >
                         <code>{seg.content}</code>
@@ -279,14 +344,20 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
 
 /* ------------------- OpenStreetMap Nominatim search ------------------- */
 
-type SearchHit = { display_name: string; lat: string; lon: string };
+type SearchHit = {
+    display_name: string;
+    lat: string;
+    lon: string;
+};
 
 async function geocode(
     q: string,
     signal?: AbortSignal,
 ): Promise<SearchHit[]> {
     if (!q.trim()) return [];
-    const url = new URL("https://nominatim.openstreetmap.org/search");
+    const url = new URL(
+        "https://nominatim.openstreetmap.org/search",
+    );
     url.searchParams.set("q", q);
     url.searchParams.set("format", "jsonv2");
     url.searchParams.set("limit", "5");
@@ -311,7 +382,9 @@ type FormState = {
     description: string; // markdown
 };
 
-type Errors = Partial<Record<keyof FormState | "photos", string>>;
+type Errors = Partial<
+    Record<keyof FormState | "photos", string>
+>;
 
 type Member = {
     id: string;
@@ -359,11 +432,14 @@ function MapPreview({
     lng: string;
 }) {
     const hasCoords =
-        !!lat && !!lng && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng));
+        !!lat &&
+        !!lng &&
+        !Number.isNaN(Number(lat)) &&
+        !Number.isNaN(Number(lng));
 
     if (!hasCoords) {
         return (
-            <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-xs text-white/60">
+            <div className="rounded-md bg:white/5 ring-1 ring-white/10 p-3 text-xs text-white/60">
                 {tClient("events.edit.map.noCoords")}
             </div>
         );
@@ -375,12 +451,19 @@ function MapPreview({
     const previewEvent = {
         id: "new-event-preview",
         slug: "new-event-preview",
-        name: name || tClient("events.new.preview.fallbackName"),
-        locationName: locationName || undefined,
+        name:
+            name ||
+            tClient(
+                "events.new.preview.fallbackName",
+            ),
+        locationName:
+            locationName || undefined,
         dateStart: dateStart || undefined,
         lat: latNum,
         lng: lngNum,
-        description: undefined,
+        description: undefined as
+            | string
+            | undefined,
         photos: [] as string[],
         tags: [] as string[],
     };
@@ -394,52 +477,137 @@ function MapPreview({
 
 /* --------------------------------- Page --------------------------------- */
 
+function isAbortError(error: unknown): boolean {
+    if (
+        typeof error === "object" &&
+        error !== null &&
+        "name" in error &&
+        (error as { name?: unknown }).name ===
+        "AbortError"
+    ) {
+        return true;
+    }
+    return false;
+}
+
+function isMemberAttendee(
+    a: Attendee,
+): a is { kind: "member"; member: Member } {
+    return a.kind === "member";
+}
+
+type RawMember = {
+    id?: string;
+    slug?: string;
+    name?: string;
+    avatarUrl?: string;
+    avatar?: string;
+    photo?: string;
+    image?: string;
+    headline?: string;
+    shortBio?: string;
+    email?: string;
+};
+
+type RawProject = {
+    id?: string;
+    slug?: string;
+    title?: string;
+    cover?: string | null;
+    imageUrl?: string | null;
+    year?: number | null;
+    summary?: string | null;
+};
+
+type RawBlog = {
+    slug?: string;
+    id?: string;
+    title?: string;
+    name?: string;
+    cover?: string | null;
+    imageUrl?: string | null;
+    images?: string[];
+    photos?: string[];
+    summary?: string | null;
+    publishedAt?: string | null;
+    date?: string | null;
+    createdAt?: string | null;
+};
+
 export default function NewEventPage() {
     const { user, accessToken } = useAuth();
     const router = useRouter();
 
-    const [state, setState] = React.useState<FormState>({
-        name: "",
-        locationName: "",
-        dateStart: "",
-        dateEnd: "",
-        lat: "",
-        lng: "",
-        description: "",
-    });
+    const [state, setState] =
+        React.useState<FormState>({
+            name: "",
+            locationName: "",
+            dateStart: "",
+            dateEnd: "",
+            lat: "",
+            lng: "",
+            description: "",
+        });
 
-    const [photos, setPhotos] = React.useState<File[]>([]);
-    const [headerIndex, setHeaderIndex] = React.useState<number | null>(null);
+    const [photos, setPhotos] = React.useState<File[]>(
+        [],
+    );
+    const [headerIndex, setHeaderIndex] =
+        React.useState<number | null>(null);
 
     // Map search
-    const [searchQ, setSearchQ] = React.useState("");
-    const [hits, setHits] = React.useState<SearchHit[]>([]);
-    const [searching, setSearching] = React.useState(false);
+    const [searchQ, setSearchQ] =
+        React.useState("");
+    const [hits, setHits] = React.useState<
+        SearchHit[]
+    >([]);
+    const [searching, setSearching] =
+        React.useState(false);
 
     // Members & attendees
-    const [members, setMembers] = React.useState<Member[]>([]);
-    const [membersLoading, setMembersLoading] = React.useState(true);
-    const [membersError, setMembersError] = React.useState<string | null>(null);
-    const [attendees, setAttendees] = React.useState<Attendee[]>([]);
-    const [attendeeQ, setAttendeeQ] = React.useState("");
+    const [members, setMembers] =
+        React.useState<Member[]>([]);
+    const [membersLoading, setMembersLoading] =
+        React.useState(true);
+    const [membersError, setMembersError] =
+        React.useState<string | null>(null);
+    const [attendees, setAttendees] =
+        React.useState<Attendee[]>([]);
+    const [attendeeQ, setAttendeeQ] =
+        React.useState("");
 
     // Projects
-    const [projects, setProjects] = React.useState<ProjectRef[]>([]);
-    const [projectsLoading, setProjectsLoading] = React.useState(true);
-    const [projectsError, setProjectsError] = React.useState<string | null>(null);
-    const [selectedProjectSlugs, setSelectedProjectSlugs] = React.useState<string[]>([]);
-    const [projectQ, setProjectQ] = React.useState("");
+    const [projects, setProjects] =
+        React.useState<ProjectRef[]>([]);
+    const [projectsLoading, setProjectsLoading] =
+        React.useState(true);
+    const [projectsError, setProjectsError] =
+        React.useState<string | null>(null);
+    const [selectedProjectSlugs,
+        setSelectedProjectSlugs] =
+        React.useState<string[]>([]);
+    const [projectQ, setProjectQ] =
+        React.useState("");
 
     // Blogs
-    const [blogs, setBlogs] = React.useState<BlogRef[]>([]);
-    const [blogsLoading, setBlogsLoading] = React.useState(true);
-    const [selectedBlogSlugs, setSelectedBlogSlugs] = React.useState<string[]>([]);
-    const [blogQ, setBlogQ] = React.useState("");
+    const [blogs, setBlogs] = React.useState<
+        BlogRef[]
+    >([]);
+    const [blogsLoading, setBlogsLoading] =
+        React.useState(true);
+    const [selectedBlogSlugs, setSelectedBlogSlugs] =
+        React.useState<string[]>([]);
+    const [blogQ, setBlogQ] =
+        React.useState("");
 
-    const [submitting, setSubmitting] = React.useState(false);
-    const [error, setError] = React.useState<string | null>(null);
-    const [hint, setHint] = React.useState<string | null>(null);
-    const [errors, setErrors] = React.useState<Errors>({});
+    const [submitting, setSubmitting] =
+        React.useState(false);
+    const [error, setError] =
+        React.useState<string | null>(null);
+    const [hint, setHint] =
+        React.useState<string | null>(null);
+    const [errors, setErrors] =
+        React.useState<Errors>({});
 
     /* ------------------ live map search (debounced) ------------------ */
 
@@ -453,11 +621,14 @@ export default function NewEventPage() {
         const controller = new AbortController();
         const handle = window.setTimeout(async () => {
             try {
-                const results = await geocode(searchQ, controller.signal);
+                const results = await geocode(
+                    searchQ,
+                    controller.signal,
+                );
                 setHits(results);
-            } catch (err) {
-                if ((err as any)?.name !== "AbortError") {
-                    // console.error("[NewEvent] geocode error", err);
+            } catch (err: unknown) {
+                if (!isAbortError(err)) {
+                    // swallow
                 }
             } finally {
                 setSearching(false);
@@ -476,28 +647,58 @@ export default function NewEventPage() {
         let cancelled = false;
         async function loadMembers() {
             try {
-                const res = await fetch("/api/members?size=999");
-                if (!res.ok) throw new Error("Failed to load members");
+                const res = await fetch(
+                    "/api/members?size=999",
+                );
+                if (!res.ok) {
+                    throw new Error(
+                        "Failed to load members",
+                    );
+                }
                 const json = await res.json();
-                const items: any[] = Array.isArray(json) ? json : json.items ?? [];
-                const mapped: Member[] = items.map((m) => ({
-                    id: m.id ?? m.slug,
-                    slug: m.slug ?? m.id,
-                    name: m.name,
-                    avatarUrl: m.avatarUrl ?? m.avatar ?? m.photo ?? m.image ?? undefined,
-                    headline: m.headline ?? m.shortBio ?? undefined,
-                    email: m.email ?? undefined,
-                }));
+                const items = Array.isArray(json)
+                    ? (json as RawMember[])
+                    : ((json as {
+                        items?: RawMember[];
+                    }).items ?? []);
+                const mapped: Member[] =
+                    items.map((m) => ({
+                        id: (m.id ??
+                            m.slug ??
+                            "") as string,
+                        slug: (m.slug ??
+                            m.id ??
+                            "") as string,
+                        name: m.name ?? "",
+                        avatarUrl:
+                            m.avatarUrl ??
+                            m.avatar ??
+                            m.photo ??
+                            m.image ??
+                            undefined,
+                        headline:
+                            m.headline ??
+                            m.shortBio ??
+                            undefined,
+                        email:
+                            m.email ??
+                            undefined,
+                    }));
                 if (!cancelled) {
                     setMembers(mapped);
                     setMembersError(null);
                 }
-            } catch (err) {
+            } catch {
                 if (!cancelled) {
-                    setMembersError(tClient("events.edit.members.error"));
+                    setMembersError(
+                        tClient(
+                            "events.edit.members.error",
+                        ),
+                    );
                 }
             } finally {
-                if (!cancelled) setMembersLoading(false);
+                if (!cancelled)
+                    setMembersLoading(false);
             }
         }
         loadMembers();
@@ -513,28 +714,52 @@ export default function NewEventPage() {
 
         async function loadProjects() {
             try {
-                const res = await fetch("/api/projects?size=999");
-                if (!res.ok) throw new Error("Failed to load projects");
+                const res = await fetch(
+                    "/api/projects?size=999",
+                );
+                if (!res.ok) {
+                    throw new Error(
+                        "Failed to load projects",
+                    );
+                }
                 const json = await res.json();
-                const items: any[] = Array.isArray(json) ? json : json.items ?? [];
-                const mapped: ProjectRef[] = items.map((p) => ({
-                    id: p.id ?? p.slug,
-                    slug: p.slug ?? p.id,
-                    title: p.title,
-                    cover: p.cover ?? p.imageUrl ?? null,
-                    year: p.year ?? null,
-                    summary: p.summary ?? null,
-                }));
+                const items = Array.isArray(json)
+                    ? (json as RawProject[])
+                    : ((json as {
+                        items?: RawProject[];
+                    }).items ?? []);
+                const mapped: ProjectRef[] =
+                    items.map((p) => ({
+                        id: (p.id ??
+                            p.slug ??
+                            "") as string,
+                        slug: (p.slug ??
+                            p.id ??
+                            "") as string,
+                        title: p.title ?? "",
+                        cover:
+                            p.cover ??
+                            p.imageUrl ??
+                            null,
+                        year: p.year ?? null,
+                        summary:
+                            p.summary ?? null,
+                    }));
                 if (!cancelled) {
                     setProjects(mapped);
                     setProjectsError(null);
                 }
-            } catch (err) {
+            } catch {
                 if (!cancelled) {
-                    setProjectsError(tClient("events.edit.projects.error"));
+                    setProjectsError(
+                        tClient(
+                            "events.edit.projects.error",
+                        ),
+                    );
                 }
             } finally {
-                if (!cancelled) setProjectsLoading(false);
+                if (!cancelled)
+                    setProjectsLoading(false);
             }
         }
 
@@ -551,37 +776,70 @@ export default function NewEventPage() {
 
         async function loadBlogs() {
             try {
-                const res = await fetch("/api/blogs?size=999");
-                if (!res.ok) throw new Error("Failed to load blogs");
+                const res = await fetch(
+                    "/api/blogs?size=999",
+                );
+                if (!res.ok) {
+                    throw new Error(
+                        "Failed to load blogs",
+                    );
+                }
                 const json = await res.json();
-                const items: any[] = Array.isArray(json) ? json : json.items ?? [];
+                const items = Array.isArray(json)
+                    ? (json as RawBlog[])
+                    : ((json as {
+                        items?: RawBlog[];
+                    }).items ?? []);
                 const mapped: BlogRef[] = items
                     .map((b) => {
-                        const images: string[] = Array.isArray(b.images)
-                            ? b.images
-                            : Array.isArray(b.photos)
-                                ? b.photos
-                                : [];
-                        const cover = b.cover ?? b.imageUrl ?? images[0] ?? null;
+                        const images: string[] =
+                            Array.isArray(b.images)
+                                ? b.images
+                                : Array.isArray(
+                                    b.photos,
+                                )
+                                    ? b.photos
+                                    : [];
+                        const cover =
+                            b.cover ??
+                            b.imageUrl ??
+                            images[0] ??
+                            null;
+                        const slug =
+                            b.slug ?? b.id;
+                        const title =
+                            b.title ??
+                            b.name ??
+                            "Untitled";
+                        if (!slug || !title) {
+                            return null;
+                        }
                         return {
-                            slug: String(b.slug ?? b.id ?? ""),
-                            title: String(b.title ?? b.name ?? "Untitled"),
+                            slug: String(slug),
+                            title: String(title),
                             cover,
-                            summary: b.summary ?? null,
+                            summary:
+                                b.summary ?? null,
                             publishedAt:
-                                b.publishedAt ?? b.date ?? b.createdAt ?? null,
+                                b.publishedAt ??
+                                b.date ??
+                                b.createdAt ??
+                                null,
                         } as BlogRef;
                     })
-                    .filter((b) => !!b.slug && !!b.title);
+                    .filter(
+                        (b): b is BlogRef => b !== null,
+                    );
                 if (!cancelled) {
                     setBlogs(mapped);
                 }
-            } catch (err) {
+            } catch {
                 if (!cancelled) {
                     // blogs optional – no hard error
                 }
             } finally {
-                if (!cancelled) setBlogsLoading(false);
+                if (!cancelled)
+                    setBlogsLoading(false);
             }
         }
 
@@ -591,56 +849,77 @@ export default function NewEventPage() {
         };
     }, []);
 
-    /* ------------------ auth gate ------------------ */
-
-    if (!user) {
-        return (
-            <section className="section">
-                <h1 className="display">{tClient("events.new.title")}</h1>
-                <p className="mt-3 text-white/70 max-w-2xl">
-                    {tClient("events.new.gate.loginRequired")}
-                </p>
-                <div className="mt-5 flex gap-3">
-                    <Link href="/events" className="btn-secondary">
-                        {tClient("events.new.gate.backToEvents")}
-                    </Link>
-                    <Link href="/" className="btn-primary">
-                        {tClient("events.edit.loginButton")}
-                    </Link>
-                </div>
-            </section>
-        );
-    }
-
     /* ------------------ helpers ------------------ */
 
-    function set<K extends keyof FormState>(k: K, v: FormState[K]) {
+    function set<K extends keyof FormState>(
+        k: K,
+        v: FormState[K],
+    ) {
         setState((s) => ({ ...s, [k]: v }));
-        setErrors((e) => ({ ...e, [k]: undefined })); // clear on change
+        setErrors((e) => ({
+            ...e,
+            [k]: undefined,
+        })); // clear on change
     }
 
     function validate(): Errors {
         const e: Errors = {};
-        if (!state.name.trim()) e.name = tClient("events.edit.validation.nameRequired");
-        if (state.dateStart && Number.isNaN(new Date(state.dateStart).getTime()))
-            e.dateStart = tClient("events.edit.validation.dateStartInvalid");
-        if (state.dateEnd && Number.isNaN(new Date(state.dateEnd).getTime()))
-            e.dateEnd = tClient("events.edit.validation.dateEndInvalid");
+        if (!state.name.trim())
+            e.name = tClient(
+                "events.edit.validation.nameRequired",
+            );
+        if (
+            state.dateStart &&
+            Number.isNaN(
+                new Date(
+                    state.dateStart,
+                ).getTime(),
+            )
+        )
+            e.dateStart = tClient(
+                "events.edit.validation.dateStartInvalid",
+            );
+        if (
+            state.dateEnd &&
+            Number.isNaN(
+                new Date(state.dateEnd).getTime(),
+            )
+        )
+            e.dateEnd = tClient(
+                "events.edit.validation.dateEndInvalid",
+            );
         if (state.dateStart && state.dateEnd) {
-            const a = new Date(state.dateStart).getTime();
-            const b = new Date(state.dateEnd).getTime();
-            if (a > b) e.dateEnd = tClient("events.edit.validation.dateOrder");
+            const a = new Date(
+                state.dateStart,
+            ).getTime();
+            const b = new Date(
+                state.dateEnd,
+            ).getTime();
+            if (a > b)
+                e.dateEnd = tClient(
+                    "events.edit.validation.dateOrder",
+                );
         }
 
-        if (photos.length > 12) e.photos = tClient("events.edit.validation.photosTooMany");
+        if (photos.length > 12)
+            e.photos = tClient(
+                "events.edit.validation.photosTooMany",
+            );
         for (const f of photos) {
-            const okType = /^image\/(png|jpe?g|webp|gif)$/i.test(f.type);
+            const okType =
+                /^image\/(png|jpe?g|webp|gif)$/i.test(
+                    f.type,
+                );
             if (!okType) {
-                e.photos = tClient("events.edit.validation.photosType");
+                e.photos = tClient(
+                    "events.edit.validation.photosType",
+                );
                 break;
             }
             if (f.size > 8 * 1024 * 1024) {
-                e.photos = tClient("events.edit.validation.photosSize");
+                e.photos = tClient(
+                    "events.edit.validation.photosSize",
+                );
                 break;
             }
         }
@@ -649,8 +928,18 @@ export default function NewEventPage() {
 
     function addMemberAttendee(m: Member) {
         setAttendees((prev) => {
-            if (prev.some((a) => a.kind === "member" && a.member.id === m.id)) return prev;
-            return [...prev, { kind: "member", member: m }];
+            if (
+                prev.some(
+                    (a) =>
+                        a.kind === "member" &&
+                        a.member.id === m.id,
+                )
+            )
+                return prev;
+            return [
+                ...prev,
+                { kind: "member", member: m },
+            ];
         });
         setAttendeeQ("");
     }
@@ -663,112 +952,206 @@ export default function NewEventPage() {
                 prev.some(
                     (a) =>
                         a.kind === "invite" &&
-                        a.value.toLowerCase() === trimmed.toLowerCase(),
+                        a.value.toLowerCase() ===
+                        trimmed.toLowerCase(),
                 )
             ) {
                 return prev;
             }
-            return [...prev, { kind: "invite", value: trimmed }];
+            return [
+                ...prev,
+                {
+                    kind: "invite",
+                    value: trimmed,
+                },
+            ];
         });
         setAttendeeQ("");
     }
 
     function removeAttendee(index: number) {
-        setAttendees((prev) => prev.filter((_, i) => i !== index));
+        setAttendees((prev) =>
+            prev.filter((_, i) => i !== index),
+        );
     }
 
     function addProject(p: ProjectRef) {
         setSelectedProjectSlugs((prev) =>
-            prev.includes(p.slug) ? prev : [...prev, p.slug],
+            prev.includes(p.slug)
+                ? prev
+                : [...prev, p.slug],
         );
         setProjectQ("");
     }
 
     function removeProject(slug: string) {
-        setSelectedProjectSlugs((prev) => prev.filter((s) => s !== slug));
+        setSelectedProjectSlugs((prev) =>
+            prev.filter((s) => s !== slug),
+        );
     }
 
     function addBlog(b: BlogRef) {
         setSelectedBlogSlugs((prev) =>
-            prev.includes(b.slug) ? prev : [...prev, b.slug],
+            prev.includes(b.slug)
+                ? prev
+                : [...prev, b.slug],
         );
         setBlogQ("");
     }
 
     function removeBlog(slug: string) {
-        setSelectedBlogSlugs((prev) => prev.filter((s) => s !== slug));
+        setSelectedBlogSlugs((prev) =>
+            prev.filter((s) => s !== slug),
+        );
     }
 
-    const normalizedAttendeeQ = attendeeQ.trim().toLowerCase();
-    const attendeeSuggestions = React.useMemo(() => {
-        const alreadyIds = new Set(
-            attendees
-                .filter((a) => a.kind === "member")
-                .map((a) => (a as any).member.id),
+    const normalizedAttendeeQ = attendeeQ
+        .trim()
+        .toLowerCase();
+    const attendeeSuggestions =
+        React.useMemo(() => {
+            const alreadyIds = new Set(
+                attendees
+                    .filter(isMemberAttendee)
+                    .map((a) => a.member.id),
+            );
+            return members
+                .filter((m) => {
+                    if (alreadyIds.has(m.id)) return false;
+                    if (!normalizedAttendeeQ)
+                        return true;
+                    const h = m.headline || "";
+                    const email = m.email || "";
+                    return (
+                        m.name
+                            .toLowerCase()
+                            .includes(
+                                normalizedAttendeeQ,
+                            ) ||
+                        m.slug
+                            .toLowerCase()
+                            .includes(
+                                normalizedAttendeeQ,
+                            ) ||
+                        h.toLowerCase().includes(
+                            normalizedAttendeeQ,
+                        ) ||
+                        email
+                            .toLowerCase()
+                            .includes(
+                                normalizedAttendeeQ,
+                            )
+                    );
+                })
+                .slice(0, 30);
+        }, [
+            members,
+            attendees,
+            normalizedAttendeeQ,
+        ]);
+
+    const normalizedProjectQ = projectQ
+        .trim()
+        .toLowerCase();
+    const projectSuggestions =
+        React.useMemo(() => {
+            const already = new Set(
+                selectedProjectSlugs,
+            );
+            return projects
+                .filter((p) => {
+                    if (already.has(p.slug))
+                        return false;
+                    if (!normalizedProjectQ)
+                        return true;
+                    const summary =
+                        p.summary || "";
+                    const year = p.year
+                        ? String(p.year)
+                        : "";
+                    return (
+                        p.title
+                            .toLowerCase()
+                            .includes(
+                                normalizedProjectQ,
+                            ) ||
+                        summary
+                            .toLowerCase()
+                            .includes(
+                                normalizedProjectQ,
+                            ) ||
+                        year.includes(
+                            normalizedProjectQ,
+                        )
+                    );
+                })
+                .slice(0, 20);
+        }, [
+            projects,
+            selectedProjectSlugs,
+            normalizedProjectQ,
+        ]);
+
+    const selectedProjects =
+        React.useMemo(
+            () =>
+                selectedProjectSlugs
+                    .map((slug) =>
+                        projects.find(
+                            (p) => p.slug === slug,
+                        ),
+                    )
+                    .filter(
+                        (p): p is ProjectRef => !!p,
+                    ),
+            [selectedProjectSlugs, projects],
         );
-        return members
-            .filter((m) => {
-                if (alreadyIds.has(m.id)) return false;
-                if (!normalizedAttendeeQ) return true;
-                const h = m.headline || "";
-                const email = m.email || "";
-                return (
-                    m.name.toLowerCase().includes(normalizedAttendeeQ) ||
-                    m.slug.toLowerCase().includes(normalizedAttendeeQ) ||
-                    h.toLowerCase().includes(normalizedAttendeeQ) ||
-                    email.toLowerCase().includes(normalizedAttendeeQ)
-                );
-            })
-            .slice(0, 30);
-    }, [members, attendees, normalizedAttendeeQ]);
 
-    const normalizedProjectQ = projectQ.trim().toLowerCase();
-    const projectSuggestions = React.useMemo(() => {
-        const already = new Set(selectedProjectSlugs);
-        return projects
-            .filter((p) => {
-                if (already.has(p.slug)) return false;
-                if (!normalizedProjectQ) return true;
-                const summary = p.summary || "";
-                const year = p.year ? String(p.year) : "";
-                return (
-                    p.title.toLowerCase().includes(normalizedProjectQ) ||
-                    summary.toLowerCase().includes(normalizedProjectQ) ||
-                    year.includes(normalizedProjectQ)
-                );
-            })
-            .slice(0, 20);
-    }, [projects, selectedProjectSlugs, normalizedProjectQ]);
-
-    const selectedProjects = React.useMemo(
-        () =>
-            selectedProjectSlugs
-                .map((slug) => projects.find((p) => p.slug === slug))
-                .filter((p): p is ProjectRef => !!p),
-        [selectedProjectSlugs, projects],
-    );
-
-    const normalizedBlogQ = blogQ.trim().toLowerCase();
-    const blogSuggestions = React.useMemo(() => {
-        const already = new Set(selectedBlogSlugs);
-        return blogs
-            .filter((b) => {
-                if (already.has(b.slug)) return false;
-                if (!normalizedBlogQ) return true;
-                const summary = b.summary || "";
-                return (
-                    b.title.toLowerCase().includes(normalizedBlogQ) ||
-                    summary.toLowerCase().includes(normalizedBlogQ)
-                );
-            })
-            .slice(0, 20);
-    }, [blogs, selectedBlogSlugs, normalizedBlogQ]);
+    const normalizedBlogQ = blogQ
+        .trim()
+        .toLowerCase();
+    const blogSuggestions =
+        React.useMemo(() => {
+            const already = new Set(
+                selectedBlogSlugs,
+            );
+            return blogs
+                .filter((b) => {
+                    if (already.has(b.slug))
+                        return false;
+                    if (!normalizedBlogQ)
+                        return true;
+                    const summary =
+                        b.summary || "";
+                    return (
+                        b.title
+                            .toLowerCase()
+                            .includes(
+                                normalizedBlogQ,
+                            ) ||
+                        summary
+                            .toLowerCase()
+                            .includes(
+                                normalizedBlogQ,
+                            )
+                    );
+                })
+                .slice(0, 20);
+        }, [
+            blogs,
+            selectedBlogSlugs,
+            normalizedBlogQ,
+        ]);
 
     const selectedBlogs = React.useMemo(
         () =>
             selectedBlogSlugs
-                .map((slug) => blogs.find((b) => b.slug === slug))
-                .filter((b): b is BlogRef => !!b),
+                .map((slug) =>
+                    blogs.find((b) => b.slug === slug),
+                )
+                .filter(
+                    (b): b is BlogRef => !!b,
+                ),
         [selectedBlogSlugs, blogs],
     );
 
@@ -782,19 +1165,27 @@ export default function NewEventPage() {
         if (current === removedIndex) {
             return newLength > 0 ? 0 : null;
         }
-        if (current > removedIndex) return current - 1;
+        if (current > removedIndex)
+            return current - 1;
         return current;
     }
 
-    function handlePhotosChange(files: FileList | null) {
-        const incoming = Array.from(files || []);
+    function handlePhotosChange(
+        files: FileList | null,
+    ) {
+        const incoming = Array.from(
+            files || [],
+        );
         if (incoming.length === 0) return;
 
         setPhotos((prev) => {
             const next = [...prev, ...incoming];
             if (next.length === 0) {
                 setHeaderIndex(null);
-            } else if (headerIndex == null || headerIndex >= next.length) {
+            } else if (
+                headerIndex == null ||
+                headerIndex >= next.length
+            ) {
                 setHeaderIndex(0);
             }
             return next;
@@ -803,9 +1194,15 @@ export default function NewEventPage() {
 
     function removePhoto(index: number) {
         setPhotos((prev) => {
-            const next = prev.filter((_, i) => i !== index);
+            const next = prev.filter(
+                (_, i) => i !== index,
+            );
             setHeaderIndex((current) =>
-                adjustHeaderAfterRemoval(current, index, next.length),
+                adjustHeaderAfterRemoval(
+                    current,
+                    index,
+                    next.length,
+                ),
             );
             return next;
         });
@@ -823,7 +1220,11 @@ export default function NewEventPage() {
         setErrors(ve);
         if (Object.values(ve).some(Boolean)) {
             setSubmitting(false);
-            setError(tClient("events.edit.validation.fixFields"));
+            setError(
+                tClient(
+                    "events.edit.validation.fixFields",
+                ),
+            );
             return;
         }
 
@@ -832,65 +1233,110 @@ export default function NewEventPage() {
             let finalPhotoUrls: string[] = [];
             if (photos.length) {
                 const uploads = await Promise.all(
-                    photos.map((file) => api.uploadEventPhoto(accessToken, file)),
+                    photos.map((file) =>
+                        api.uploadEventPhoto(
+                            accessToken,
+                            file,
+                        ),
+                    ),
                 );
                 const newPhotoUrls = uploads
                     .map((u) => u?.url)
-                    .filter((u): u is string => !!u);
+                    .filter(
+                        (u): u is string => !!u,
+                    );
 
                 if (newPhotoUrls.length) {
                     const hi =
                         headerIndex != null &&
                         headerIndex >= 0 &&
-                        headerIndex < newPhotoUrls.length
+                        headerIndex <
+                        newPhotoUrls.length
                             ? headerIndex
                             : 0;
-                    const headerUrl = newPhotoUrls[hi];
-                    const rest = newPhotoUrls.filter((_, idx) => idx !== hi);
-                    finalPhotoUrls = [headerUrl, ...rest];
+                    const headerUrl =
+                        newPhotoUrls[hi];
+                    const rest =
+                        newPhotoUrls.filter(
+                            (_, idx) => idx !== hi,
+                        );
+                    finalPhotoUrls = [
+                        headerUrl,
+                        ...rest,
+                    ];
                 }
             }
 
             // 2) create event
             const body = {
                 name: state.name.trim(),
-                locationName: state.locationName.trim() || null,
+                locationName:
+                    state.locationName.trim() ||
+                    null,
                 dateStart: state.dateStart
-                    ? new Date(state.dateStart).toISOString()
+                    ? new Date(
+                        state.dateStart,
+                    ).toISOString()
                     : null,
                 dateEnd: state.dateEnd
-                    ? new Date(state.dateEnd).toISOString()
+                    ? new Date(
+                        state.dateEnd,
+                    ).toISOString()
                     : null,
-                lat: state.lat ? Number(state.lat) : null,
-                lng: state.lng ? Number(state.lng) : null,
-                description: state.description.trim() || null,
+                lat: state.lat
+                    ? Number(state.lat)
+                    : null,
+                lng: state.lng
+                    ? Number(state.lng)
+                    : null,
+                description:
+                    state.description.trim() ||
+                    null,
                 photos: finalPhotoUrls,
                 attendees: attendees.map((a) =>
                     a.kind === "member"
                         ? {
                             type: "member" as const,
                             memberId: a.member.id,
-                            memberSlug: a.member.slug,
+                            memberSlug:
+                            a.member.slug,
                             name: a.member.name,
-                            email: a.member.email || null,
+                            email:
+                                a.member
+                                    .email ||
+                                null,
                         }
                         : {
                             type: "invite" as const,
                             value: a.value,
                         },
                 ),
-                projectSlugs: selectedProjectSlugs,
-                blogSlugs: selectedBlogSlugs,
+                projectSlugs:
+                selectedProjectSlugs,
+                blogSlugs:
+                selectedBlogSlugs,
             };
 
-            const res = await api.createEvent(accessToken, body);
-            setHint(tClient("events.new.submit.success"));
+            const res = await api.createEvent(
+                accessToken,
+                body,
+            );
+            setHint(
+                tClient(
+                    "events.new.submit.success",
+                ),
+            );
             setTimeout(() => {
                 router.push(`/events/${res.slug}`);
             }, 600);
-        } catch (err: any) {
-            const msg = err?.message || tClient("events.new.submit.error");
-            setError(msg);
+        } catch (err: unknown) {
+            const message =
+                err instanceof Error
+                    ? err.message
+                    : tClient(
+                        "events.new.submit.error",
+                    );
+            setError(message);
         } finally {
             setSubmitting(false);
         }
@@ -908,11 +1354,42 @@ export default function NewEventPage() {
 
     /* --------------------------------- render --------------------------------- */
 
+    if (!user) {
+        return (
+            <section className="section">
+                <h1 className="display">
+                    {tClient("events.new.title")}
+                </h1>
+                <p className="mt-3 text-white/70 max-w-2xl">
+                    {tClient("events.new.gate.loginRequired")}
+                </p>
+                <div className="mt-5 flex gap-3">
+                    <Link
+                        href="/events"
+                        className="btn-secondary"
+                    >
+                        {tClient("events.new.gate.backToEvents")}
+                    </Link>
+                    <Link
+                        href="/"
+                        className="btn-primary"
+                    >
+                        {tClient("events.edit.loginButton")}
+                    </Link>
+                </div>
+            </section>
+        );
+    }
+
     return (
         <section className="section">
             <header className="mb-6">
-                <p className="kicker">{tClient("events.new.kicker")}</p>
-                <h1 className="display">{tClient("events.new.title")}</h1>
+                <p className="kicker">
+                    {tClient("events.new.kicker")}
+                </p>
+                <h1 className="display">
+                    {tClient("events.new.title")}
+                </h1>
                 <p className="mt-2 text-white/70 max-w-2xl">
                     {tClient("events.new.subtitle")}
                 </p>
@@ -936,24 +1413,45 @@ export default function NewEventPage() {
                 </div>
             ) : null}
 
-            <form onSubmit={onSubmit} className="grid lg:grid-cols-5 gap-6">
+            <form
+                onSubmit={onSubmit}
+                className="grid lg:grid-cols-5 gap-6"
+            >
                 {/* Left */}
                 <div className="lg:col-span-3 space-y-5">
                     <div className="card p-5 space-y-3">
                         <div>
                             <label className="block text-sm text-white/70 mb-1">
-                                {tClient("events.edit.form.name.label")} *
+                                {
+                                    tClient(
+                                        "events.edit.form.name.label",
+                                    )
+                                }{" "}
+                                *
                             </label>
                             <input
                                 required
                                 value={state.name}
-                                onChange={(e) => set("name", e.target.value)}
-                                className={inputCls("name")}
-                                placeholder={tClient("events.edit.form.name.placeholder")}
-                                aria-invalid={!!errors.name}
+                                onChange={(e) =>
+                                    set(
+                                        "name",
+                                        e.target.value,
+                                    )
+                                }
+                                className={inputCls(
+                                    "name",
+                                )}
+                                placeholder={tClient(
+                                    "events.edit.form.name.placeholder",
+                                )}
+                                aria-invalid={
+                                    !!errors.name
+                                }
                             />
                             {errors.name && (
-                                <p className="mt-1 text-xs text-red-300">{errors.name}</p>
+                                <p className="mt-1 text-xs text-red-300">
+                                    {errors.name}
+                                </p>
                             )}
                         </div>
 
@@ -961,13 +1459,26 @@ export default function NewEventPage() {
                         <div className="grid md:grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-sm text-white/70 mb-1">
-                                    {tClient("events.edit.form.description.label")}
+                                    {
+                                        tClient(
+                                            "events.edit.form.description.label",
+                                        )
+                                    }
                                 </label>
                                 <textarea
                                     rows={12}
-                                    value={state.description}
-                                    onChange={(e) => set("description", e.target.value)}
-                                    className={inputCls("description")}
+                                    value={
+                                        state.description
+                                    }
+                                    onChange={(e) =>
+                                        set(
+                                            "description",
+                                            e.target.value,
+                                        )
+                                    }
+                                    className={inputCls(
+                                        "description",
+                                    )}
                                     placeholder={tClient(
                                         "events.edit.form.description.placeholder",
                                     )}
@@ -975,14 +1486,22 @@ export default function NewEventPage() {
                             </div>
                             <div>
                                 <label className="block text-sm text-white/70 mb-1">
-                                    {tClient("events.edit.markdown.previewLabel")}
+                                    {tClient(
+                                        "events.edit.markdown.previewLabel",
+                                    )}
                                 </label>
                                 <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 min-h-[180px]">
                                     {state.description ? (
-                                        <MarkdownPreview markdown={state.description} />
+                                        <MarkdownPreview
+                                            markdown={
+                                                state.description
+                                            }
+                                        />
                                     ) : (
                                         <div className="text-white/50 text-sm">
-                                            {tClient("events.edit.markdown.empty")}
+                                            {tClient(
+                                                "events.edit.markdown.empty",
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -992,14 +1511,29 @@ export default function NewEventPage() {
                         <div className="grid sm:grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-sm text-white/70 mb-1">
-                                    {tClient("events.edit.form.dateStart.label")}
+                                    {
+                                        tClient(
+                                            "events.edit.form.dateStart.label",
+                                        )
+                                    }
                                 </label>
                                 <input
                                     type="datetime-local"
-                                    value={state.dateStart}
-                                    onChange={(e) => set("dateStart", e.target.value)}
-                                    className={inputCls("dateStart")}
-                                    aria-invalid={!!errors.dateStart}
+                                    value={
+                                        state.dateStart
+                                    }
+                                    onChange={(e) =>
+                                        set(
+                                            "dateStart",
+                                            e.target.value,
+                                        )
+                                    }
+                                    className={inputCls(
+                                        "dateStart",
+                                    )}
+                                    aria-invalid={
+                                        !!errors.dateStart
+                                    }
                                 />
                                 {errors.dateStart && (
                                     <p className="mt-1 text-xs text-red-300">
@@ -1009,14 +1543,29 @@ export default function NewEventPage() {
                             </div>
                             <div>
                                 <label className="block text-sm text-white/70 mb-1">
-                                    {tClient("events.edit.form.dateEnd.label")}
+                                    {
+                                        tClient(
+                                            "events.edit.form.dateEnd.label",
+                                        )
+                                    }
                                 </label>
                                 <input
                                     type="datetime-local"
-                                    value={state.dateEnd}
-                                    onChange={(e) => set("dateEnd", e.target.value)}
-                                    className={inputCls("dateEnd")}
-                                    aria-invalid={!!errors.dateEnd}
+                                    value={
+                                        state.dateEnd
+                                    }
+                                    onChange={(e) =>
+                                        set(
+                                            "dateEnd",
+                                            e.target.value,
+                                        )
+                                    }
+                                    className={inputCls(
+                                        "dateEnd",
+                                    )}
+                                    aria-invalid={
+                                        !!errors.dateEnd
+                                    }
                                 />
                                 {errors.dateEnd && (
                                     <p className="mt-1 text-xs text-red-300">
@@ -1031,73 +1580,113 @@ export default function NewEventPage() {
                         {/* Photos */}
                         <div>
                             <label className="block text-sm text-white/70 mb-1">
-                                {tClient("events.edit.form.photos.label")}
+                                {
+                                    tClient(
+                                        "events.edit.form.photos.label",
+                                    )
+                                }
                             </label>
                             <input
                                 type="file"
                                 multiple
                                 accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
-                                onChange={(e) => handlePhotosChange(e.target.files)}
-                                className={inputCls("photos")}
-                                aria-invalid={!!errors.photos}
+                                onChange={(e) =>
+                                    handlePhotosChange(
+                                        e.target.files,
+                                    )
+                                }
+                                className={inputCls(
+                                    "photos",
+                                )}
+                                aria-invalid={
+                                    !!errors.photos
+                                }
                             />
                             <p className="text-xs text-white/50 mt-1">
-                                {tClient("events.edit.form.photos.helper")}
+                                {tClient(
+                                    "events.edit.form.photos.helper",
+                                )}
                             </p>
                             {errors.photos && (
-                                <p className="mt-1 text-xs text-red-300">{errors.photos}</p>
+                                <p className="mt-1 text-xs text-red-300">
+                                    {errors.photos}
+                                </p>
                             )}
 
                             {photos.length > 0 && (
                                 <div className="mt-3 grid grid-cols-3 gap-2">
-                                    {photos.map((f, i) => (
-                                        <div
-                                            key={i}
-                                            className={`relative group rounded-md bg-white/5 ring-1 p-1 ${
-                                                headerIndex === i
-                                                    ? "ring-emerald-400/70"
-                                                    : "ring-white/10"
-                                            }`}
-                                        >
-                                            <button
-                                                type="button"
-                                                onClick={() => removePhoto(i)}
-                                                className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                                aria-label={tClient(
-                                                    "events.edit.form.photos.removeNew",
-                                                ).replace("{name}", f.name)}
+                                    {photos.map(
+                                        (f, i) => (
+                                            <div
+                                                key={
+                                                    f.name
+                                                }
+                                                className={`relative group rounded-md bg-white/5 ring-1 p-1 ${
+                                                    headerIndex ===
+                                                    i
+                                                        ? "ring-emerald-400/70"
+                                                        : "ring-white/10"
+                                                }`}
                                             >
-                                                ✕
-                                            </button>
-                                            <img
-                                                src={URL.createObjectURL(f)}
-                                                alt={f.name}
-                                                className="w-full h-24 object-cover rounded"
-                                            />
-                                            <div className="mt-1 flex items-center justify-between gap-1">
-                                                <div className="text-[11px] truncate text-white/70">
-                                                    {f.name}
-                                                </div>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setHeaderIndex(i)}
-                                                    className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                                                        headerIndex === i
-                                                            ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
-                                                            : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
-                                                    }`}
-                                                >
-                                                    {headerIndex === i
-                                                        ? tClient(
-                                                            "events.edit.form.photos.headerLabel",
+                                                    onClick={() =>
+                                                        removePhoto(
+                                                            i,
                                                         )
-                                                        : tClient(
-                                                            "events.edit.form.photos.setHeader",
-                                                        )}
+                                                    }
+                                                    className="absolute top-1 right-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    aria-label={tClient(
+                                                        "events.edit.form.photos.removeNew",
+                                                    ).replace(
+                                                        "{name}",
+                                                        f.name,
+                                                    )}
+                                                >
+                                                    ✕
                                                 </button>
+                                                <img
+                                                    src={URL.createObjectURL(
+                                                        f,
+                                                    )}
+                                                    alt={
+                                                        f.name
+                                                    }
+                                                    className="w-full h-24 object-cover rounded"
+                                                />
+                                                <div className="mt-1 flex items-center justify-between gap-1">
+                                                    <div className="text-[11px] truncate text-white/70">
+                                                        {
+                                                            f.name
+                                                        }
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setHeaderIndex(
+                                                                i,
+                                                            )
+                                                        }
+                                                        className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                                            headerIndex ===
+                                                            i
+                                                                ? "border-emerald-400 bg-emerald-500/20 text-emerald-100"
+                                                                : "border-white/20 bg-black/40 text-white/70 hover:border-emerald-300 hover:text-emerald-100"
+                                                        }`}
+                                                    >
+                                                        {headerIndex ===
+                                                        i
+                                                            ? tClient(
+                                                                "events.edit.form.photos.headerLabel",
+                                                            )
+                                                            : tClient(
+                                                                "events.edit.form.photos.setHeader",
+                                                            )}
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ),
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -1110,12 +1699,25 @@ export default function NewEventPage() {
                     <div className="card p-5 space-y-3">
                         <div>
                             <label className="block text-sm text-white/70 mb-1">
-                                {tClient("events.edit.form.locationName.label")}
+                                {
+                                    tClient(
+                                        "events.edit.form.locationName.label",
+                                    )
+                                }
                             </label>
                             <input
-                                value={state.locationName}
-                                onChange={(e) => set("locationName", e.target.value)}
-                                className={inputCls("locationName")}
+                                value={
+                                    state.locationName
+                                }
+                                onChange={(e) =>
+                                    set(
+                                        "locationName",
+                                        e.target.value,
+                                    )
+                                }
+                                className={inputCls(
+                                    "locationName",
+                                )}
                                 placeholder={tClient(
                                     "events.edit.form.locationName.placeholder",
                                 )}
@@ -1126,51 +1728,92 @@ export default function NewEventPage() {
                             <div className="relative">
                                 <input
                                     value={searchQ}
-                                    onChange={(e) => setSearchQ(e.target.value)}
+                                    onChange={(e) =>
+                                        setSearchQ(
+                                            e.target.value,
+                                        )
+                                    }
                                     placeholder={tClient(
                                         "events.edit.map.search.placeholder",
                                     )}
-                                    className={searchInputCls}
+                                    className={
+                                        searchInputCls
+                                    }
                                 />
                                 {searching && (
                                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-white/50">
-                                        {tClient("events.edit.map.search.searching")}
+                                        {tClient(
+                                            "events.edit.map.search.searching",
+                                        )}
                                     </div>
                                 )}
                             </div>
                             {!!hits.length && (
                                 <ul className="max-h-48 overflow-auto rounded-md ring-1 ring-white/10 divide-y divide-white/10 bg-black/60">
-                                    {hits.map((h, i) => (
-                                        <li
-                                            key={i}
-                                            className="p-2 text-sm hover:bg-white/10 cursor-pointer"
-                                            onClick={() => {
-                                                set("lat", h.lat);
-                                                set("lng", h.lon);
-                                                setHits([]);
-                                                setSearchQ(h.display_name);
-                                                if (!state.locationName) {
-                                                    set("locationName", h.display_name);
+                                    {hits.map(
+                                        (h) => (
+                                            <li
+                                                key={
+                                                    h.display_name
                                                 }
-                                            }}
-                                        >
-                                            <div className="font-medium text-white">
-                                                {h.display_name}
-                                            </div>
-                                            <div className="text-xs text-white/60 mt-0.5">
-                                                {tClient("events.edit.map.search.latLabel")} {h.lat},{" "}
-                                                {tClient("events.edit.map.search.lngLabel")} {h.lon}
-                                            </div>
-                                        </li>
-                                    ))}
+                                                className="p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                                onClick={() => {
+                                                    set(
+                                                        "lat",
+                                                        h.lat,
+                                                    );
+                                                    set(
+                                                        "lng",
+                                                        h.lon,
+                                                    );
+                                                    setHits(
+                                                        [],
+                                                    );
+                                                    setSearchQ(
+                                                        h.display_name,
+                                                    );
+                                                    if (
+                                                        !state.locationName
+                                                    ) {
+                                                        set(
+                                                            "locationName",
+                                                            h.display_name,
+                                                        );
+                                                    }
+                                                }}
+                                            >
+                                                <div className="font-medium text-white">
+                                                    {
+                                                        h.display_name
+                                                    }
+                                                </div>
+                                                <div className="text-xs text-white/60 mt-0.5">
+                                                    {tClient(
+                                                        "events.edit.map.search.latLabel",
+                                                    )}{" "}
+                                                    {h.lat},{" "}
+                                                    {tClient(
+                                                        "events.edit.map.search.lngLabel",
+                                                    )}{" "}
+                                                    {
+                                                        h.lon
+                                                    }
+                                                </div>
+                                            </li>
+                                        ),
+                                    )}
                                 </ul>
                             )}
                         </div>
 
                         <MapPreview
                             name={state.name}
-                            locationName={state.locationName}
-                            dateStart={state.dateStart}
+                            locationName={
+                                state.locationName
+                            }
+                            dateStart={
+                                state.dateStart
+                            }
                             lat={state.lat}
                             lng={state.lng}
                         />
@@ -1180,144 +1823,235 @@ export default function NewEventPage() {
                     <div className="card p-5 space-y-3">
                         <div className="flex items-baseline justify-between">
                             <h2 className="text-sm font-semibold text-white">
-                                {tClient("events.edit.attendees.title")}
+                                {tClient(
+                                    "events.edit.attendees.title",
+                                )}
                             </h2>
                             {membersLoading && (
                                 <span className="text-[11px] text-white/50">
-                                    {tClient("events.edit.attendees.loadingMembers")}
+                                    {tClient(
+                                        "events.edit.attendees.loadingMembers",
+                                    )}
                                 </span>
                             )}
-                            {membersError && !membersLoading && (
-                                <span className="text-[11px] text-red-300">
-                                    {membersError}
-                                </span>
-                            )}
+                            {membersError &&
+                                !membersLoading && (
+                                    <span className="text-[11px] text-red-300">
+                                        {membersError}
+                                    </span>
+                                )}
                         </div>
                         <p className="text-xs text-white/60">
-                            {tClient("events.new.attendees.helper")}
+                            {tClient(
+                                "events.new.attendees.helper",
+                            )}
                         </p>
 
                         <div className="space-y-2">
                             <div className="flex gap-2">
                                 <input
                                     value={attendeeQ}
-                                    onChange={(e) => setAttendeeQ(e.target.value)}
+                                    onChange={(e) =>
+                                        setAttendeeQ(
+                                            e.target.value,
+                                        )
+                                    }
                                     onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
+                                        if (
+                                            e.key ===
+                                            "Enter"
+                                        ) {
                                             e.preventDefault();
-                                            if (attendeeSuggestions[0]) {
-                                                addMemberAttendee(attendeeSuggestions[0]);
-                                            } else if (attendeeQ.trim()) {
-                                                addInviteAttendee(attendeeQ);
+                                            if (
+                                                attendeeSuggestions[0]
+                                            ) {
+                                                addMemberAttendee(
+                                                    attendeeSuggestions[0],
+                                                );
+                                            } else if (
+                                                attendeeQ.trim()
+                                            ) {
+                                                addInviteAttendee(
+                                                    attendeeQ,
+                                                );
                                             }
                                         }
                                     }}
                                     placeholder={tClient(
                                         "events.edit.attendees.searchPlaceholder",
                                     )}
-                                    className={searchInputCls}
+                                    className={
+                                        searchInputCls
+                                    }
                                 />
                                 <button
                                     type="button"
-                                    onClick={() => addInviteAttendee(attendeeQ)}
+                                    onClick={() =>
+                                        addInviteAttendee(
+                                            attendeeQ,
+                                        )
+                                    }
                                     className="px-3 py-2 rounded-md bg-white text-black text-xs font-medium disabled:opacity-60"
-                                    disabled={!attendeeQ.trim()}
+                                    disabled={
+                                        !attendeeQ.trim()
+                                    }
                                 >
-                                    {tClient("events.edit.attendees.addInviteButton")}
+                                    {tClient(
+                                        "events.edit.attendees.addInviteButton",
+                                    )}
                                 </button>
                             </div>
 
                             {!!attendeeSuggestions.length && (
                                 <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
-                                    {attendeeSuggestions.map((m) => (
-                                        <li
-                                            key={m.id}
-                                            className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
-                                            onClick={() => addMemberAttendee(m)}
-                                        >
-                                            {m.avatarUrl ? (
-                                                <img
-                                                    src={m.avatarUrl}
-                                                    alt={m.name}
-                                                    className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20"
-                                                />
-                                            ) : (
-                                                <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
-                                                    {m.name.charAt(0).toUpperCase()}
-                                                </div>
-                                            )}
-                                            <div className="min-w-0">
-                                                <div className="font-medium text-white truncate">
-                                                    {m.name}
-                                                </div>
-                                                {m.headline && (
-                                                    <div className="text-[11px] text-white/60 truncate">
-                                                        {m.headline}
+                                    {attendeeSuggestions.map(
+                                        (m) => (
+                                            <li
+                                                key={
+                                                    m.id
+                                                }
+                                                className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                                onClick={() =>
+                                                    addMemberAttendee(
+                                                        m,
+                                                    )
+                                                }
+                                            >
+                                                {m.avatarUrl ? (
+                                                    <img
+                                                        src={
+                                                            m.avatarUrl
+                                                        }
+                                                        alt={
+                                                            m.name
+                                                        }
+                                                        className="w-7 h-7 rounded-full object-cover ring-1 ring-white/20"
+                                                    />
+                                                ) : (
+                                                    <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                        {m.name
+                                                            .charAt(
+                                                                0,
+                                                            )
+                                                            .toUpperCase()}
                                                     </div>
                                                 )}
-                                            </div>
-                                        </li>
-                                    ))}
+                                                <div className="min-w-0">
+                                                    <div className="font-medium text-white truncate">
+                                                        {
+                                                            m.name
+                                                        }
+                                                    </div>
+                                                    {m.headline && (
+                                                        <div className="text-[11px] text-white/60 truncate">
+                                                            {
+                                                                m.headline
+                                                            }
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </li>
+                                        ),
+                                    )}
                                 </ul>
                             )}
                         </div>
 
                         {attendees.length > 0 && (
                             <div className="mt-3 flex flex-wrap gap-2">
-                                {attendees.map((a, idx) =>
-                                    a.kind === "member" ? (
-                                        <div
-                                            key={`m-${a.member.id}`}
-                                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
-                                        >
-                                            {a.member.avatarUrl ? (
-                                                <img
-                                                    src={a.member.avatarUrl}
-                                                    alt={a.member.name}
-                                                    className="w-6 h-6 rounded-full object-cover ring-1 ring-white/20"
-                                                />
-                                            ) : (
-                                                <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
-                                                    {a.member.name.charAt(0).toUpperCase()}
-                                                </div>
-                                            )}
-                                            <span className="text-xs text-white">
-                                                {a.member.name}
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={() => removeAttendee(idx)}
-                                                className="text-[11px] text-white/60 hover:text-white"
-                                                aria-label={tClient(
-                                                    "events.edit.attendees.removeMember",
-                                                ).replace("{name}", a.member.name)}
+                                {attendees.map(
+                                    (a, idx) =>
+                                        a.kind ===
+                                        "member" ? (
+                                            <div
+                                                key={`m-${a.member.id}`}
+                                                className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
                                             >
-                                                ✕
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div
-                                            key={`i-${a.value}`}
-                                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-emerald-400/40"
-                                        >
-                                            <span className="text-xs text-white/90">
-                                                {a.value}
-                                            </span>
-                                            <span className="text-[10px] text-emerald-300/80">
-                                                {tClient("events.new.attendees.inviteBadge")}
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={() => removeAttendee(idx)}
-                                                className="text-[11px] text-white/60 hover:text-white"
-                                                aria-label={tClient(
-                                                    "events.edit.attendees.removeInvite",
-                                                ).replace("{value}", a.value)}
+                                                {a.member
+                                                    .avatarUrl ? (
+                                                    <img
+                                                        src={
+                                                            a
+                                                                .member
+                                                                .avatarUrl
+                                                        }
+                                                        alt={
+                                                            a
+                                                                .member
+                                                                .name
+                                                        }
+                                                        className="w-6 h-6 rounded-full object-cover ring-1 ring-white/20"
+                                                    />
+                                                ) : (
+                                                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                        {a.member.name
+                                                            .charAt(
+                                                                0,
+                                                            )
+                                                            .toUpperCase()}
+                                                    </div>
+                                                )}
+                                                <span className="text-xs text-white">
+                                                    {
+                                                        a
+                                                            .member
+                                                            .name
+                                                    }
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        removeAttendee(
+                                                            idx,
+                                                        )
+                                                    }
+                                                    className="text-[11px] text-white/60 hover:text-white"
+                                                    aria-label={tClient(
+                                                        "events.edit.attendees.removeMember",
+                                                    ).replace(
+                                                        "{name}",
+                                                        a
+                                                            .member
+                                                            .name,
+                                                    )}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div
+                                                key={`i-${a.value}`}
+                                                className="flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-emerald-400/40"
                                             >
-                                                ✕
-                                            </button>
-                                        </div>
-                                    ),
+                                                <span className="text-xs text-white/90">
+                                                    {
+                                                        a.value
+                                                    }
+                                                </span>
+                                                <span className="text-[10px] text-emerald-300/80">
+                                                    {tClient(
+                                                        "events.new.attendees.inviteBadge",
+                                                    )}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        removeAttendee(
+                                                            idx,
+                                                        )
+                                                    }
+                                                    className="text-[11px] text-white/60 hover:text-white"
+                                                    aria-label={tClient(
+                                                        "events.edit.attendees.removeInvite",
+                                                    ).replace(
+                                                        "{value}",
+                                                        a.value,
+                                                    )}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        ),
                                 )}
                             </div>
                         )}
@@ -1327,194 +2061,300 @@ export default function NewEventPage() {
                     <div className="card p-5 space-y-3">
                         <div className="flex items-baseline justify-between">
                             <h2 className="text-sm font-semibold text-white">
-                                {tClient("events.edit.projects.title")}
+                                {tClient(
+                                    "events.edit.projects.title",
+                                )}
                             </h2>
                             {projectsLoading && (
                                 <span className="text-[11px] text-white/50">
-                                    {tClient("events.edit.projects.loading")}
+                                    {tClient(
+                                        "events.edit.projects.loading",
+                                    )}
                                 </span>
                             )}
-                            {projectsError && !projectsLoading && (
-                                <span className="text-[11px] text-red-300">
-                                    {projectsError}
-                                </span>
-                            )}
+                            {projectsError &&
+                                !projectsLoading && (
+                                    <span className="text-[11px] text-red-300">
+                                        {projectsError}
+                                    </span>
+                                )}
                         </div>
                         <p className="text-xs text-white/60">
-                            {tClient("events.new.projects.helper")}
+                            {tClient(
+                                "events.new.projects.helper",
+                            )}
                         </p>
 
                         <div className="space-y-2">
                             <input
                                 value={projectQ}
-                                onChange={(e) => setProjectQ(e.target.value)}
+                                onChange={(e) =>
+                                    setProjectQ(
+                                        e.target.value,
+                                    )
+                                }
                                 placeholder={tClient(
                                     "events.edit.projects.searchPlaceholder",
                                 )}
-                                className={searchInputCls}
+                                className={
+                                    searchInputCls
+                                }
                             />
                             {!!projectSuggestions.length && (
                                 <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
-                                    {projectSuggestions.map((p) => (
-                                        <li
-                                            key={p.id}
-                                            className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
-                                            onClick={() => addProject(p)}
-                                        >
-                                            {p.cover ? (
-                                                <img
-                                                    src={p.cover}
-                                                    alt={p.title}
-                                                    className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
-                                                />
-                                            ) : (
-                                                <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
-                                                    {p.title.charAt(0).toUpperCase()}
-                                                </div>
-                                            )}
-                                            <div className="min-w-0">
-                                                <div className="text-xs font-medium text-white truncate">
-                                                    {p.title}
-                                                </div>
-                                                {p.year && (
-                                                    <div className="text-[11px] text-white/60">
-                                                        {p.year}
+                                    {projectSuggestions.map(
+                                        (p) => (
+                                            <li
+                                                key={
+                                                    p.id
+                                                }
+                                                className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                                onClick={() =>
+                                                    addProject(
+                                                        p,
+                                                    )
+                                                }
+                                            >
+                                                {p.cover ? (
+                                                    <img
+                                                        src={
+                                                            p.cover
+                                                        }
+                                                        alt={
+                                                            p.title
+                                                        }
+                                                        className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
+                                                    />
+                                                ) : (
+                                                    <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                        {p.title
+                                                            .charAt(
+                                                                0,
+                                                            )
+                                                            .toUpperCase()}
                                                     </div>
                                                 )}
-                                            </div>
-                                        </li>
-                                    ))}
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-medium text-white truncate">
+                                                        {
+                                                            p.title
+                                                        }
+                                                    </div>
+                                                    {p.year && (
+                                                        <div className="text-[11px] text-white/60">
+                                                            {
+                                                                p.year
+                                                            }
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </li>
+                                        ),
+                                    )}
                                 </ul>
                             )}
                         </div>
 
-                        {selectedProjects.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                {selectedProjects.map((p) => (
-                                    <button
-                                        key={p.slug}
-                                        type="button"
-                                        onClick={() => removeProject(p.slug)}
-                                        className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
-                                    >
-                                        {p.cover ? (
-                                            <img
-                                                src={p.cover}
-                                                alt={p.title}
-                                                className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
-                                            />
-                                        ) : (
-                                            <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
-                                                {p.title.charAt(0).toUpperCase()}
-                                            </div>
-                                        )}
-                                        <span className="text-xs text-white">
-                                            {p.title}
-                                        </span>
-                                        <span className="text-[11px] text-white/60 group-hover:text-red-300">
-                                            ✕
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                        {selectedProjects.length >
+                            0 && (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {selectedProjects.map(
+                                        (p) => (
+                                            <button
+                                                key={
+                                                    p.slug
+                                                }
+                                                type="button"
+                                                onClick={() =>
+                                                    removeProject(
+                                                        p.slug,
+                                                    )
+                                                }
+                                                className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
+                                            >
+                                                {p.cover ? (
+                                                    <img
+                                                        src={
+                                                            p.cover
+                                                        }
+                                                        alt={
+                                                            p.title
+                                                        }
+                                                        className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
+                                                    />
+                                                ) : (
+                                                    <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                        {p.title
+                                                            .charAt(
+                                                                0,
+                                                            )
+                                                            .toUpperCase()}
+                                                    </div>
+                                                )}
+                                                <span className="text-xs text-white">
+                                                {
+                                                    p.title
+                                                }
+                                            </span>
+                                                <span className="text-[11px] text-white/60 group-hover:text-red-300">
+                                                ✕
+                                            </span>
+                                            </button>
+                                        ),
+                                    )}
+                                </div>
+                            )}
                     </div>
 
                     {/* Related blog posts */}
                     <div className="card p-5 space-y-3">
                         <div className="flex items-baseline justify-between">
                             <h2 className="text-sm font-semibold text-white">
-                                {tClient("events.edit.blogs.title")}
+                                {tClient(
+                                    "events.edit.blogs.title",
+                                )}
                             </h2>
                             {blogsLoading && (
                                 <span className="text-[11px] text-white/50">
-                                    {tClient("events.edit.blogs.loading")}
+                                    {tClient(
+                                        "events.edit.blogs.loading",
+                                    )}
                                 </span>
                             )}
                         </div>
                         <p className="text-xs text-white/60">
-                            {tClient("events.edit.blogs.helper")}
+                            {tClient(
+                                "events.edit.blogs.helper",
+                            )}
                         </p>
 
                         <div className="space-y-2">
                             <input
                                 value={blogQ}
-                                onChange={(e) => setBlogQ(e.target.value)}
+                                onChange={(e) =>
+                                    setBlogQ(
+                                        e.target.value,
+                                    )
+                                }
                                 placeholder={tClient(
                                     "events.edit.blogs.searchPlaceholder",
                                 )}
-                                className={searchInputCls}
+                                className={
+                                    searchInputCls
+                                }
                             />
                             {!!blogSuggestions.length && (
                                 <ul className="max-h-52 overflow-auto rounded-md bg-black/60 ring-1 ring-white/10 divide-y divide-white/10">
-                                    {blogSuggestions.map((b) => (
-                                        <li
-                                            key={b.slug}
-                                            className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
-                                            onClick={() => addBlog(b)}
-                                        >
-                                            {b.cover ? (
-                                                <img
-                                                    src={b.cover}
-                                                    alt={b.title}
-                                                    className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
-                                                />
-                                            ) : (
-                                                <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
-                                                    {b.title.charAt(0).toUpperCase()}
-                                                </div>
-                                            )}
-                                            <div className="min-w-0">
-                                                <div className="text-xs font-medium text-white truncate">
-                                                    {b.title}
-                                                </div>
-                                                {b.publishedAt && (
-                                                    <div className="text-[11px] text-white/60">
-                                                        {new Date(b.publishedAt).toLocaleDateString()}
+                                    {blogSuggestions.map(
+                                        (b) => (
+                                            <li
+                                                key={
+                                                    b.slug
+                                                }
+                                                className="flex items-center gap-2 p-2 text-sm hover:bg-white/10 cursor-pointer"
+                                                onClick={() =>
+                                                    addBlog(
+                                                        b,
+                                                    )
+                                                }
+                                            >
+                                                {b.cover ? (
+                                                    <img
+                                                        src={
+                                                            b.cover
+                                                        }
+                                                        alt={
+                                                            b.title
+                                                        }
+                                                        className="w-9 h-9 rounded object-cover ring-1 ring-white/20"
+                                                    />
+                                                ) : (
+                                                    <div className="w-9 h-9 rounded bg-white/10 flex items-center justify-center text-[11px] text-white/80 ring-1 ring-white/20">
+                                                        {b.title
+                                                            .charAt(
+                                                                0,
+                                                            )
+                                                            .toUpperCase()}
                                                     </div>
                                                 )}
-                                            </div>
-                                        </li>
-                                    ))}
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-medium text-white truncate">
+                                                        {
+                                                            b.title
+                                                        }
+                                                    </div>
+                                                    {b.publishedAt && (
+                                                        <div className="text-[11px] text-white/60">
+                                                            {new Date(
+                                                                b.publishedAt,
+                                                            ).toLocaleDateString()}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </li>
+                                        ),
+                                    )}
                                 </ul>
                             )}
-                            {!blogsLoading && blogs.length === 0 && (
-                                <p className="text-[11px] text-white/50">
-                                    {tClient("events.edit.blogs.noneFound")}
-                                </p>
-                            )}
+                            {!blogsLoading &&
+                                blogs.length === 0 && (
+                                    <p className="text-[11px] text-white/50">
+                                        {tClient(
+                                            "events.edit.blogs.noneFound",
+                                        )}
+                                    </p>
+                                )}
                         </div>
 
-                        {selectedBlogs.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                {selectedBlogs.map((b) => (
-                                    <button
-                                        key={b.slug}
-                                        type="button"
-                                        onClick={() => removeBlog(b.slug)}
-                                        className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
-                                    >
-                                        {b.cover ? (
-                                            <img
-                                                src={b.cover}
-                                                alt={b.title}
-                                                className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
-                                            />
-                                        ) : (
-                                            <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
-                                                {b.title.charAt(0).toUpperCase()}
-                                            </div>
-                                        )}
-                                        <span className="text-xs text-white">
-                                            {b.title}
-                                        </span>
-                                        <span className="text-[11px] text-white/60 group-hover:text-red-300">
-                                            ✕
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                        {selectedBlogs.length >
+                            0 && (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {selectedBlogs.map(
+                                        (b) => (
+                                            <button
+                                                key={
+                                                    b.slug
+                                                }
+                                                type="button"
+                                                onClick={() =>
+                                                    removeBlog(
+                                                        b.slug,
+                                                    )
+                                                }
+                                                className="group flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 hover:ring-red-400/70"
+                                            >
+                                                {b.cover ? (
+                                                    <img
+                                                        src={
+                                                            b.cover
+                                                        }
+                                                        alt={
+                                                            b.title
+                                                        }
+                                                        className="w-6 h-6 rounded object-cover ring-1 ring-white/20"
+                                                    />
+                                                ) : (
+                                                    <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-[10px] text-white/80 ring-1 ring-white/20">
+                                                        {b.title
+                                                            .charAt(
+                                                                0,
+                                                            )
+                                                            .toUpperCase()}
+                                                    </div>
+                                                )}
+                                                <span className="text-xs text-white">
+                                                {
+                                                    b.title
+                                                }
+                                            </span>
+                                                <span className="text-[11px] text-white/60 group-hover:text-red-300">
+                                                ✕
+                                            </span>
+                                            </button>
+                                        ),
+                                    )}
+                                </div>
+                            )}
                     </div>
 
                     {/* Create button */}
@@ -1525,15 +2365,21 @@ export default function NewEventPage() {
                             className="w-full px-4 py-2 rounded-md bg-white text-black font-semibold disabled:opacity-60"
                         >
                             {submitting
-                                ? tClient("events.new.submit.creating")
-                                : tClient("events.new.submit.create")}
+                                ? tClient(
+                                    "events.new.submit.creating",
+                                )
+                                : tClient(
+                                    "events.new.submit.create",
+                                )}
                         </button>
                         <div className="mt-3 text-center">
                             <Link
                                 href="/events"
                                 className="text-sm underline underline-offset-4"
                             >
-                                {tClient("events.edit.cancel")}
+                                {tClient(
+                                    "events.edit.cancel",
+                                )}
                             </Link>
                         </div>
                     </div>

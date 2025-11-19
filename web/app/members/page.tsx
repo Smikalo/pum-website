@@ -1,4 +1,3 @@
-// app/members/page.tsx
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
@@ -42,7 +41,35 @@ type UiMember = {
     focusArea?: string; // <- drives category + graph color
 };
 
-type ApiProject = any;
+type ApiProjectMember = {
+    memberId?: string | null;
+    id?: string | null;
+    memberSlug?: string | null;
+    slug?: string | null;
+};
+
+type ApiProject = {
+    id?: string | null;
+    slug?: string | null;
+    title?: string | null;
+    name?: string | null;
+    tags?: (string | null)[] | null;
+    techStack?: (string | null)[] | null;
+    tech?: (string | null)[] | null;
+    imageUrl?: string | null;
+    cover?: string | null;
+    members?: ApiProjectMember[] | null;
+};
+
+type UiProject = {
+    id: string;
+    slug: string;
+    title: string;
+    tags: string[];
+    techStack: string[];
+    members: { memberId?: string; memberSlug?: string }[];
+    imageUrl?: string;
+};
 
 /** ------------------------------------------------------------
  *  Utilities
@@ -50,9 +77,11 @@ type ApiProject = any;
 function isString(x: unknown): x is string {
     return typeof x === "string" && x.trim().length > 0;
 }
+
 function uniq<T>(arr: T[]): T[] {
     return Array.from(new Set(arr));
 }
+
 function parseMulti(param?: string): string[] {
     if (!param) return [];
     return param
@@ -60,11 +89,13 @@ function parseMulti(param?: string): string[] {
         .map((x) => x.trim())
         .filter(Boolean);
 }
+
 function includesAll(haystack: string[] | undefined, needles: string[]): boolean {
     if (!needles.length) return true;
     const set = new Set((haystack || []).map((s) => s.toLowerCase()));
     return needles.every((n) => set.has(n.toLowerCase()));
 }
+
 function highlight(text: string | undefined | null, q: string) {
     if (!text) return null;
     if (!q) return text;
@@ -81,6 +112,7 @@ function highlight(text: string | undefined | null, q: string) {
         ),
     );
 }
+
 function matchesQuery(m: UiMember, q: string): boolean {
     if (!q) return true;
     const needle = q.toLowerCase();
@@ -93,12 +125,14 @@ function matchesQuery(m: UiMember, q: string): boolean {
     ];
     return fields.some((f) => f.toLowerCase().includes(needle));
 }
+
 /** normalize any image-like value to a proper src (never null) */
 function toImageOrUndef(v?: string | null): string | undefined {
     if (!isString(v)) return undefined;
     const r = toImageSrc(v);
     return isString(r) ? r : undefined;
 }
+
 /** If the API doesn’t send focusArea, try common fallbacks */
 function pickFocusArea(m: Partial<ApiListMember>): string | undefined {
     if (isString(m.focusArea)) return m.focusArea.trim();
@@ -108,6 +142,7 @@ function pickFocusArea(m: Partial<ApiListMember>): string | undefined {
     if (firstExpertise) return firstExpertise.trim();
     return undefined;
 }
+
 /** Keep focusArea first in the skills array so the graph color uses it */
 function skillsWithFocusFirst(focus: string | undefined, skills: string[]): string[] {
     const out: string[] = [];
@@ -130,8 +165,10 @@ async function fetchAllMembers(): Promise<{ items: UiMember[]; total: number }> 
         const res = await fetch(url.toString(), { cache: "no-store" });
         if (!res.ok) return { items: [], total: 0 };
 
-        const json = (await res.json()) as { items: ApiListMember[]; total?: number };
-        const items: UiMember[] = (json.items || []).map((m) => {
+        const json = (await res.json()) as { items?: ApiListMember[]; total?: number };
+        const rawItems: ApiListMember[] = Array.isArray(json.items) ? json.items : [];
+
+        const items: UiMember[] = rawItems.map((m) => {
             const focusArea = pickFocusArea(m);
             const skills = (m.skills ?? []).filter(isString);
             const techStack = (m.techStack ?? []).filter(isString);
@@ -153,29 +190,39 @@ async function fetchAllMembers(): Promise<{ items: UiMember[]; total: number }> 
     }
 }
 
-function normalizeProject(p: ApiProject) {
-    const slug: string = p.slug ?? p.id ?? "";
-    const id: string = (p.id ?? slug) as string;
-    const image = toImageOrUndef(p.imageUrl) ?? toImageOrUndef(p.cover);
+function normalizeProject(p: ApiProject): UiProject {
+    const slug = (p.slug ?? p.id ?? "") || "";
+    const id = (p.id ?? slug) || slug;
+    const title = (p.title ?? p.name ?? slug) || slug;
+
+    const tags = (p.tags ?? []).filter(isString);
+    const techStackSource = p.techStack ?? p.tech ?? [];
+    const techStack = techStackSource.filter(isString);
+
+    const members: UiProject["members"] = (p.members ?? []).map((m) => ({
+        memberId: m.memberId ?? m.id ?? undefined,
+        memberSlug: m.memberSlug ?? m.slug ?? undefined,
+    }));
+
+    const imageCandidate = p.imageUrl ?? p.cover ?? null;
+    const imageUrl = toImageOrUndef(imageCandidate);
+
     return {
         id,
         slug,
-        title: (p.title ?? p.name ?? slug) as string,
-        tags: (p.tags ?? []).filter(isString) as string[],
-        techStack: (p.techStack ?? p.tech ?? []).filter(isString) as string[],
-        members: (p.members ?? []).map((m: any) => ({
-            memberId: m.memberId ?? m.id,
-            memberSlug: m.memberSlug ?? m.slug,
-        })) as { memberId?: string; memberSlug?: string }[],
-        imageUrl: (isString(image) ? image : undefined) as string | undefined,
+        title,
+        tags,
+        techStack,
+        members,
+        imageUrl,
     };
 }
 
-async function fetchApiProjects() {
+async function fetchApiProjects(): Promise<UiProject[]> {
     try {
         const res = await fetch(`${API_BASE}/api/projects?size=999`, { cache: "no-store" });
         if (!res.ok) return [];
-        const json = await res.json();
+        const json = (await res.json()) as { items?: ApiProject[] } | ApiProject[];
         const items: ApiProject[] = Array.isArray(json) ? json : json.items ?? [];
         return items.map(normalizeProject);
     } catch {
@@ -218,18 +265,21 @@ export default async function MembersPage({
     const total = filteredMembers.length;
 
     const visibleSlugs = new Set(filteredMembers.map((m) => m.slug));
-    const filteredProjects = apiProjects.filter((p: any) =>
-        (p.members || []).some((r: any) => visibleSlugs.has(r.memberSlug)),
+    const filteredProjects = apiProjects.filter((p) =>
+        (p.members || []).some((r) => r.memberSlug && visibleSlugs.has(r.memberSlug)),
     );
 
     type MembersGraphProps = React.ComponentProps<typeof MembersGraph>;
+    type GraphMember = MembersGraphProps["members"][number];
+    type GraphProject = MembersGraphProps["projects"][number];
+
     const graphMembers: MembersGraphProps["members"] = filteredMembers.map(
-        (m) => {
+        (m): GraphMember => {
             const skillsForGraph = skillsWithFocusFirst(
                 m.focusArea,
                 (m.skills || []).filter(isString),
             );
-            const node: any = {
+            return {
                 id: m.id,
                 slug: m.slug,
                 name: m.name,
@@ -240,28 +290,24 @@ export default async function MembersPage({
                 imageUrl: m.avatarUrl,
                 photoUrl: m.avatarUrl,
             };
-            return node as MembersGraphProps["members"][number];
         },
     );
 
     const graphProjects: MembersGraphProps["projects"] =
-        filteredProjects.map((p: any) => ({
-            id: p.id as string,
-            slug: p.slug as string,
-            title: p.title as string,
-            members:
-                (p.members as { memberId?: string; memberSlug?: string }[] | undefined)?.map(
-                    (m) => ({
-                        memberId: m.memberId,
-                        memberSlug: m.memberSlug,
-                    }),
-                ) ?? [],
-            techStack: (p.techStack as string[] | undefined) ?? [],
-            tags: (p.tags as string[] | undefined) ?? [],
-            imageUrl: (isString(p.imageUrl) ? p.imageUrl : undefined) as
-                | string
-                | undefined,
-        }));
+        filteredProjects.map(
+            (p): GraphProject => ({
+                id: p.id,
+                slug: p.slug,
+                title: p.title,
+                members: (p.members ?? []).map((m) => ({
+                    memberId: m.memberId,
+                    memberSlug: m.memberSlug,
+                })),
+                techStack: p.techStack,
+                tags: p.tags,
+                imageUrl: p.imageUrl,
+            }),
+        );
 
     return (
         <section className="section">
@@ -502,20 +548,22 @@ function ListView({ members, total, q }: { members: UiMember[]; total: number; q
                                 <div className="font-semibold text-lg">{highlight(m.name, q)}</div>
                                 {m.focusArea && (
                                     <div className="mt-1">
-                    <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
-                      {m.focusArea}
-                    </span>
+                                        <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
+                                            {m.focusArea}
+                                        </span>
                                     </div>
                                 )}
                                 {m.shortBio ? (
-                                    <div className="text-sm text-white/70 mt-1 line-clamp-3">{highlight(m.shortBio, q)}</div>
+                                    <div className="text-sm text-white/70 mt-1 line-clamp-3">
+                                        {highlight(m.shortBio, q)}
+                                    </div>
                                 ) : null}
                                 <div className="mt-3 text-xs text-white/50 truncate">
                                     {(m.techStack || []).map((t, i) => (
                                         <span key={t}>
-                      {highlight(t, q)}
+                                            {highlight(t, q)}
                                             {i < (m.techStack?.length || 0) - 1 ? " • " : ""}
-                    </span>
+                                        </span>
                                     ))}
                                 </div>
                             </div>
@@ -550,12 +598,18 @@ function GroupsView({
                     <h3 className="text-xl font-bold mb-3">{highlight(focus, q)}</h3>
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {arr.map((m) => (
-                            <Link key={m.slug} href={`/members/${m.slug}`} className="card p-4 hover:bg-white/10 transition">
+                            <Link
+                                key={m.slug}
+                                href={`/members/${m.slug}`}
+                                className="card p-4 hover:bg-white/10 transition"
+                            >
                                 <div className="flex items-center gap-3">
                                     <Avatar name={m.name} src={m.avatarUrl} size={36} />
                                     <div>
                                         <div className="font-semibold">{highlight(m.name, q)}</div>
-                                        <div className="text-xs text-white/60 line-clamp-2">{highlight(m.shortBio, q)}</div>
+                                        <div className="text-xs text-white/60 line-clamp-2">
+                                            {highlight(m.shortBio, q)}
+                                        </div>
                                     </div>
                                 </div>
                             </Link>
