@@ -10,7 +10,8 @@
     "migrate:deploy": "prisma migrate deploy",
     "db:seed": "node prisma/seed.js",
     "lint": "echo \"No lint configured for API yet\" && exit 0",
-    "test": "node tests/uploads.service.unit.test.js && node tests/cv.security.test.js"
+    "test": "jest",
+    "test:legacy": "node tests/uploads.service.unit.test.js && node tests/cv.security.test.js"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
@@ -35,7 +36,9 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
     "nodemon": "^3.1.0",
-    "prisma": "^5.20.0"
+    "prisma": "^5.20.0",
+    "supertest": "^7.1.4"
   }
 }
