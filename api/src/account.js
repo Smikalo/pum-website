@@ -5,10 +5,9 @@ const jwt = require("jsonwebtoken");
 const { prisma } = require("./db");
 const slugify = require("slugify");
 const { nanoid } = require("nanoid");
-const path = require("path");
 const fs = require("fs");
 const { ensureMemberAvatar } = require("./imageDefaults");
-const { sendOk, sendCreated, sendUnauthorized, sendBadRequest, sendServerError } = require("./utils/http");
+const { sendOk, sendCreated, asyncHandler } = require("./utils/http");
 const { upsertStringList, abs, CV_DIR } = require("./utils/shared");
 const {
     avatarUploadMiddleware,
@@ -18,19 +17,20 @@ const {
     cvLatestPath,
     cvLatestUrl
 } = require("./services/uploads.service");
+const { UnauthorizedError, BadRequestError } = require("./errors");
 
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
 
 function authRequired(req, res, next) {
     const auth = req.get("authorization") || "";
     const m = auth.match(/^Bearer (.+)$/i);
-    if (!m) return sendUnauthorized(res, "Missing access token");
+    if (!m) return next(new UnauthorizedError("Missing access token"));
     try {
         const decoded = jwt.verify(m[1], JWT_ACCESS_SECRET, { algorithms: ["HS256"] });
         req.userId = decoded.sub;
         next();
     } catch {
-        return sendUnauthorized(res, "Invalid access token");
+        return next(new UnauthorizedError("Invalid access token"));
     }
 }
 
@@ -58,9 +58,9 @@ function presentMember(m, skills = [], techs = [], req) {
 const router = express.Router();
 router.use(authRequired);
 
-router.get("/profile", async (req, res) => {
+router.get("/profile", asyncHandler(async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
-    if (!user) return sendUnauthorized(res, "Unknown user");
+    if (!user) throw new UnauthorizedError("Unknown user");
     const member = user.member || (await ensureMemberForUser(user));
     const [skills, techs] = await Promise.all([
         prisma.memberSkill.findMany({ where: { memberId: member.id }, include: { skill: true } }),
@@ -69,9 +69,9 @@ router.get("/profile", async (req, res) => {
     const cvPath = cvLatestPath(req.userId);
     const cvUrl = fs.existsSync(cvPath) ? abs(cvLatestUrl(req.userId), req) : null;
     sendOk(res, { ok: true, profile: { ...presentMember(member, skills.map((s) => s.skill.name), techs.map((t) => t.tech.name), req), cvUrl } });
-});
+}));
 
-router.put("/profile", async (req, res) => {
+router.put("/profile", asyncHandler(async (req, res) => {
     const schema = z.object({
         name: z.string().min(1).max(120).optional(),
         headline: z.string().max(200).nullable().optional(),
@@ -83,10 +83,10 @@ router.put("/profile", async (req, res) => {
         techStack: z.array(z.string().min(1)).optional(),
     });
     const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return sendBadRequest(res, "Invalid input");
+    if (!parsed.success) throw new BadRequestError("Invalid input");
 
     const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
-    if (!user) return sendUnauthorized(res, "Unknown user");
+    if (!user) throw new UnauthorizedError("Unknown user");
     const member = user.member || (await ensureMemberForUser(user));
 
     const data = {};
@@ -123,28 +123,28 @@ router.put("/profile", async (req, res) => {
     const cvPath = cvLatestPath(req.userId);
     const cvUrl = fs.existsSync(cvPath) ? abs(cvLatestUrl(req.userId), req) : null;
     sendOk(res, { ok: true, profile: { ...presentMember(updated, skillsOut.map((s) => s.skill.name), techsOut.map((t) => t.tech.name), req), cvUrl } });
-});
+}));
 
-router.post("/avatar", avatarUploadMiddleware.single("avatar"), async (req, res) => {
+router.post("/avatar", avatarUploadMiddleware.single("avatar"), asyncHandler(async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
     if (!user || !user.memberId) {
         try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
-        return sendUnauthorized(res, "Unknown user");
+        throw new UnauthorizedError("Unknown user");
     }
 
     try {
         const result = await processAvatarUpload({ userId: req.userId, memberId: user.memberId, file: req.file });
         sendCreated(res, { ok: true, url: abs(result.url, req) });
     } catch (e) {
-        sendBadRequest(res, e.message);
+        throw new BadRequestError(e.message);
     }
-});
+}));
 
-router.post("/cv", cvUploadMiddleware.single("cv"), async (req, res) => {
+router.post("/cv", cvUploadMiddleware.single("cv"), asyncHandler(async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
     if (!user || !user.memberId) {
         try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
-        return sendUnauthorized(res, "Unknown user");
+        throw new UnauthorizedError("Unknown user");
     }
 
     // Ensure a member record exists
@@ -154,9 +154,9 @@ router.post("/cv", cvUploadMiddleware.single("cv"), async (req, res) => {
         const result = await processCvUpload({ userId: req.userId, memberId: member.id, file: req.file });
         sendCreated(res, { ok: true, url: abs(result.url, req), extractedSkills: result.extractedSkills, extractedTech: result.extractedTech });
     } catch (e) {
-        if (e.message === "Invalid PDF file") return sendBadRequest(res, "Invalid PDF file");
-        sendServerError(res, "CV upload failed");
+        if (e.message === "Invalid PDF file") throw new BadRequestError("Invalid PDF file");
+        throw e; // let global handler wrap it
     }
-});
+}));
 
 module.exports = { accountRouter: router };

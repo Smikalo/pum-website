@@ -1,7 +1,7 @@
 // api/src/middleware/auth.js
 const jwt = require("jsonwebtoken");
 const { prisma } = require("../db");
-const { sendUnauthorized, sendForbidden } = require("../utils/http");
+const { UnauthorizedError, ForbiddenError } = require("../errors");
 
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
 
@@ -13,7 +13,7 @@ async function requireAuth(req, res, next) {
     const auth = req.get("authorization") || "";
     const m = auth.match(/^Bearer (.+)$/i);
     if (!m) {
-        return sendUnauthorized(res, "Missing access token");
+        return next(new UnauthorizedError("Missing access token"));
     }
 
     try {
@@ -26,29 +26,28 @@ async function requireAuth(req, res, next) {
         });
 
         if (!user) {
-            return sendUnauthorized(res, "Unknown user");
+            return next(new UnauthorizedError("Unknown user"));
         }
 
         req.user = user;
         next();
     } catch (err) {
-        return sendUnauthorized(res, "Invalid access token");
+        return next(new UnauthorizedError("Invalid access token"));
     }
 }
 
 /**
  * Middleware to check if user has at least MEMBER role (or ADMIN/MODERATOR).
- * Equivalent to checking if roles includes 'MEMBER', 'ADMIN', or 'MODERATOR'.
  */
 function requireMember(req, res, next) {
-    if (!req.user) return sendUnauthorized(res);
+    if (!req.user) return next(new UnauthorizedError());
     const roles = (req.user.roles || []).map((r) => r.role);
     const hasMemberRole = roles.some((r) =>
         ["ADMIN", "MODERATOR", "MEMBER"].includes(r)
     );
 
     if (!hasMemberRole) {
-        return sendForbidden(res, "Insufficient permissions");
+        return next(new ForbiddenError("Insufficient permissions"));
     }
     next();
 }
@@ -58,7 +57,7 @@ function requireMember(req, res, next) {
  * Assumes requireAuth has already run.
  */
 function requireAdminOrModerator(req, res, next) {
-    if (!req.user) return sendUnauthorized(res);
+    if (!req.user) return next(new UnauthorizedError());
 
     const roles = (req.user.roles || []).map((r) => r.role);
     const isAdminOrModerator = roles.some((r) =>
@@ -66,7 +65,7 @@ function requireAdminOrModerator(req, res, next) {
     );
 
     if (!isAdminOrModerator) {
-        return sendForbidden(res, "Insufficient permissions");
+        return next(new ForbiddenError("Insufficient permissions"));
     }
     next();
 }
@@ -79,7 +78,7 @@ function requireAdminOrModerator(req, res, next) {
  */
 function requireAdminOrModeratorOrCreator(isCreatorFn) {
     return async (req, res, next) => {
-        if (!req.user) return sendUnauthorized(res);
+        if (!req.user) return next(new UnauthorizedError());
 
         const roles = (req.user.roles || []).map((r) => r.role);
         const isAdminOrModerator = roles.some((r) =>
@@ -103,7 +102,7 @@ function requireAdminOrModeratorOrCreator(isCreatorFn) {
             return next();
         }
 
-        return sendForbidden(res, "Insufficient permissions");
+        return next(new ForbiddenError("Insufficient permissions"));
     };
 }
 

@@ -73,6 +73,13 @@ function sendServerError(res, error = "Server error") {
     return res.status(500).json({ ok: false, error });
 }
 
+/**
+ * Wraps async route handlers to catch errors and pass them to Express error middleware.
+ */
+const asyncHandler = (fn) => (req, res, next) => {
+    return Promise.resolve(fn(req, res, next)).catch(next);
+};
+
 module.exports = {
     sendOk,
     sendCreated,
@@ -84,4 +91,5 @@ module.exports = {
     sendForbidden,
     sendNotFound,
     sendServerError,
+    asyncHandler,
 };

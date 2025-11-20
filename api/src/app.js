@@ -20,14 +20,13 @@ const marketingRouter = require("./routes/marketing");
 
 const {
     sendOk,
-    sendBadRequest,
-    sendServerError,
 } = require("./utils/http");
 const {
     upsertStringList,
     UPLOAD_ROOT,
     WEB_ORIGIN
 } = require("./utils/shared");
+const { AppError } = require("./errors");
 
 const app = express();
 
@@ -105,6 +104,8 @@ app.use("/api", marketingRouter);
 
 /* ------------------------------ Error handler ------------------------------ */
 app.use((err, req, res, _next) => {
+    if (res.headersSent) return;
+
     if (err instanceof multer.MulterError) {
         let error = "Upload error";
         if (err.code === "LIMIT_FILE_SIZE") {
@@ -112,25 +113,42 @@ app.use((err, req, res, _next) => {
         } else if (err.code === "LIMIT_UNEXPECTED_FILE") {
             error = "Unsupported file type";
         }
+        return res.status(400).json({ ok: false, error });
+    }
 
-        if (!res.headersSent) {
-            return sendBadRequest(res, error);
+    if (err instanceof AppError) {
+        const status = err.statusCode || 500;
+        const payload = {
+            ok: false,
+            error: err.message,
+        };
+        if (err.details !== undefined) {
+            payload.details = err.details;
         }
-        return;
+        return res.status(status).json(payload);
     }
 
     const message = err?.message || "Server error";
-    if (res.headersSent) return;
 
+    // Fallback for validation errors not yet typed
     if (
         message.includes("Invalid input") ||
         message.includes("validation") ||
         message.includes("ZodError")
     ) {
-        return sendBadRequest(res, message);
+        return res.status(400).json({ ok: false, error: message });
     }
 
-    sendServerError(res, message);
+    // Internal server error fallback
+    const status = 500;
+    const msg = process.env.NODE_ENV === 'production'
+        ? 'Internal server error'
+        : message;
+
+    // Log error server-side
+    console.error(err);
+
+    return res.status(status).json({ ok: false, error: msg });
 });
 
 module.exports = app;

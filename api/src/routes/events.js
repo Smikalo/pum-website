@@ -5,17 +5,12 @@ const { prisma } = require("../db");
 const {
     sendOk,
     sendCreated,
-    sendJson,
-    sendBadRequest,
-    sendForbidden,
-    sendNotFound,
-    sendServerError,
+    asyncHandler
 } = require("../utils/http");
 const { getPaginationParams, toPagedResponse } = require("../utils/lists");
 const {
     requireAuth,
     requireAdminOrModeratorOrCreator,
-    requireAdminOrModerator
 } = require("../middleware/auth");
 const {
     abs,
@@ -25,6 +20,11 @@ const {
     MAIL_FROM,
     WEB_ORIGIN
 } = require("../utils/shared");
+const {
+    NotFoundError,
+    BadRequestError,
+    ForbiddenError
+} = require("../errors");
 
 const router = express.Router();
 
@@ -67,7 +67,7 @@ async function uniqueEventSlug(base) {
     return slug;
 }
 
-router.get("/", async (req, res) => {
+router.get("/", asyncHandler(async (req, res) => {
     const { page, size } = getPaginationParams(req.query);
     const q = (req.query.q || "").toString().trim();
 
@@ -140,9 +140,9 @@ router.get("/", async (req, res) => {
     });
 
     sendOk(res, toPagedResponse(items, total, page, size));
-});
+}));
 
-router.get("/:slug", async (req, res) => {
+router.get("/:slug", asyncHandler(async (req, res) => {
     const e = await prisma.event.findUnique({
         where: { slug: req.params.slug },
         include: {
@@ -160,7 +160,7 @@ router.get("/:slug", async (req, res) => {
             },
         },
     });
-    if (!e) return sendJson(res, 404, { error: "Not found" });
+    if (!e) throw new NotFoundError("Not found");
 
     const photos = Array.isArray(e.photos) ? e.photos : [];
     const cover = e.cover || e.imageUrl || (photos.length ? photos[0] : null);
@@ -228,14 +228,14 @@ router.get("/:slug", async (req, res) => {
         projects,
         blogs,
     });
-});
+}));
 
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requireAuth, asyncHandler(async (req, res) => {
     const user = req.user;
     const roles = (user.roles || []).map((r) => r.role);
     const hasMemberRole = roles.some((r) => ["ADMIN", "MODERATOR", "MEMBER"].includes(r));
     if (!hasMemberRole) {
-        return sendForbidden(res, "Insufficient permissions");
+        throw new ForbiddenError("Insufficient permissions");
     }
 
     const parsed = eventCreateSchema.safeParse({
@@ -244,7 +244,7 @@ router.post("/", requireAuth, async (req, res) => {
         lng: typeof req.body?.lng === "string" ? Number(req.body.lng) : req.body?.lng,
     });
     if (!parsed.success) {
-        return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+        throw new BadRequestError("Invalid input", parsed.error.flatten());
     }
 
     const d = parsed.data;
@@ -412,7 +412,7 @@ This invite was sent from ${MAIL_FROM}.
     }
 
     sendCreated(res, { ok: true, slug: event.slug, id: event.id });
-});
+}));
 
 router.put("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) => {
     const user = req.user;
@@ -430,7 +430,7 @@ router.put("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) =
         if (isCreatorOrAttendee) return true;
     }
     return false;
-}), async (req, res) => {
+}), asyncHandler(async (req, res) => {
     const user = req.user;
     let event = req.event;
     if (!event) {
@@ -454,14 +454,14 @@ router.put("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) =
         });
     }
 
-    if (!event) return sendNotFound(res);
+    if (!event) throw new NotFoundError("Not found");
 
     const parsed = eventCreateSchema.safeParse({
         ...req.body,
         lat: typeof req.body?.lat === "string" ? Number(req.body.lat) : req.body?.lat,
         lng: typeof req.body?.lng === "string" ? Number(req.body.lng) : req.body?.lng,
     });
-    if (!parsed.success) return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+    if (!parsed.success) throw new BadRequestError("Invalid input", parsed.error.flatten());
 
     const d = parsed.data;
 
@@ -636,7 +636,7 @@ This invite was sent from ${MAIL_FROM}.
     }
 
     sendOk(res, { ok: true, slug: updated.slug, id: updated.id });
-});
+}));
 
 router.delete("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) => {
     const user = req.user;
@@ -656,31 +656,27 @@ router.delete("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req
         );
     }
     return false;
-}), async (req, res) => {
+}), asyncHandler(async (req, res) => {
     const event = req.event || await prisma.event.findUnique({ where: { slug: req.params.slug } });
 
-    if (!event) return sendNotFound(res);
+    if (!event) throw new NotFoundError("Not found");
 
     const parsed = deleteBySlugSchema.safeParse(req.body || {});
-    if (!parsed.success) return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+    if (!parsed.success) throw new BadRequestError("Invalid input", parsed.error.flatten());
 
     const { confirmSlug } = parsed.data;
-    if (confirmSlug !== event.slug) return sendBadRequest(res, "Slug confirmation does not match");
+    if (confirmSlug !== event.slug) throw new BadRequestError("Slug confirmation does not match");
 
-    try {
-        await prisma.$transaction(async (tx) => {
-            await tx.project.updateMany({ where: { eventId: event.id }, data: { eventId: null } });
-            await tx.eventProject.deleteMany({ where: { eventId: event.id } });
-            await tx.eventBlog.deleteMany({ where: { eventId: event.id } });
-            await tx.memberEvent.deleteMany({ where: { eventId: event.id } });
-            await tx.eventInvite.deleteMany({ where: { eventId: event.id } });
-            await tx.event.delete({ where: { id: event.id } });
-        });
+    await prisma.$transaction(async (tx) => {
+        await tx.project.updateMany({ where: { eventId: event.id }, data: { eventId: null } });
+        await tx.eventProject.deleteMany({ where: { eventId: event.id } });
+        await tx.eventBlog.deleteMany({ where: { eventId: event.id } });
+        await tx.memberEvent.deleteMany({ where: { eventId: event.id } });
+        await tx.eventInvite.deleteMany({ where: { eventId: event.id } });
+        await tx.event.delete({ where: { id: event.id } });
+    });
 
-        sendOk(res, { ok: true });
-    } catch (err) {
-        sendServerError(res, "Failed to delete event");
-    }
-});
+    sendOk(res, { ok: true });
+}));
 
 module.exports = router;

@@ -5,11 +5,7 @@ const { prisma } = require("../db");
 const {
     sendOk,
     sendCreated,
-    sendJson,
-    sendBadRequest,
-    sendForbidden,
-    sendNotFound,
-    sendServerError,
+    asyncHandler
 } = require("../utils/http");
 const { getPaginationParams, toPagedResponse } = require("../utils/lists");
 const {
@@ -26,6 +22,10 @@ const {
     MAIL_FROM,
     WEB_ORIGIN
 } = require("../utils/shared");
+const {
+    NotFoundError,
+    BadRequestError
+} = require("../errors");
 
 const router = express.Router();
 
@@ -43,7 +43,7 @@ const createProjectSchema = z.object({
     demoUrl: z.string().url().optional().nullable(),
     repoUrl: z.string().url().optional().nullable(),
     photos: z.array(z.string().url()).max(20).optional(),
-    techStack: z.array(z.string().min(1).max(40)).max(50).optional(),
+    techStack: z.array(z.string().min(1).max(4)).max(50).optional(),
     tags: z.array(z.string().min(1).max(40)).max(50).optional(),
     members: z.array(z.any()).optional(),
     blogSlugs: z.array(z.string().min(1)).max(200).optional(),
@@ -67,7 +67,7 @@ async function uniqueProjectSlug(base) {
     return slug;
 }
 
-router.get("/", async (req, res) => {
+router.get("/", asyncHandler(async (req, res) => {
     const { page, size } = getPaginationParams(req.query);
 
     const q = (req.query.q || "").toString().trim();
@@ -140,9 +140,9 @@ router.get("/", async (req, res) => {
     }));
 
     sendOk(res, toPagedResponse(items, total, page, size));
-});
+}));
 
-router.get("/:slug", async (req, res) => {
+router.get("/:slug", asyncHandler(async (req, res) => {
     const p = await prisma.project.findUnique({
         where: { slug: req.params.slug },
         include: {
@@ -178,7 +178,7 @@ router.get("/:slug", async (req, res) => {
             invites: true,
         },
     });
-    if (!p) return sendJson(res, 404, { error: "Not found" });
+    if (!p) throw new NotFoundError("Not found");
 
     const eventsMap = new Map();
     if (p.event) {
@@ -259,16 +259,16 @@ router.get("/:slug", async (req, res) => {
         blogPosts,
         invites,
     });
-});
+}));
 
-router.post("/", requireAuth, requireMember, async (req, res) => {
+router.post("/", requireAuth, requireMember, asyncHandler(async (req, res) => {
     const user = req.user;
     const parsed = createProjectSchema.safeParse({
         ...req.body,
         year: typeof req.body?.year === "string" ? Number(req.body.year) : req.body?.year,
     });
     if (!parsed.success) {
-        return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+        throw new BadRequestError("Invalid input", parsed.error.flatten());
     }
 
     const d = parsed.data;
@@ -503,7 +503,7 @@ This invite was sent from ${MAIL_FROM}.
     }
 
     sendCreated(res, { ok: true, slug: project.slug, id: project.id });
-});
+}));
 
 router.put("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) => {
     const user = req.user;
@@ -519,7 +519,7 @@ router.put("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) =
         return !!mp;
     }
     return false;
-}), async (req, res) => {
+}), asyncHandler(async (req, res) => {
     const user = req.user;
     let project = req.project;
     if (!project) {
@@ -535,7 +535,7 @@ router.put("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) =
     }
 
     if (!project) {
-        return sendNotFound(res);
+        throw new NotFoundError("Not found");
     }
 
     const parsed = createProjectSchema.safeParse({
@@ -543,7 +543,7 @@ router.put("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) =
         year: typeof req.body?.year === "string" ? Number(req.body.year) : req.body?.year,
     });
     if (!parsed.success) {
-        return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+        throw new BadRequestError("Invalid input", parsed.error.flatten());
     }
 
     const d = parsed.data;
@@ -784,7 +784,7 @@ This invite was sent from ${MAIL_FROM}.
     }
 
     sendOk(res, { ok: true, slug: updated.slug, id: updated.id });
-});
+}));
 
 router.delete("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) => {
     const user = req.user;
@@ -799,35 +799,31 @@ router.delete("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req
         return (project.members || []).some(m => m.memberId === user.member.id && !!m.isCreator);
     }
     return false;
-}), async (req, res) => {
+}), asyncHandler(async (req, res) => {
     let project = req.project;
     if (!project) {
         project = await prisma.project.findUnique({ where: { slug: req.params.slug } });
     }
 
-    if (!project) return sendNotFound(res);
+    if (!project) throw new NotFoundError("Not found");
 
     const parsed = deleteBySlugSchema.safeParse(req.body || {});
-    if (!parsed.success) return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+    if (!parsed.success) throw new BadRequestError("Invalid input", parsed.error.flatten());
 
     const { confirmSlug } = parsed.data;
-    if (confirmSlug !== project.slug) return sendBadRequest(res, "Slug confirmation does not match");
+    if (confirmSlug !== project.slug) throw new BadRequestError("Slug confirmation does not match");
 
-    try {
-        await prisma.$transaction(async (tx) => {
-            await tx.projectTech.deleteMany({ where: { projectId: project.id } });
-            await tx.projectTag.deleteMany({ where: { projectId: project.id } });
-            await tx.projectBlog.deleteMany({ where: { projectId: project.id } });
-            await tx.eventProject.deleteMany({ where: { projectId: project.id } });
-            await tx.memberProject.deleteMany({ where: { projectId: project.id } });
-            await tx.projectInvite.deleteMany({ where: { projectId: project.id } });
-            await tx.project.delete({ where: { id: project.id } });
-        });
+    await prisma.$transaction(async (tx) => {
+        await tx.projectTech.deleteMany({ where: { projectId: project.id } });
+        await tx.projectTag.deleteMany({ where: { projectId: project.id } });
+        await tx.projectBlog.deleteMany({ where: { projectId: project.id } });
+        await tx.eventProject.deleteMany({ where: { projectId: project.id } });
+        await tx.memberProject.deleteMany({ where: { projectId: project.id } });
+        await tx.projectInvite.deleteMany({ where: { projectId: project.id } });
+        await tx.project.delete({ where: { id: project.id } });
+    });
 
-        sendOk(res, { ok: true });
-    } catch (err) {
-        sendServerError(res, "Failed to delete project");
-    }
-});
+    sendOk(res, { ok: true });
+}));
 
 module.exports = router;

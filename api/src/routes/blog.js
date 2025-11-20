@@ -5,11 +5,7 @@ const { prisma } = require("../db");
 const {
     sendOk,
     sendCreated,
-    sendJson,
-    sendBadRequest,
-    sendForbidden,
-    sendNotFound,
-    sendServerError,
+    asyncHandler
 } = require("../utils/http");
 const { getPaginationParams, toPagedResponse } = require("../utils/lists");
 const {
@@ -26,6 +22,10 @@ const {
     MAIL_FROM,
     WEB_ORIGIN
 } = require("../utils/shared");
+const {
+    NotFoundError,
+    BadRequestError
+} = require("../errors");
 
 const router = express.Router();
 
@@ -58,7 +58,7 @@ async function uniqueBlogSlug(base) {
     return slug;
 }
 
-router.get("/", async (req, res) => {
+router.get("/", asyncHandler(async (req, res) => {
     const { page, size } = getPaginationParams(req.query);
     const q = (req.query.q || "").toString().trim();
     const techCsv = (req.query.tech || "").toString();
@@ -130,9 +130,9 @@ router.get("/", async (req, res) => {
     }));
 
     sendOk(res, toPagedResponse(items, total, page, size));
-});
+}));
 
-router.get("/:slug", async (req, res) => {
+router.get("/:slug", asyncHandler(async (req, res) => {
     const b = await prisma.blog.findUnique({
         where: { slug: req.params.slug },
         include: {
@@ -149,7 +149,7 @@ router.get("/:slug", async (req, res) => {
             events: { include: { event: { select: { slug: true } } } },
         },
     });
-    if (!b) return sendJson(res, 404, { error: "Not found" });
+    if (!b) throw new NotFoundError("Not found");
 
     const images = Array.isArray(b.images) ? b.images : [];
     const cover = b.cover || b.imageUrl || (images.length ? images[0] : null);
@@ -176,12 +176,12 @@ router.get("/:slug", async (req, res) => {
         projectSlugs: Array.isArray(b.projects) ? b.projects.map((pb) => pb.project).filter(Boolean).map((p) => p.slug) : [],
         eventSlugs: Array.isArray(b.events) ? b.events.map((eb) => eb.event).filter(Boolean).map((e) => e.slug) : [],
     });
-});
+}));
 
-router.post("/", requireAuth, requireMember, async (req, res) => {
+router.post("/", requireAuth, requireMember, asyncHandler(async (req, res) => {
     const user = req.user;
     const parsed = blogCreateSchema.safeParse(req.body || {});
-    if (!parsed.success) return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+    if (!parsed.success) throw new BadRequestError("Invalid input", parsed.error.flatten());
 
     const d = parsed.data;
     const slug = await uniqueBlogSlug(d.title);
@@ -317,7 +317,7 @@ router.post("/", requireAuth, requireMember, async (req, res) => {
     }
 
     sendCreated(res, { ok: true, slug: blog.slug, id: blog.id });
-});
+}));
 
 router.put("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) => {
     const user = req.user;
@@ -335,15 +335,15 @@ router.put("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) =
 
     if (hasAnyAuthor) return isAuthor;
     return false;
-}), async (req, res) => {
+}), asyncHandler(async (req, res) => {
     const blog = req.blog || await prisma.blog.findUnique({
         where: { slug: req.params.slug },
         include: { authors: { include: { member: { select: { id: true, slug: true } } } } },
     });
-    if (!blog) return sendNotFound(res);
+    if (!blog) throw new NotFoundError("Not found");
 
     const parsed = blogCreateSchema.safeParse(req.body || {});
-    if (!parsed.success) return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+    if (!parsed.success) throw new BadRequestError("Invalid input", parsed.error.flatten());
 
     const d = parsed.data;
     const hasTechStack = Object.prototype.hasOwnProperty.call(req.body || {}, "techStack");
@@ -467,7 +467,7 @@ router.put("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) =
     }
 
     sendOk(res, { ok: true, slug: updated.slug, id: updated.id });
-});
+}));
 
 router.delete("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req) => {
     const user = req.user;
@@ -482,30 +482,26 @@ router.delete("/:slug", requireAuth, requireAdminOrModeratorOrCreator(async (req
         return (blog.authors || []).some(a => a.memberId === user.member.id && typeof a.role === "string" && a.role === "CREATOR");
     }
     return false;
-}), async (req, res) => {
+}), asyncHandler(async (req, res) => {
     const blog = req.blog || await prisma.blog.findUnique({ where: { slug: req.params.slug } });
-    if (!blog) return sendNotFound(res);
+    if (!blog) throw new NotFoundError("Not found");
 
     const parsed = deleteBySlugSchema.safeParse(req.body || {});
-    if (!parsed.success) return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+    if (!parsed.success) throw new BadRequestError("Invalid input", parsed.error.flatten());
 
     const { confirmSlug } = parsed.data;
-    if (confirmSlug !== blog.slug) return sendBadRequest(res, "Slug confirmation does not match");
+    if (confirmSlug !== blog.slug) throw new BadRequestError("Slug confirmation does not match");
 
-    try {
-        await prisma.$transaction(async (tx) => {
-            await tx.blogTech.deleteMany({ where: { blogId: blog.id } });
-            await tx.blogTag.deleteMany({ where: { blogId: blog.id } });
-            await tx.blogAuthor.deleteMany({ where: { blogId: blog.id } });
-            await tx.projectBlog.deleteMany({ where: { blogId: blog.id } });
-            await tx.eventBlog.deleteMany({ where: { blogId: blog.id } });
-            await tx.blog.delete({ where: { id: blog.id } });
-        });
+    await prisma.$transaction(async (tx) => {
+        await tx.blogTech.deleteMany({ where: { blogId: blog.id } });
+        await tx.blogTag.deleteMany({ where: { blogId: blog.id } });
+        await tx.blogAuthor.deleteMany({ where: { blogId: blog.id } });
+        await tx.projectBlog.deleteMany({ where: { blogId: blog.id } });
+        await tx.eventBlog.deleteMany({ where: { blogId: blog.id } });
+        await tx.blog.delete({ where: { id: blog.id } });
+    });
 
-        sendOk(res, { ok: true });
-    } catch (err) {
-        sendServerError(res, "Failed to delete blog");
-    }
-});
+    sendOk(res, { ok: true });
+}));
 
 module.exports = router;

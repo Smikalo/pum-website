@@ -7,11 +7,7 @@ const { prisma } = require("../db");
 const {
     sendOk,
     sendCreated,
-    sendJson,
-    sendBadRequest,
-    sendForbidden,
-    sendNotFound,
-    sendServerError,
+    asyncHandler
 } = require("../utils/http");
 const { getPaginationParams, toPagedResponse } = require("../utils/lists");
 const {
@@ -29,6 +25,11 @@ const {
     processCvUpload,
     processAvatarUpload
 } = require("../services/uploads.service");
+const {
+    NotFoundError,
+    BadRequestError,
+    ForbiddenError
+} = require("../errors");
 
 const router = express.Router();
 
@@ -56,7 +57,7 @@ const deleteBySlugSchema = z.object({
     confirmSlug: z.string().min(1),
 });
 
-router.get("/", async (req, res) => {
+router.get("/", asyncHandler(async (req, res) => {
     const qp = qpSchema.parse(req.query);
     const { page, size } = getPaginationParams(qp);
 
@@ -109,9 +110,9 @@ router.get("/", async (req, res) => {
     }));
 
     sendOk(res, toPagedResponse(items, total, page, size));
-});
+}));
 
-router.get("/:slug", async (req, res) => {
+router.get("/:slug", asyncHandler(async (req, res) => {
     const include = {
         skills: { include: { skill: true } },
         techs: { include: { tech: true } },
@@ -144,7 +145,7 @@ router.get("/:slug", async (req, res) => {
     }
 
     if (!m) {
-        return sendJson(res, 404, { error: "Not found" });
+        throw new NotFoundError("Not found");
     }
 
     let cvUrl = null;
@@ -214,9 +215,9 @@ router.get("/:slug", async (req, res) => {
         isAdminMember,
         cvUrl,
     });
-});
+}));
 
-router.put("/:slug", requireAuth, requireAdminOrModerator, async (req, res) => {
+router.put("/:slug", requireAuth, requireAdminOrModerator, asyncHandler(async (req, res) => {
     const roles = (req.user.roles || []).map((r) => r.role);
     const isAdmin = roles.includes("ADMIN");
 
@@ -225,7 +226,7 @@ router.put("/:slug", requireAuth, requireAdminOrModerator, async (req, res) => {
     });
 
     if (!member) {
-        return sendNotFound(res);
+        throw new NotFoundError("Not found");
     }
 
     const usersForMember = await prisma.user.findMany({
@@ -238,18 +239,18 @@ router.put("/:slug", requireAuth, requireAdminOrModerator, async (req, res) => {
     );
 
     if (isAdminMember) {
-        return sendForbidden(res, "Cannot edit admin member from this page");
+        throw new ForbiddenError("Cannot edit admin member from this page");
     }
 
     const parsed = memberProfileUpdateSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+        throw new BadRequestError("Invalid input", parsed.error.flatten());
     }
 
     const bodyHasAccessRole = Object.prototype.hasOwnProperty.call(req.body || {}, "accessRole");
 
     if (bodyHasAccessRole && !isAdmin) {
-        return sendForbidden(res, "Only admins can change member access role");
+        throw new ForbiddenError("Only admins can change member access role");
     }
 
     const d = parsed.data;
@@ -265,145 +266,141 @@ router.put("/:slug", requireAuth, requireAdminOrModerator, async (req, res) => {
     const skills = d.skills || null;
     const techStack = d.techStack || null;
 
-    try {
-        await prisma.$transaction(async (tx) => {
-            if (Object.keys(data).length) {
-                await tx.member.update({
-                    where: { id: member.id },
-                    data,
+    await prisma.$transaction(async (tx) => {
+        if (Object.keys(data).length) {
+            await tx.member.update({
+                where: { id: member.id },
+                data,
+            });
+        }
+
+        if (skills) {
+            const ids = await upsertStringList(skills, "skill");
+            await tx.memberSkill.deleteMany({
+                where: { memberId: member.id, NOT: { skillId: { in: ids } } },
+            });
+            for (const sid of ids) {
+                await tx.memberSkill.upsert({
+                    where: { memberId_skillId: { memberId: member.id, skillId: sid } },
+                    update: {},
+                    create: { memberId: member.id, skillId: sid },
                 });
-            }
-
-            if (skills) {
-                const ids = await upsertStringList(skills, "skill");
-                await tx.memberSkill.deleteMany({
-                    where: { memberId: member.id, NOT: { skillId: { in: ids } } },
-                });
-                for (const sid of ids) {
-                    await tx.memberSkill.upsert({
-                        where: { memberId_skillId: { memberId: member.id, skillId: sid } },
-                        update: {},
-                        create: { memberId: member.id, skillId: sid },
-                    });
-                }
-            }
-
-            if (techStack) {
-                const ids = await upsertStringList(techStack, "tech");
-                await tx.memberTech.deleteMany({
-                    where: { memberId: member.id, NOT: { techId: { in: ids } } },
-                });
-                for (const tid of ids) {
-                    await tx.memberTech.upsert({
-                        where: { memberId_techId: { memberId: member.id, techId: tid } },
-                        update: {},
-                        create: { memberId: member.id, techId: tid },
-                    });
-                }
-            }
-
-            if (bodyHasAccessRole && accessRole && usersForMember.length) {
-                const userIds = usersForMember.map((u) => u.id);
-
-                await tx.userRole.deleteMany({
-                    where: { userId: { in: userIds }, role: { in: ["MEMBER", "MODERATOR"] } },
-                });
-
-                await tx.userRole.createMany({
-                    data: userIds.map((uid) => ({ userId: uid, role: accessRole })),
-                    skipDuplicates: true,
-                });
-            }
-        });
-
-        const updated = await prisma.member.findUnique({
-            where: { id: member.id },
-            include: {
-                skills: { include: { skill: true } },
-                techs: { include: { tech: true } },
-                projects: { include: { project: true } },
-                events: { include: { event: true } },
-            },
-        });
-
-        const refreshedUsers = await prisma.user.findMany({
-            where: { memberId: member.id },
-            include: { roles: true },
-        });
-
-        const roleSet = new Set();
-        let cvUrl = null;
-
-        for (const u of refreshedUsers) {
-            for (const r of u.roles || []) {
-                if (r.role) roleSet.add(r.role);
-            }
-            if (!cvUrl) {
-                const p = path.join(CV_DIR, `${u.id}-latest.pdf`);
-                if (fs.existsSync(p)) {
-                    cvUrl = abs(`/uploads/cv/${u.id}-latest.pdf`, req);
-                }
             }
         }
 
-        const userRoles = Array.from(roleSet);
-        const isAdminMemberAfter = userRoles.includes("ADMIN");
+        if (techStack) {
+            const ids = await upsertStringList(techStack, "tech");
+            await tx.memberTech.deleteMany({
+                where: { memberId: member.id, NOT: { techId: { in: ids } } },
+            });
+            for (const tid of ids) {
+                await tx.memberTech.upsert({
+                    where: { memberId_techId: { memberId: member.id, techId: tid } },
+                    update: {},
+                    create: { memberId: member.id, techId: tid },
+                });
+            }
+        }
 
-        sendOk(res, {
-            ok: true,
-            member: {
-                id: updated.id,
-                slug: updated.slug,
-                name: updated.name,
-                avatar: abs(updated.avatar || updated.avatarUrl || null, req),
-                avatarUrl: abs(updated.avatarUrl || updated.avatar || null, req),
-                headline: updated.headline,
-                shortBio: updated.shortBio,
-                bio: updated.bio || updated.longBio,
-                markdown: updated.bio || updated.longBio || "",
-                location: updated.location,
-                links: updated.links || {},
-                photos: updated.photos || [],
-                skills: updated.skills.map((x) => x.skill.name),
-                techStack: updated.techs.map((x) => x.tech.name),
-                focusArea: updated.focusArea || null,
-                projects: updated.projects.map((r) => ({
-                    id: r.project.id,
-                    slug: r.project.slug,
-                    title: r.project.title,
-                    role: r.role,
-                    contribution: r.contribution,
-                    cover: abs(r.project.cover || r.project.imageUrl || null, req),
-                    year: r.project.year,
-                    tech: [],
-                    techStack: [],
-                    summary: r.project.summary || null,
-                })),
-                events: updated.events.map((r) => ({
-                    id: r.event.id,
-                    slug: r.event.slug,
-                    name: r.event.name,
-                    role: r.role || null,
-                    dateStart: r.event.dateStart,
-                    dateEnd: r.event.dateEnd,
-                })),
-                userRoles,
-                isAdminMember: isAdminMemberAfter,
-                cvUrl,
-            },
-        });
-    } catch (err) {
-        sendServerError(res, "Failed to update member");
+        if (bodyHasAccessRole && accessRole && usersForMember.length) {
+            const userIds = usersForMember.map((u) => u.id);
+
+            await tx.userRole.deleteMany({
+                where: { userId: { in: userIds }, role: { in: ["MEMBER", "MODERATOR"] } },
+            });
+
+            await tx.userRole.createMany({
+                data: userIds.map((uid) => ({ userId: uid, role: accessRole })),
+                skipDuplicates: true,
+            });
+        }
+    });
+
+    const updated = await prisma.member.findUnique({
+        where: { id: member.id },
+        include: {
+            skills: { include: { skill: true } },
+            techs: { include: { tech: true } },
+            projects: { include: { project: true } },
+            events: { include: { event: true } },
+        },
+    });
+
+    const refreshedUsers = await prisma.user.findMany({
+        where: { memberId: member.id },
+        include: { roles: true },
+    });
+
+    const roleSet = new Set();
+    let cvUrl = null;
+
+    for (const u of refreshedUsers) {
+        for (const r of u.roles || []) {
+            if (r.role) roleSet.add(r.role);
+        }
+        if (!cvUrl) {
+            const p = path.join(CV_DIR, `${u.id}-latest.pdf`);
+            if (fs.existsSync(p)) {
+                cvUrl = abs(`/uploads/cv/${u.id}-latest.pdf`, req);
+            }
+        }
     }
-});
 
-router.delete("/:slug", requireAuth, requireAdminOrModerator, async (req, res) => {
+    const userRoles = Array.from(roleSet);
+    const isAdminMemberAfter = userRoles.includes("ADMIN");
+
+    sendOk(res, {
+        ok: true,
+        member: {
+            id: updated.id,
+            slug: updated.slug,
+            name: updated.name,
+            avatar: abs(updated.avatar || updated.avatarUrl || null, req),
+            avatarUrl: abs(updated.avatarUrl || updated.avatar || null, req),
+            headline: updated.headline,
+            shortBio: updated.shortBio,
+            bio: updated.bio || updated.longBio,
+            markdown: updated.bio || updated.longBio || "",
+            location: updated.location,
+            links: updated.links || {},
+            photos: updated.photos || [],
+            skills: updated.skills.map((x) => x.skill.name),
+            techStack: updated.techs.map((x) => x.tech.name),
+            focusArea: updated.focusArea || null,
+            projects: updated.projects.map((r) => ({
+                id: r.project.id,
+                slug: r.project.slug,
+                title: r.project.title,
+                role: r.role,
+                contribution: r.contribution,
+                cover: abs(r.project.cover || r.project.imageUrl || null, req),
+                year: r.project.year,
+                tech: [],
+                techStack: [],
+                summary: r.project.summary || null,
+            })),
+            events: updated.events.map((r) => ({
+                id: r.event.id,
+                slug: r.event.slug,
+                name: r.event.name,
+                role: r.role || null,
+                dateStart: r.event.dateStart,
+                dateEnd: r.event.dateEnd,
+            })),
+            userRoles,
+            isAdminMember: isAdminMemberAfter,
+            cvUrl,
+        },
+    });
+}));
+
+router.delete("/:slug", requireAuth, requireAdminOrModerator, asyncHandler(async (req, res) => {
     const member = await prisma.member.findUnique({
         where: { slug: req.params.slug },
     });
 
     if (!member) {
-        return sendNotFound(res);
+        throw new NotFoundError("Not found");
     }
 
     const usersForMember = await prisma.user.findMany({
@@ -416,34 +413,30 @@ router.delete("/:slug", requireAuth, requireAdminOrModerator, async (req, res) =
     );
 
     if (isAdminMemberDelete) {
-        return sendForbidden(res, "Cannot delete admin member");
+        throw new ForbiddenError("Cannot delete admin member");
     }
 
     const parsed = deleteBySlugSchema.safeParse(req.body || {});
     if (!parsed.success) {
-        return sendBadRequest(res, "Invalid input", parsed.error.flatten());
+        throw new BadRequestError("Invalid input", parsed.error.flatten());
     }
 
     const { confirmSlug } = parsed.data;
     if (confirmSlug !== member.slug) {
-        return sendBadRequest(res, "Slug confirmation does not match");
+        throw new BadRequestError("Slug confirmation does not match");
     }
 
-    try {
-        await prisma.$transaction(async (tx) => {
-            await tx.memberSkill.deleteMany({ where: { memberId: member.id } });
-            await tx.memberTech.deleteMany({ where: { memberId: member.id } });
-            await tx.memberProject.deleteMany({ where: { memberId: member.id } });
-            await tx.memberEvent.deleteMany({ where: { memberId: member.id } });
-            await tx.user.updateMany({ where: { memberId: member.id }, data: { memberId: null } });
-            await tx.member.delete({ where: { id: member.id } });
-        });
+    await prisma.$transaction(async (tx) => {
+        await tx.memberSkill.deleteMany({ where: { memberId: member.id } });
+        await tx.memberTech.deleteMany({ where: { memberId: member.id } });
+        await tx.memberProject.deleteMany({ where: { memberId: member.id } });
+        await tx.memberEvent.deleteMany({ where: { memberId: member.id } });
+        await tx.user.updateMany({ where: { memberId: member.id }, data: { memberId: null } });
+        await tx.member.delete({ where: { id: member.id } });
+    });
 
-        sendOk(res, { ok: true });
-    } catch (err) {
-        sendServerError(res, "Failed to delete member");
-    }
-});
+    sendOk(res, { ok: true });
+}));
 
 // --- CV Upload (Service-backed) ---
 
@@ -451,18 +444,18 @@ router.post(
     "/:slug/cv",
     requireAuth,
     requireAdminOrModerator,
-    async (req, res, next) => {
+    asyncHandler(async (req, res, next) => {
         const member = await prisma.member.findUnique({
             where: { slug: req.params.slug },
         });
         if (!member) {
-            return sendNotFound(res, "Member not found");
+            throw new NotFoundError("Member not found");
         }
         req._member = member;
         next();
-    },
+    }),
     cvUploadMiddleware.single("cv"),
-    async (req, res) => {
+    asyncHandler(async (req, res) => {
         const member = req._member;
         const usersForMember = await prisma.user.findMany({
             where: { memberId: member.id },
@@ -474,12 +467,12 @@ router.post(
         );
         if (isAdminMember) {
             try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
-            return sendForbidden(res, "Cannot modify admin member from this page");
+            throw new ForbiddenError("Cannot modify admin member from this page");
         }
 
         if (!usersForMember.length) {
             try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
-            return sendBadRequest(res, "No user account linked to this member");
+            throw new BadRequestError("No user account linked to this member");
         }
 
         try {
@@ -488,9 +481,9 @@ router.post(
             const result = await processCvUpload({ userId, memberId: member.id, file: req.file });
             sendCreated(res, { ok: true, url: abs(result.url, req) });
         } catch (e) {
-            return sendBadRequest(res, e.message || "CV upload failed");
+            throw new BadRequestError(e.message || "CV upload failed");
         }
-    },
+    }),
 );
 
 // --- Avatar Upload (Service-backed) ---
@@ -499,16 +492,16 @@ router.post(
     "/:slug/avatar",
     requireAuth,
     requireAdminOrModerator,
-    async (req, res, next) => {
+    asyncHandler(async (req, res, next) => {
         const member = await prisma.member.findUnique({
             where: { slug: req.params.slug },
         });
-        if (!member) return sendNotFound(res, "Member not found");
+        if (!member) throw new NotFoundError("Member not found");
         req._member = member;
         next();
-    },
+    }),
     avatarUploadMiddleware.single("avatar"),
-    async (req, res) => {
+    asyncHandler(async (req, res) => {
         const member = req._member;
         const usersForMember = await prisma.user.findMany({
             where: { memberId: member.id },
@@ -520,7 +513,7 @@ router.post(
         );
         if (isAdminMember) {
             try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
-            return sendForbidden(res, "Cannot modify admin member from this page");
+            throw new ForbiddenError("Cannot modify admin member from this page");
         }
 
         const userId = usersForMember[0]?.id || null;
@@ -533,9 +526,9 @@ router.post(
                 relativePath: result.url,
             });
         } catch (e) {
-            return sendBadRequest(res, e.message || "Avatar upload failed");
+            throw new BadRequestError(e.message || "Avatar upload failed");
         }
-    },
+    }),
 );
 
 module.exports = router;
