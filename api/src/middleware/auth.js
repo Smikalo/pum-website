@@ -2,8 +2,7 @@
 const jwt = require("jsonwebtoken");
 const { prisma } = require("../db");
 const { UnauthorizedError, ForbiddenError } = require("../errors");
-
-const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
+const { JWT_ACCESS_SECRET } = require("../config");
 
 /**
  * Authentication middleware.

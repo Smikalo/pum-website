@@ -27,6 +27,7 @@ const {
     WEB_ORIGIN
 } = require("./utils/shared");
 const { AppError } = require("./errors");
+const { NODE_ENV } = require("./config");
 
 const app = express();
 
@@ -141,7 +142,7 @@ app.use((err, req, res, _next) => {
 
     // Internal server error fallback
     const status = 500;
-    const msg = process.env.NODE_ENV === 'production'
+    const msg = NODE_ENV === 'production'
         ? 'Internal server error'
         : message;
 

@@ -12,20 +12,23 @@ const { prisma } = require("./db");
 const { ensureMemberAvatar } = require("./imageDefaults");
 const { sendOk, asyncHandler } = require("./utils/http");
 const { UnauthorizedError, BadRequestError, ForbiddenError } = require("./errors");
+const config = require("./config");
 
 const router = express.Router();
 
 // --- Config ---
-const ACCESS_TTL_SEC = Number(process.env.JWT_ACCESS_TTL_SEC || 15 * 60);
-const REFRESH_TTL_DAYS = Number(process.env.JWT_REFRESH_TTL_DAYS || 30);
-const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
-const REFRESH_COOKIE_NAME = process.env.REFRESH_COOKIE_NAME || "refreshToken";
-const CSRF_COOKIE_NAME = process.env.CSRF_COOKIE_NAME || "XSRF-TOKEN";
-const COOKIE_SECURE = (process.env.COOKIE_SECURE || "true") !== "false";
-const COOKIE_SAMESITE = process.env.COOKIE_SAMESITE || "Lax";
-const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
-const COOKIE_PATH = process.env.COOKIE_PATH || "/api/auth";
-const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || null;
+const {
+    JWT_ACCESS_TTL_SEC: ACCESS_TTL_SEC,
+    JWT_REFRESH_TTL_DAYS: REFRESH_TTL_DAYS,
+    JWT_ACCESS_SECRET,
+    REFRESH_COOKIE_NAME,
+    CSRF_COOKIE_NAME,
+    COOKIE_SECURE,
+    COOKIE_SAMESITE,
+    COOKIE_DOMAIN,
+    COOKIE_PATH,
+    PUBLIC_API_BASE
+} = config;
 
 function abs(u, req) {
     if (!u) return null;

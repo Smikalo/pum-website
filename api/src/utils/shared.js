@@ -4,12 +4,19 @@ const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const { prisma } = require("../db");
+const config = require("../config");
 
 /* ------------------------ Config & Paths ------------------------ */
-const WEB_ORIGIN = process.env.WEB_ORIGIN || "http://localhost:3000";
-const PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || null;
-const MAIL_FROM = process.env.MAIL_FROM || "contact@the-pum.com";
-const NEWSLETTER_SECRET = process.env.NEWSLETTER_SECRET || "dev-only-newsletter-secret";
+const {
+    WEB_ORIGIN,
+    PUBLIC_API_BASE,
+    MAIL_FROM,
+    NEWSLETTER_SECRET,
+    SMTP_HOST,
+    SMTP_PORT,
+    SMTP_USER,
+    SMTP_PASS
+} = config;
 
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "..", "uploads");
 // Ensure root exists
@@ -28,10 +35,6 @@ const blogsDir = path.join(UPLOAD_ROOT, "blogs");
 });
 
 /* ------------------------ Mailer ------------------------ */
-const SMTP_HOST = process.env.SMTP_HOST;
-const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
-const SMTP_USER = process.env.SMTP_USER || null;
-const SMTP_PASS = process.env.SMTP_PASS || null;
 
 let mailTransporter = null;
 if (SMTP_HOST) {

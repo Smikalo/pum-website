@@ -18,8 +18,7 @@ const {
     cvLatestUrl
 } = require("./services/uploads.service");
 const { UnauthorizedError, BadRequestError } = require("./errors");
-
-const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || "dev-only-change-me";
+const { JWT_ACCESS_SECRET } = require("./config");
 
 function authRequired(req, res, next) {
     const auth = req.get("authorization") || "";
