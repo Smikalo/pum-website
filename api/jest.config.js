@@ -4,23 +4,10 @@ module.exports = {
     testMatch: ['<rootDir>/tests/**/*.test.js'],
     testPathIgnorePatterns: [
         '/node_modules/',
-        // Explicitly ignore legacy/standalone scripts
-        'uploads.service.unit.test.js',
-        'uploads.service.test.js',
-        'cv.security.test.js',
-        'p0-.*\\.js',
+        // Ignore the helper library from test execution
         '_lib.js',
-        // Ignore tests that use custom runners/assertions incompatible with Jest
-        'wiring.sanity.test.js',
-        'final_audit.test.js',
-        'app.import.test.js',
-        'middleware.unit.test.js',
-        'uploads.routes.test.js',
-        // Smoke/Integration tests that might require specific envs or are legacy
-        '.*\\.smoke\\.test\\.js$',
-        'blog.auth.test.js',
-        'events.auth.test.js',
-        'projects.auth.test.js'
+        // Ignore the deprecated smoke scripts that aren't tests
+        'p0-.*\\.js'
     ],
     maxWorkers: 1,
     verbose: true,

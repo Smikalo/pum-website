@@ -3,7 +3,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-// --- Mocking dependencies ---
+// --- Mock DB ---
 const mockPrisma = {
     skill: { findMany: async () => [] },
     tech: { findMany: async () => [] },
@@ -13,108 +13,90 @@ const mockPrisma = {
     }
 };
 
-const dbPath = require.resolve('../src/db');
-require.cache[dbPath] = {
-    id: dbPath,
-    filename: dbPath,
-    loaded: true,
-    exports: { prisma: mockPrisma }
-};
+jest.mock('../src/db', () => ({ prisma: mockPrisma }));
 
-const { processCvUpload, looksLikePdf } = require('../src/services/uploads.service');
+const {
+    processCvUpload,
+    processAvatarUpload,
+    processImageUpload,
+    looksLikePdf,
+    UPLOAD_RULES
+} = require('../src/services/uploads.service');
+const { BadRequestError } = require('../src/errors');
 
-// --- Test Setup ---
-function createTempFile(content, name) {
+function createTempFile(content, name, type = "application/pdf") {
     const p = path.join(__dirname, name || `temp-${Date.now()}.tmp`);
     fs.writeFileSync(p, content);
-    return p;
+    return {
+        path: p,
+        size: Buffer.byteLength(content),
+        mimetype: type,
+        originalname: name,
+        filename: name
+    };
 }
 
 const userId = "u1";
 const memberId = "m1";
 let createdFiles = [];
 
-function cleanup() {
-    for (const f of createdFiles) {
-        try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch {}
-    }
-    createdFiles = [];
-    const latest = path.join(__dirname, `../../uploads/cv/${userId}-latest.pdf`);
-    try { if (fs.existsSync(latest)) fs.unlinkSync(latest); } catch {}
+// Register file for cleanup
+function track(f) {
+    createdFiles.push(f.path);
+    return f;
 }
 
-async function runTests() {
-    console.log("Running uploads.service.unit.test.js");
-
-    // Test 1
-    {
-        const p = createTempFile("%PDF-1.4 content", "test.pdf");
-        createdFiles.push(p);
-        const isPdf = looksLikePdf(p);
-        assert.strictEqual(isPdf, true, "Should identify PDF file");
-        console.log("✅ looksLikePdf true for PDF content");
-    }
-
-    // Test 2
-    {
-        const p = createTempFile("NOTPDF content", "fake.pdf");
-        createdFiles.push(p);
-        const isPdf = looksLikePdf(p);
-        assert.strictEqual(isPdf, false, "Should reject non-PDF content");
-        console.log("✅ looksLikePdf false for non-PDF content");
-    }
-
-    // Test 3: processCvUpload throws if not PDF
-    {
-        const p = createTempFile("fake content", "bad_upload.tmp");
-        createdFiles.push(p);
-        // Fix: Provide mimetype/size so validation passes and we hit content check
-        const file = {
-            path: p,
-            mimetype: 'application/pdf',
-            size: 1024,
-            originalname: 'test.pdf'
-        };
-
-        let caught = null;
-        try {
-            await processCvUpload({ userId, memberId, file });
-        } catch (e) {
-            caught = e;
+describe("Uploads Service", () => {
+    afterEach(() => {
+        for (const p of createdFiles) {
+            try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
         }
-        assert(caught, "Should throw error");
-        assert.strictEqual(caught.message, "Invalid PDF file");
-        console.log("✅ processCvUpload throws on invalid PDF");
-    }
-
-    // Test 4: processCvUpload succeeds for valid PDF
-    {
-        const p = createTempFile("%PDF-1.5 minimal pdf", "good_upload.tmp");
-        createdFiles.push(p);
-        const file = {
-            path: p,
-            mimetype: 'application/pdf',
-            size: 1024,
-            originalname: 'good.pdf'
-        };
-
-        const result = await processCvUpload({ userId, memberId, file });
-        assert(result.url.includes(`${userId}-latest.pdf`), "URL should contain predictable filename");
-
-        const latestPath = path.join(__dirname, `../../uploads/cv/${userId}-latest.pdf`);
-        try { if(fs.existsSync(latestPath)) fs.unlinkSync(latestPath); } catch {}
-
-        console.log("✅ processCvUpload succeeds for valid PDF");
-    }
-
-    cleanup();
-}
-
-// Only run if executed directly (not by Jest)
-if (require.main === module) {
-    runTests().catch(e => {
-        console.error("❌ Test failed:", e);
-        cleanup();
-        process.exit(1);
+        createdFiles = [];
+        const latest = path.join(__dirname, `../../uploads/cv/${userId}-latest.pdf`);
+        try { if (fs.existsSync(latest)) fs.unlinkSync(latest); } catch {}
     });
-}
+
+    test('looksLikePdf detects PDF header', () => {
+        const pdf = track(createTempFile("%PDF-1.4 content", "test.pdf", "application/pdf"));
+        expect(looksLikePdf(pdf.path)).toBe(true);
+
+        const txt = track(createTempFile("NOTPDF", "fake.pdf", "application/pdf"));
+        expect(looksLikePdf(txt.path)).toBe(false);
+    });
+
+    test('processCvUpload validates MIME', async () => {
+        const f = track(createTempFile("doc", "test.doc", "application/msword"));
+        await expect(processCvUpload({ userId, memberId, file: f }))
+            .rejects.toThrow(UPLOAD_RULES.cv.errorMsg);
+    });
+
+    test('processCvUpload validates content signature', async () => {
+        const f = track(createTempFile("fake", "bad.pdf", "application/pdf"));
+        await expect(processCvUpload({ userId, memberId, file: f }))
+            .rejects.toThrow("Invalid PDF file");
+    });
+
+    test('processCvUpload succeeds for valid PDF', async () => {
+        const f = track(createTempFile("%PDF-1.5 data", "good.pdf", "application/pdf"));
+        const res = await processCvUpload({ userId, memberId, file: f });
+        expect(res.url).toContain(`${userId}-latest.pdf`);
+    });
+
+    test('processAvatarUpload validates MIME', async () => {
+        const f = track(createTempFile("<svg>", "test.svg", "image/svg+xml"));
+        await expect(processAvatarUpload({ userId, memberId, file: f }))
+            .rejects.toThrow(UPLOAD_RULES.avatar.errorMsg);
+    });
+
+    test('processAvatarUpload succeeds for valid PNG', async () => {
+        const f = track(createTempFile("imgdata", "test.png", "image/png"));
+        const res = await processAvatarUpload({ userId, memberId, file: f });
+        expect(res.url).toContain("test.png");
+    });
+
+    test('processImageUpload succeeds', async () => {
+        const f = track(createTempFile("img", "blog.jpg", "image/jpeg"));
+        const res = await processImageUpload({ file: f, subDir: "blogs" });
+        expect(res.url).toBe("/uploads/blogs/blog.jpg");
+    });
+});

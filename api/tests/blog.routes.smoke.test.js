@@ -1,12 +1,14 @@
-const { run, get, assert } = require("./_lib");
+const request = require('supertest');
+const app = require('../src/app');
 
-run("GET /api/blogs?size=1 returns list shape", async () => {
-    const { res, body } = await get("/api/blogs?size=1");
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(Array.isArray(body.items), "items must be an array");
-});
-
-run("GET /api/blogs/:slug 404 for unknown", async () => {
-    const { res } = await get("/api/blogs/__non-existing-slug__");
-    assert(res.status === 404, `Expected 404, got ${res.status}`);
+describe('Blog Routes', () => {
+    test('GET /api/blogs list', async () => {
+        const res = await request(app).get('/api/blogs?size=1');
+        expect(res.status).toBe(200);
+        expect(res.body.items).toBeInstanceOf(Array);
+    });
+    test('GET /api/blogs/unknown 404', async () => {
+        const res = await request(app).get('/api/blogs/__unknown__');
+        expect(res.status).toBe(404);
+    });
 });

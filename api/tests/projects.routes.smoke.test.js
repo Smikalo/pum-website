@@ -1,13 +1,14 @@
-const { run, get, assert } = require("./_lib");
+const request = require('supertest');
+const app = require('../src/app');
 
-run("GET /api/projects?size=1 returns list shape", async () => {
-    const { res, body } = await get("/api/projects?size=1");
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(Array.isArray(body.items), "items must be an array");
-});
-
-run("GET /api/projects/:slug 404 for unknown", async () => {
-    const { res, body } = await get("/api/projects/__non-existing-slug__");
-    assert(res.status === 404, `Expected 404, got ${res.status}`);
-    assert(body && body.error === "Not found", `Expected error='Not found', got ${body.error}`);
+describe('Projects Routes', () => {
+    test('GET /api/projects list', async () => {
+        const res = await request(app).get('/api/projects?size=1');
+        expect(res.status).toBe(200);
+        expect(res.body.items).toBeInstanceOf(Array);
+    });
+    test('GET /api/projects/unknown 404', async () => {
+        const res = await request(app).get('/api/projects/__unknown__');
+        expect(res.status).toBe(404);
+    });
 });

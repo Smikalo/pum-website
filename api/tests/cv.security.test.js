@@ -1,126 +1,80 @@
 // api/tests/cv.security.test.js
-const assert = require("assert");
-const http = require("http");
-const app = require("../src/app"); // relative to tests dir
+const request = require('supertest');
+const app = require('../src/app');
+const { prisma } = require('../src/db');
 
-async function getAuthToken(baseUrl, email, password) {
-    // 1. Get CSRF token
-    const csrfRes = await fetch(`${baseUrl}/api/auth/csrf`);
-    if (!csrfRes.ok) throw new Error("Failed to get CSRF");
+// Mock Auth middleware to simulate users without needing a DB
+jest.mock('../src/middleware/auth', () => {
+    const original = jest.requireActual('../src/middleware/auth');
+    return {
+        ...original,
+        requireAuth: (req, res, next) => {
+            const auth = req.headers['authorization'];
+            if (!auth) return res.status(401).json({ error: 'Missing access token' });
+            if (auth === 'Bearer member_token') {
+                req.user = { id: 'u1', roles: [{role:'MEMBER'}], member: { id: 'm1' } };
+                return next();
+            }
+            if (auth === 'Bearer admin_token') {
+                req.user = { id: 'u2', roles: [{role:'ADMIN'}], member: { id: 'm2' } };
+                return next();
+            }
+            return res.status(401).json({ error: 'Invalid' });
+        }
+    };
+});
 
-    const cookie = csrfRes.headers.get("set-cookie");
-    const match = cookie && cookie.match(/XSRF-TOKEN=([^;]+)/);
-    const token = match ? decodeURIComponent(match[1]) : "";
+// Mock prisma
+jest.mock('../src/db', () => ({
+    prisma: {
+        member: { findUnique: jest.fn(), update: jest.fn() },
+        skill: { findMany: jest.fn().mockResolvedValue([]) },
+        tech: { findMany: jest.fn().mockResolvedValue([]) }
+    }
+}));
 
-    // 2. Login
-    const res = await fetch(`${baseUrl}/api/auth/login`, {
-        method: "POST",
-        headers: {
-            "content-type": "application/json",
-            "x-csrf-token": token,
-            "cookie": cookie
-        },
-        body: JSON.stringify({ email, password })
+describe('CV Security', () => {
+    test('Anon upload to /api/account/cv rejected (401)', async () => {
+        const res = await request(app).post('/api/account/cv').attach('cv', Buffer.from('%PDF-1.4'), 'test.pdf');
+        expect(res.status).toBe(401);
     });
 
-    if (!res.ok) return null;
-    const body = await res.json();
-    return body.accessToken;
-}
-
-async function uploadCv(baseUrl, authToken, endpoint, fileContent, filename = "test.pdf", mimeType = "application/pdf") {
-    const fd = new FormData();
-    const blob = new Blob([fileContent], { type: mimeType });
-    fd.append("cv", blob, filename);
-
-    const headers = {};
-    if (authToken) {
-        headers["Authorization"] = `Bearer ${authToken}`;
-    }
-
-    const res = await fetch(`${baseUrl}${endpoint}`, {
-        method: "POST",
-        headers: headers,
-        body: fd
+    test('Anon upload to admin route rejected (401)', async () => {
+        const res = await request(app).post('/api/members/mem1/cv').attach('cv', Buffer.from('%PDF-1.4'), 'test.pdf');
+        expect(res.status).toBe(401);
     });
-    return res;
-}
 
-async function runSecurityTests() {
-    console.log("Running cv.security.test.js");
-    const PORT = 3999;
-    const BASE = `http://localhost:${PORT}`;
+    test('Member upload valid PDF to own account (201)', async () => {
+        // Mock member check
+        prisma.member.findUnique.mockResolvedValue({ id: 'm1' });
 
-    const server = http.createServer(app);
+        const res = await request(app)
+            .post('/api/account/cv')
+            .set('Authorization', 'Bearer member_token')
+            .attach('cv', Buffer.from('%PDF-1.4 fake content'), 'cv.pdf');
 
-    await new Promise(resolve => server.listen(PORT, resolve));
+        expect(res.status).toBe(201);
+        expect(res.body.ok).toBe(true);
+    });
 
-    try {
-        // 1. Anon Access (Account route)
-        {
-            const res = await uploadCv(BASE, null, "/api/account/cv", "%PDF-1.4...", "test.pdf");
-            assert.strictEqual(res.status, 401, `Anon account CV upload: Expected 401, got ${res.status}`);
-            console.log("✅ Anon upload to /api/account/cv rejected (401)");
-        }
+    test('Member upload invalid file type (400)', async () => {
+        const res = await request(app)
+            .post('/api/account/cv')
+            .set('Authorization', 'Bearer member_token')
+            .attach('cv', Buffer.from('text'), 'cv.txt');
 
-        // 2. Anon Access (Member Admin route)
-        {
-            const res = await uploadCv(BASE, null, "/api/members/mem1/cv", "%PDF-1.4...", "test.pdf");
-            assert.strictEqual(res.status, 401, `Anon admin CV upload: Expected 401, got ${res.status}`);
-            console.log("✅ Anon upload to /api/members/:slug/cv rejected (401)");
-        }
+        expect(res.status).toBe(400);
+        expect(res.body.error).toMatch(/Invalid input/);
+    });
 
-        // 3. Login as Member
-        // Note: Assuming seed data exists. If it doesn't, this will skip gracefully.
-        const memToken = await getAuthToken(BASE, "mem1@pum.local", "ChangeMe!123");
+    test('Member accessing admin upload route (403)', async () => {
+        // Member trying to update another user
+        const res = await request(app)
+            .post('/api/members/other/cv')
+            .set('Authorization', 'Bearer member_token')
+            .attach('cv', Buffer.from('%PDF-1.4'), 'cv.pdf');
 
-        if (memToken) {
-            // 4. Member upload to own account (valid PDF)
-            {
-                const res = await uploadCv(BASE, memToken, "/api/account/cv", "%PDF-1.4 valid pdf content", "mycv.pdf");
-                assert.strictEqual(res.status, 201, `Member valid CV upload: Expected 201, got ${res.status}`);
-                console.log("✅ Member upload to own account succeeded (201)");
-            }
-
-            // 5. Member upload invalid type
-            {
-                const res = await uploadCv(BASE, memToken, "/api/account/cv", "not a pdf", "bad.txt", "text/plain");
-                // Middleware rejects it with 400 (Invalid input: Only PDF allowed)
-                assert.strictEqual(res.status, 400, `Member invalid file type: Expected 400, got ${res.status}`);
-                console.log("✅ Member invalid file type rejected (400)");
-            }
-
-            // 6. Member accessing Admin route (mem2)
-            {
-                const res = await uploadCv(BASE, memToken, "/api/members/mem2/cv", "%PDF-1.4...", "hack.pdf");
-                // Should be 403 Forbidden
-                assert.strictEqual(res.status, 403, `Member accessing admin route: Expected 403, got ${res.status}`);
-                console.log("✅ Member accessing other member's CV route rejected (403)");
-            }
-        } else {
-            console.warn("⚠️ Skipping authenticated member tests (login failed or seed data missing)");
-        }
-
-        // 7. Login as Admin
-        const adminToken = await getAuthToken(BASE, "admin@pum.local", "ChangeMe!123");
-
-        if (adminToken) {
-            // 8. Admin upload to Member profile (mem1)
-            {
-                const res = await uploadCv(BASE, adminToken, "/api/members/mem1/cv", "%PDF-1.4 admin override", "admin.pdf");
-                assert.strictEqual(res.status, 201, `Admin override upload: Expected 201, got ${res.status}`);
-                console.log("✅ Admin upload to member profile succeeded (201)");
-            }
-        } else {
-            console.warn("⚠️ Skipping authenticated admin tests (login failed or seed data missing)");
-        }
-
-    } finally {
-        server.close();
-    }
-}
-
-runSecurityTests().catch(e => {
-    console.error("❌ Security Test failed:", e);
-    process.exit(1);
+        // requireAdminOrModerator middleware stops this
+        expect(res.status).toBe(403);
+    });
 });

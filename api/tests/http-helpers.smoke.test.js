@@ -1,7 +1,10 @@
-const { run, get, assert } = require("./_lib");
+const request = require('supertest');
+const app = require('../src/app');
 
-run("GET /api/members?size=1 returns list shape", async () => {
-    const { res, body } = await get("/api/members?size=1");
-    assert(res.status === 200, `Expected 200, got ${res.status}`);
-    assert(Array.isArray(body.items), "items must be an array");
+describe('HTTP Helpers Smoke', () => {
+    test('GET /api/members structure', async () => {
+        const res = await request(app).get('/api/members?size=1');
+        expect(res.status).toBe(200);
+        expect(res.body.items).toBeInstanceOf(Array);
+    });
 });

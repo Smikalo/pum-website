@@ -1,14 +1,27 @@
-const { run, get, assert } = require("./_lib");
+// api/tests/pagination.regression.test.js
+const request = require('supertest');
+const app = require('../src/app');
 
-async function expectPaging(path, expectedMax) {
-    {
-        const { res, body } = await get(path);
-        assert(res.status === 200, `defaults: ${path} -> ${res.status}`);
-        assert(typeof body.page === "number" && body.page >= 1, "default page missing/invalid");
-    }
-}
+describe('Pagination Regression', () => {
+    const endpoints = [
+        '/api/members',
+        '/api/projects',
+        '/api/events',
+        '/api/blogs'
+    ];
 
-run("Members pagination", async () => { await expectPaging("/api/members", 1000); });
-run("Projects pagination", async () => { await expectPaging("/api/projects", 1000); });
-run("Blogs pagination", async () => { await expectPaging("/api/blogs", 1000); });
-run("Events pagination", async () => { await expectPaging("/api/events", 1000); });
+    test.each(endpoints)('GET %s returns default pagination', async (path) => {
+        const res = await request(app).get(path);
+        expect(res.status).toBe(200);
+        expect(res.body).toHaveProperty('page');
+        expect(res.body).toHaveProperty('size');
+        expect(res.body).toHaveProperty('total');
+        expect(res.body.page).toBeGreaterThanOrEqual(1);
+    });
+
+    test.each(endpoints)('GET %s?size=1 caps size correctly', async (path) => {
+        const res = await request(app).get(`${path}?size=1`);
+        expect(res.status).toBe(200);
+        expect(res.body.items.length).toBeLessThanOrEqual(1);
+    });
+});

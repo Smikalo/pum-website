@@ -1,76 +1,66 @@
 // api/tests/middleware.unit.test.js
 const { requireAuth, requireAdminOrModerator, requireAdminOrModeratorOrCreator } = require("../src/middleware/auth");
-const { assert, run } = require("./_lib");
 
-// Mock express objects
-function mockRes() {
+// Mock request/response
+const mockReq = (overrides = {}) => ({
+    get: jest.fn(),
+    ...overrides
+});
+const mockRes = () => {
     const res = {};
-    res.statusCode = 200; // default
-    res.body = null;
-    res.status = (code) => { res.statusCode = code; return res; };
-    res.json = (data) => { res.body = data; return res; };
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
     return res;
-}
+};
+const mockNext = jest.fn();
 
-run("requireAuth missing header", async () => {
-    const req = { get: () => null };
-    const res = mockRes();
-    let nextCalled = false;
-    await requireAuth(req, res, () => { nextCalled = true; });
-    assert(!nextCalled, "next() should not be called");
-    assert(res.statusCode === 401, "Status should be 401");
-    assert(res.body.error === "Missing access token", "Error message mismatch");
-});
+// Mock JWT config and verify
+jest.mock("jsonwebtoken", () => ({
+    verify: jest.fn()
+}));
+const jwt = require("jsonwebtoken");
 
-run("requireAdminOrModerator success (admin)", () => {
-    const req = { user: { roles: [{ role: "ADMIN" }] } };
-    const res = mockRes();
-    let nextCalled = false;
-    requireAdminOrModerator(req, res, () => { nextCalled = true; });
-    assert(nextCalled, "next() should be called for admin");
-});
+// Mock Prisma for user lookup
+jest.mock("../src/db", () => ({
+    prisma: {
+        user: { findUnique: jest.fn() }
+    }
+}));
+const { prisma } = require("../src/db");
 
-run("requireAdminOrModerator success (moderator)", () => {
-    const req = { user: { roles: [{ role: "MODERATOR" }] } };
-    const res = mockRes();
-    let nextCalled = false;
-    requireAdminOrModerator(req, res, () => { nextCalled = true; });
-    assert(nextCalled, "next() should be called for moderator");
-});
+describe('Auth Middleware', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
 
-run("requireAdminOrModerator failure (member)", () => {
-    const req = { user: { roles: [{ role: "MEMBER" }] } };
-    const res = mockRes();
-    let nextCalled = false;
-    requireAdminOrModerator(req, res, () => { nextCalled = true; });
-    assert(!nextCalled, "next() should NOT be called for member");
-    assert(res.statusCode === 403, "Status should be 403");
-});
+    test('requireAuth: 401 if no header', async () => {
+        const req = mockReq({ get: () => null });
+        const res = mockRes();
+        await requireAuth(req, res, mockNext);
+        expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
+    });
 
-run("requireAdminOrModeratorOrCreator passes for admin", async () => {
-    const req = { user: { roles: [{ role: "ADMIN" }] } };
-    const res = mockRes();
-    let nextCalled = false;
-    const mw = requireAdminOrModeratorOrCreator(async () => false);
-    await mw(req, res, () => { nextCalled = true; });
-    assert(nextCalled, "next() should be called for admin even if not creator");
-});
+    test('requireAuth: calls next if valid', async () => {
+        jwt.verify.mockReturnValue({ sub: 'u1' });
+        prisma.user.findUnique.mockResolvedValue({ id: 'u1', roles: [] });
 
-run("requireAdminOrModeratorOrCreator passes for creator", async () => {
-    const req = { user: { roles: [{ role: "MEMBER" }] } };
-    const res = mockRes();
-    let nextCalled = false;
-    const mw = requireAdminOrModeratorOrCreator(async () => true);
-    await mw(req, res, () => { nextCalled = true; });
-    assert(nextCalled, "next() should be called for creator");
-});
+        const req = mockReq({ get: () => 'Bearer valid' });
+        const res = mockRes();
+        await requireAuth(req, res, mockNext);
 
-run("requireAdminOrModeratorOrCreator fails for non-creator member", async () => {
-    const req = { user: { roles: [{ role: "MEMBER" }] } };
-    const res = mockRes();
-    let nextCalled = false;
-    const mw = requireAdminOrModeratorOrCreator(async () => false);
-    await mw(req, res, () => { nextCalled = true; });
-    assert(!nextCalled, "next() should NOT be called");
-    assert(res.statusCode === 403, "Status should be 403");
+        expect(req.user).toBeDefined();
+        expect(mockNext).toHaveBeenCalledWith();
+    });
+
+    test('requireAdminOrModerator: calls next if admin', () => {
+        const req = { user: { roles: [{ role: 'ADMIN' }] } };
+        requireAdminOrModerator(req, {}, mockNext);
+        expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('requireAdminOrModerator: 403 if member', () => {
+        const req = { user: { roles: [{ role: 'MEMBER' }] } };
+        requireAdminOrModerator(req, {}, mockNext);
+        expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    });
 });

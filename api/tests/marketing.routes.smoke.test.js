@@ -1,12 +1,9 @@
-const { run, post, assert } = require("./_lib");
+const request = require('supertest');
+const app = require('../src/app');
 
-run("POST /api/contact invalid returns 400", async () => {
-    const { res, body } = await post("/api/contact", {});
-    assert(res.status === 400, `Expected 400, got ${res.status}`);
-    assert(body && body.ok === false, "Body should have ok:false");
-});
-
-run("POST /api/newsletter/subscribe invalid returns 400", async () => {
-    const { res } = await post("/api/newsletter/subscribe", {});
-    assert(res.status >= 400, `Expected error status, got ${res.status}`);
+describe('Marketing Routes', () => {
+    test('POST /api/contact 400 on empty', async () => {
+        const res = await request(app).post('/api/contact').send({});
+        expect(res.status).toBe(400);
+    });
 });

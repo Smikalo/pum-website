@@ -1,7 +1,17 @@
-const { run, get, assert } = require("./_lib");
+// api/tests/wiring.sanity.test.js
+const request = require('supertest');
+const app = require('../src/app');
 
-run("GET /healthz returns expected JSON keys", async () => {
-    const { res, body } = await get("/healthz");
-    assert(res.status === 200, `Status ${res.status}`);
-    assert(body.ok === true, "ok true");
+describe('App Wiring', () => {
+    test('GET /healthz returns 200', async () => {
+        const res = await request(app).get('/healthz');
+        expect(res.status).toBe(200);
+        expect(res.body.ok).toBe(true);
+    });
+
+    test('404 handler works', async () => {
+        const res = await request(app).get('/api/not-a-real-route-123');
+        expect(res.status).toBe(404);
+        expect(res.body.error).toMatch(/Not found/i);
+    });
 });
