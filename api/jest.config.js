@@ -1,19 +1,31 @@
+// api/jest.config.js
 module.exports = {
     testEnvironment: 'node',
     testMatch: ['<rootDir>/tests/**/*.test.js'],
     testPathIgnorePatterns: [
         '/node_modules/',
-        'uploads.service.unit.test.js', // Legacy/unit specific
-        'uploads.service.test.js',      // Standalone script run by p2-uploads-parity.test.js
-        'cv.security.test.js',          // Standalone integration script
-        'p0-api-scripts.smoke.js',      // Smoke script (ends in .js anyway)
+
+        // Helper library for legacy tests
         '_lib.js',
-        // Ignore older smoke/sanity tests if they overlap or are deprecated
+
+        // Legacy "smoke" tests that use a custom runner (not Jest-compatible)
+        '.*\\.smoke\\.test\\.js$',
+        'utils.static.test.js',
         'wiring.sanity.test.js',
         'final_audit.test.js',
         'app.import.test.js',
         'middleware.unit.test.js',
-        'uploads.routes.test.js'
+
+        // Legacy integration tests using custom runner
+        'uploads.routes.test.js',
+        'blog.auth.test.js',
+        'events.auth.test.js',
+        'projects.auth.test.js',
+
+        // Standalone scripts (ran via node, not jest)
+        'uploads.service.test.js',
+        'cv.security.test.js',
+        'p0-.*\\.js'
     ],
     maxWorkers: 1,
     verbose: true,
