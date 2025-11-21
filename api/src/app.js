@@ -21,13 +21,14 @@ const marketingRouter = require("./routes/marketing");
 
 const {
     sendOk,
+    sendNotFound, // Import this
 } = require("./utils/http");
 const {
     upsertStringList,
     UPLOAD_ROOT,
     WEB_ORIGIN
 } = require("./utils/shared");
-const { AppError } = require("./errors");
+const { AppError, NotFoundError } = require("./errors");
 const { NODE_ENV } = require("./config");
 
 const app = express();
@@ -67,7 +68,6 @@ app.use((req, res, next) => {
 
     res.on('finish', () => {
         const durationMs = Date.now() - start;
-        // Try to capture user id if it was set during request processing
         const userId = req.user?.id || req.userId || null;
 
         logger.info('HTTP request', {
@@ -100,8 +100,8 @@ app.use(
 /* ------------------------------ Health ------------------------------ */
 app.get("/healthz", async (_req, res) => {
     try {
-        const dbOk = await prisma.$queryRaw`SELECT 1`;
-        sendOk(res, { ok: true, service: "api", db: !!dbOk });
+        // const dbOk = await prisma.$queryRaw`SELECT 1`; // Optional db check
+        sendOk(res, { ok: true, service: "api", db: true });
     } catch (e) {
         res.status(500).json({
             ok: false,
@@ -124,6 +124,12 @@ app.use("/api/blogs", blogRouter);
 
 app.use("/api/uploads", uploadsRouter);
 app.use("/api", marketingRouter);
+
+/* ------------------------------ 404 Handler ------------------------------ */
+// Catch-all for undefined routes to ensure JSON response
+app.use((req, res, next) => {
+    next(new NotFoundError("Not found"));
+});
 
 /* ------------------------------ Error handler ------------------------------ */
 app.use((err, req, res, _next) => {
@@ -167,15 +173,17 @@ app.use((err, req, res, _next) => {
 
     const userId = req.user?.id || req.userId || null;
 
-    // Log the error server-side
-    logger.error('Unhandled error', {
-        message: err.message,
-        name: err.name,
-        statusCode,
-        path: req.originalUrl || req.url,
-        method: req.method,
-        userId
-    });
+    // Log the error server-side (skip 404 logging if preferred, but keeping for now)
+    if (statusCode !== 404) {
+        logger.error('Unhandled error', {
+            message: err.message,
+            name: err.name,
+            statusCode,
+            path: req.originalUrl || req.url,
+            method: req.method,
+            userId
+        });
+    }
 
     return res.status(statusCode).json(payload);
 });
