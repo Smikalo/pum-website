@@ -14,12 +14,29 @@ jobs:
   api:
     name: API – lint & test
     runs-on: ubuntu-latest
+    # Service container to provide a throwaway database for tests
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: pum
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       # Prisma generate (postinstall) often needs a DATABASE_URL env var,
       # even if it doesn't connect during generation.
       DATABASE_URL: "postgresql://postgres:password@localhost:5432/pum?schema=public"
       # Provide defaults for other env vars used in config to prevent runtime crashes during tests
       JWT_ACCESS_SECRET: "ci-secret"
+      # Skip browser download for puppeteer if used, generally speeds up install
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,6 +51,11 @@ jobs:
       - name: Install dependencies (api)
         working-directory: api
         run: npm ci
+
+      - name: Setup Database
+        working-directory: api
+        # Pushes schema to DB without requiring migration history files
+        run: npx prisma db push
 
       - name: Lint (api)
         working-directory: api
@@ -63,7 +85,13 @@ jobs:
 
       - name: Lint (web)
         working-directory: web
-        run: npm run lint
+        # Check for .eslintrc to prevent interactive prompt failure
+        run: |
+          if [ ! -f ".eslintrc.json" ] && [ ! -f ".eslintrc.js" ]; then
+            echo "Creating temporary .eslintrc.json for CI"
+            echo '{ "extends": "next/core-web-vitals" }' > .eslintrc.json
+          fi
+          npm run lint
 
       - name: Test (web)
         working-directory: web
