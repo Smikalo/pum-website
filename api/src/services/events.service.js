@@ -1,6 +1,7 @@
 // api/src/services/events.service.js
 const slugify = require("slugify");
 const { prisma } = require("../db");
+const logger = require("../logger");
 const {
     genInviteToken,
     renderBaseEmailHtml,
@@ -370,6 +371,12 @@ This invite was sent from ${MAIL_FROM}.
         }
     }
 
+    logger.info("Event created", {
+        userId: user?.id || null,
+        eventSlug: event.slug,
+        eventId: event.id,
+    });
+
     return { ok: true, slug: event.slug, id: event.id };
 }
 
@@ -559,6 +566,12 @@ This invite was sent from ${MAIL_FROM}.
         }
     }
 
+    logger.info("Event updated", {
+        userId: user?.id || null,
+        eventSlug: updated.slug,
+        eventId: updated.id,
+    });
+
     return { ok: true, slug: updated.slug, id: updated.id };
 }
 
@@ -575,6 +588,12 @@ async function deleteEvent(slug, confirmSlug, user) {
         await tx.memberEvent.deleteMany({ where: { eventId: event.id } });
         await tx.eventInvite.deleteMany({ where: { eventId: event.id } });
         await tx.event.delete({ where: { id: event.id } });
+    });
+
+    logger.info("Event deleted", {
+        userId: user?.id || null,
+        eventSlug: slug,
+        eventId: event.id
     });
 
     return { ok: true };

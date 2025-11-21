@@ -1,6 +1,7 @@
 // api/src/services/blog.service.js
 const slugify = require("slugify");
 const { prisma } = require("../db");
+const logger = require("../logger");
 const {
     upsertStringList,
     renderBaseEmailHtml,
@@ -292,6 +293,12 @@ async function createBlog(data, user) {
         // ignore
     }
 
+    logger.info("Blog post created", {
+        userId: user?.id || null,
+        postSlug: blog.slug,
+        postId: blog.id
+    });
+
     return { ok: true, slug: blog.slug, id: blog.id };
 }
 
@@ -427,6 +434,12 @@ async function updateBlog(slug, data, user, existingBlog = null) {
         }
     }
 
+    logger.info("Blog post updated", {
+        userId: user?.id || null,
+        postSlug: updated.slug,
+        postId: updated.id
+    });
+
     return { ok: true, slug: updated.slug, id: updated.id };
 }
 
@@ -443,6 +456,12 @@ async function deleteBlog(slug, confirmSlug, user) {
         await tx.projectBlog.deleteMany({ where: { blogId: blog.id } });
         await tx.eventBlog.deleteMany({ where: { blogId: blog.id } });
         await tx.blog.delete({ where: { id: blog.id } });
+    });
+
+    logger.info("Blog post deleted", {
+        userId: user?.id || null,
+        postSlug: slug,
+        postId: blog.id
     });
 
     return { ok: true };

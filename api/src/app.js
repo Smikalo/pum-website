@@ -9,6 +9,7 @@ const path = require("path");
 const { prisma } = require("./db");
 const { authRouter } = require("./auth");
 const { accountRouter } = require("./account");
+const logger = require("./logger");
 
 // Domain routers
 const membersRouter = require("./routes/members");
@@ -60,6 +61,27 @@ app.use(
 const limiter = rateLimit({ windowMs: 60_000, max: 300 });
 app.use(limiter);
 
+// Request logging middleware
+app.use((req, res, next) => {
+    const start = Date.now();
+
+    res.on('finish', () => {
+        const durationMs = Date.now() - start;
+        // Try to capture user id if it was set during request processing
+        const userId = req.user?.id || req.userId || null;
+
+        logger.info('HTTP request', {
+            method: req.method,
+            url: req.originalUrl || req.url,
+            statusCode: res.statusCode,
+            userId,
+            durationMs
+        });
+    });
+
+    next();
+});
+
 /* ------------------------ Static uploads ------------------------ */
 app.use(
     "/uploads",
@@ -107,49 +129,55 @@ app.use("/api", marketingRouter);
 app.use((err, req, res, _next) => {
     if (res.headersSent) return;
 
+    let statusCode = 500;
+    let payload = { ok: false, error: "Server error" };
+
     if (err instanceof multer.MulterError) {
+        statusCode = 400;
         let error = "Upload error";
         if (err.code === "LIMIT_FILE_SIZE") {
             error = "File too large";
         } else if (err.code === "LIMIT_UNEXPECTED_FILE") {
             error = "Unsupported file type";
         }
-        return res.status(400).json({ ok: false, error });
-    }
-
-    if (err instanceof AppError) {
-        const status = err.statusCode || 500;
-        const payload = {
-            ok: false,
-            error: err.message,
-        };
+        payload = { ok: false, error };
+    } else if (err instanceof AppError) {
+        statusCode = err.statusCode || 500;
+        payload = { ok: false, error: err.message };
         if (err.details !== undefined) {
             payload.details = err.details;
         }
-        return res.status(status).json(payload);
+    } else {
+        const message = err?.message || "Server error";
+        if (
+            message.includes("Invalid input") ||
+            message.includes("validation") ||
+            message.includes("ZodError")
+        ) {
+            statusCode = 400;
+            payload = { ok: false, error: message };
+        } else {
+            statusCode = 500;
+            const msg = NODE_ENV === 'production'
+                ? 'Internal server error'
+                : message;
+            payload = { ok: false, error: msg };
+        }
     }
 
-    const message = err?.message || "Server error";
+    const userId = req.user?.id || req.userId || null;
 
-    // Fallback for validation errors not yet typed
-    if (
-        message.includes("Invalid input") ||
-        message.includes("validation") ||
-        message.includes("ZodError")
-    ) {
-        return res.status(400).json({ ok: false, error: message });
-    }
+    // Log the error server-side
+    logger.error('Unhandled error', {
+        message: err.message,
+        name: err.name,
+        statusCode,
+        path: req.originalUrl || req.url,
+        method: req.method,
+        userId
+    });
 
-    // Internal server error fallback
-    const status = 500;
-    const msg = NODE_ENV === 'production'
-        ? 'Internal server error'
-        : message;
-
-    // Log error server-side
-    console.error(err);
-
-    return res.status(status).json({ ok: false, error: msg });
+    return res.status(statusCode).json(payload);
 });
 
 module.exports = app;

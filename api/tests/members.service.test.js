@@ -1,6 +1,9 @@
 // api/tests/members.service.test.js
 const { NotFoundError } = require("../src/errors");
 
+const mockLogger = { info: jest.fn() };
+jest.doMock("../src/logger", () => mockLogger);
+
 const mockPrisma = {
     member: {
         count: jest.fn(),

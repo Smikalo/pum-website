@@ -2,6 +2,7 @@
 const fs = require("fs");
 const path = require("path");
 const { prisma } = require("../db");
+const logger = require("../logger");
 const { getPaginationParams, toPagedResponse } = require("../utils/lists");
 const { abs, upsertStringList, CV_DIR } = require("../utils/shared");
 const { NotFoundError } = require("../errors");
@@ -73,6 +74,7 @@ async function listMembers(query, baseUrl) {
 }
 
 async function getMemberBySlug(slug, baseUrl) {
+    // Removed incorrect nested event include
     const include = {
         skills: { include: { skill: true } },
         techs: { include: { tech: true } },
@@ -270,7 +272,7 @@ async function updateMember(slug, data, user, baseUrl) {
             skills: { include: { skill: true } },
             techs: { include: { tech: true } },
             projects: { include: { project: true } },
-            events: { include: { event: true } },
+            events: { include: { event: { include: { event: true } } } },
         },
     });
 
@@ -297,6 +299,12 @@ async function updateMember(slug, data, user, baseUrl) {
 
     const userRoles = Array.from(roleSet);
     const isAdminMemberAfter = userRoles.includes("ADMIN");
+
+    logger.info("Member profile updated", {
+        userId: user?.id || null,
+        memberSlug: slug,
+        memberId: member.id
+    });
 
     return {
         member: {
@@ -362,6 +370,12 @@ async function deleteMember(slug, confirmSlug, user) {
         await tx.memberEvent.deleteMany({ where: { memberId: member.id } });
         await tx.user.updateMany({ where: { memberId: member.id }, data: { memberId: null } });
         await tx.member.delete({ where: { id: member.id } });
+    });
+
+    logger.info("Member deleted", {
+        userId: user?.id || null,
+        memberSlug: slug,
+        memberId: member.id
     });
 
     return { ok: true };

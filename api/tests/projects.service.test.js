@@ -1,6 +1,10 @@
 // api/tests/projects.service.test.js
 const { NotFoundError } = require("../src/errors");
 
+// Mock logger
+const mockLogger = { info: jest.fn() };
+jest.doMock("../src/logger", () => mockLogger);
+
 const mockPrisma = {
     project: {
         count: jest.fn(),
@@ -41,12 +45,17 @@ describe("projects.service", () => {
         await expect(getProjectBySlug("missing", "http://test.local")).rejects.toThrow(NotFoundError);
     });
 
-    test("createProject creates project", async () => {
+    test("createProject creates project and logs", async () => {
         mockPrisma.project.findUnique.mockResolvedValue(null); // for uniqueProjectSlug check
         mockPrisma.project.create.mockResolvedValue({ id: "p1", slug: "new-project", title: "New Project" });
 
         const res = await createProject({ title: "New Project" }, { id: "u1", member: { id: "m1" } });
         expect(res.slug).toBe("new-project");
         expect(mockPrisma.project.create).toHaveBeenCalled();
+
+        expect(mockLogger.info).toHaveBeenCalledWith("Project created", expect.objectContaining({
+            userId: "u1",
+            projectSlug: "new-project"
+        }));
     });
 });

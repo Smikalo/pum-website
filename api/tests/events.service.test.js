@@ -1,6 +1,9 @@
 // api/tests/events.service.test.js
 const { NotFoundError, ForbiddenError } = require("../src/errors");
 
+const mockLogger = { info: jest.fn() };
+jest.doMock("../src/logger", () => mockLogger);
+
 const mockPrisma = {
     event: {
         count: jest.fn(),
@@ -43,14 +46,18 @@ describe("events.service", () => {
         await expect(createEvent({ name: "New Event" }, { roles: [] })).rejects.toThrow(ForbiddenError);
     });
 
-    test("createEvent succeeds with role", async () => {
+    test("createEvent succeeds with role and logs", async () => {
         mockPrisma.event.findUnique.mockResolvedValue(null); // for slug check
         mockPrisma.event.create.mockResolvedValue({ id: "e1", slug: "new-event", name: "New Event" });
 
         const res = await createEvent(
             { name: "New Event" },
-            { roles: [{ role: "MEMBER" }], member: { id: "m1" } }
+            { id: "u1", roles: [{ role: "MEMBER" }], member: { id: "m1" } }
         );
         expect(res.slug).toBe("new-event");
+        expect(mockLogger.info).toHaveBeenCalledWith("Event created", expect.objectContaining({
+            userId: "u1",
+            eventSlug: "new-event"
+        }));
     });
 });

@@ -1,6 +1,7 @@
 // api/src/services/projects.service.js
 const slugify = require("slugify");
 const { prisma } = require("../db");
+const logger = require("../logger");
 const {
     upsertStringList,
     genInviteToken,
@@ -463,6 +464,12 @@ This invite was sent from ${MAIL_FROM}.
         }
     }
 
+    logger.info("Project created", {
+        userId: user?.id || null,
+        projectSlug: project.slug,
+        projectId: project.id,
+    });
+
     return { ok: true, slug: project.slug, id: project.id };
 }
 
@@ -716,6 +723,12 @@ This invite was sent from ${MAIL_FROM}.
         }
     }
 
+    logger.info("Project updated", {
+        userId: user?.id || null,
+        projectSlug: updated.slug,
+        projectId: updated.id,
+    });
+
     return { ok: true, slug: updated.slug, id: updated.id };
 }
 
@@ -733,6 +746,12 @@ async function deleteProject(slug, confirmSlug, user) {
         await tx.memberProject.deleteMany({ where: { projectId: project.id } });
         await tx.projectInvite.deleteMany({ where: { projectId: project.id } });
         await tx.project.delete({ where: { id: project.id } });
+    });
+
+    logger.info("Project deleted", {
+        userId: user?.id || null,
+        projectSlug: slug,
+        projectId: project.id
     });
 
     return { ok: true };

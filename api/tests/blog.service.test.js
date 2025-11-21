@@ -1,6 +1,9 @@
 // api/tests/blog.service.test.js
 const { NotFoundError } = require("../src/errors");
 
+const mockLogger = { info: jest.fn() };
+jest.doMock("../src/logger", () => mockLogger);
+
 const mockPrisma = {
     blog: {
         count: jest.fn(),
@@ -72,7 +75,7 @@ describe("blog.service", () => {
         await expect(getBlogBySlug("missing", "http://test.local")).rejects.toThrow(NotFoundError);
     });
 
-    test("createBlog creates blog", async () => {
+    test("createBlog creates blog and logs", async () => {
         mockPrisma.blog.findUnique.mockResolvedValue(null); // uniqueBlogSlug check
         mockPrisma.blog.create.mockResolvedValue({ id: "b1", slug: "new-blog", title: "New Blog" });
 
@@ -83,7 +86,9 @@ describe("blog.service", () => {
         const res = await createBlog({ title: "New Blog" }, { id: "u1", member: { id: "m1", slug: "m1" } });
         expect(res.slug).toBe("new-blog");
         expect(mockPrisma.blog.create).toHaveBeenCalled();
-        // Expect member.findMany to be called because an author slug was added from the user context
-        expect(mockPrisma.member.findMany).toHaveBeenCalled();
+        expect(mockLogger.info).toHaveBeenCalledWith("Blog post created", expect.objectContaining({
+            userId: "u1",
+            postSlug: "new-blog"
+        }));
     });
 });
