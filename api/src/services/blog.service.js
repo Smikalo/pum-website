@@ -1,4 +1,6 @@
 // api/src/services/blog.service.js
+// NOTE: list-like updates for tech stack, tags, authors, and relations must use DB transaction.
+
 const slugify = require("slugify");
 const { prisma } = require("../db");
 const logger = require("../logger");
@@ -23,11 +25,11 @@ function makeReq(baseUrl) {
     };
 }
 
-async function uniqueBlogSlug(base) {
+async function uniqueBlogSlug(base, ctx = prisma) {
     const b = slugify(base || "blog", { lower: true, strict: true }) || "blog";
     let slug = b;
     let i = 1;
-    while (await prisma.blog.findUnique({ where: { slug } })) {
+    while (await ctx.blog.findUnique({ where: { slug } })) {
         i += 1;
         slug = `${b}-${i}`;
         if (i > 9999) break;
@@ -161,136 +163,132 @@ async function getBlogBySlug(slug, baseUrl) {
 
 async function createBlog(data, user) {
     const d = data;
-    const slug = await uniqueBlogSlug(d.title);
     const photos = Array.isArray(d.photos) ? d.photos : [];
     const coverRel = photos.length ? photos[0] : null;
     const imagesRel = photos;
-
     const publishedAt = d.publishedAt && typeof d.publishedAt === "string" ? new Date(d.publishedAt) : null;
-
-    const blog = await prisma.blog.create({
-        data: {
-            slug,
-            title: d.title,
-            summary: d.summary || null,
-            content: d.content || null,
-            publishedAt: publishedAt && !Number.isNaN(publishedAt.getTime()) ? publishedAt : null,
-            cover: coverRel,
-            imageUrl: coverRel,
-            images: imagesRel,
-        },
-    });
-
-    const techNames = Array.isArray(d.techStack) ? d.techStack : [];
-    if (techNames.length) {
-        const techIds = await upsertStringList(techNames, "tech");
-        if (techIds.length) {
-            await prisma.blogTech.createMany({
-                data: techIds.map((id) => ({ blogId: blog.id, techId: id })),
-                skipDuplicates: true,
-            });
-        }
-    }
-
-    const tagNames = Array.isArray(d.tags) ? d.tags : [];
-    if (tagNames.length) {
-        const tagIds = await upsertStringList(tagNames, "tag");
-        if (tagIds.length) {
-            await prisma.blogTag.createMany({
-                data: tagIds.map((id) => ({ blogId: blog.id, tagId: id })),
-                skipDuplicates: true,
-            });
-        }
-    }
-
     const creatorMemberId = user && user.member && user.member.id ? user.member.id : null;
     const authorSlugSet = new Set(Array.isArray(d.authorSlugs) ? d.authorSlugs.map(s => String(s || "").trim()).filter(Boolean) : []);
 
     if (user && user.member && user.member.slug) authorSlugSet.add(user.member.slug);
 
-    if (authorSlugSet.size) {
-        const authorSlugs = Array.from(authorSlugSet);
-        const members = await prisma.member.findMany({ where: { slug: { in: authorSlugs } }, select: { id: true, slug: true } });
+    const { blog, subscribersToNotify } = await prisma.$transaction(async (tx) => {
+        const slug = await uniqueBlogSlug(d.title, tx);
 
-        if (members.length) {
-            for (const m of members) {
-                const role = creatorMemberId && m.id === creatorMemberId ? "CREATOR" : null;
-                try {
-                    await prisma.blogAuthor.upsert({
+        const blog = await tx.blog.create({
+            data: {
+                slug,
+                title: d.title,
+                summary: d.summary || null,
+                content: d.content || null,
+                publishedAt: publishedAt && !Number.isNaN(publishedAt.getTime()) ? publishedAt : null,
+                cover: coverRel,
+                imageUrl: coverRel,
+                images: imagesRel,
+            },
+        });
+
+        const techNames = Array.isArray(d.techStack) ? d.techStack : [];
+        if (techNames.length) {
+            const techIds = await upsertStringList(techNames, "tech", tx);
+            if (techIds.length) {
+                await tx.blogTech.createMany({
+                    data: techIds.map((id) => ({ blogId: blog.id, techId: id })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+
+        const tagNames = Array.isArray(d.tags) ? d.tags : [];
+        if (tagNames.length) {
+            const tagIds = await upsertStringList(tagNames, "tag", tx);
+            if (tagIds.length) {
+                await tx.blogTag.createMany({
+                    data: tagIds.map((id) => ({ blogId: blog.id, tagId: id })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+
+        if (authorSlugSet.size) {
+            const authorSlugs = Array.from(authorSlugSet);
+            const members = await tx.member.findMany({ where: { slug: { in: authorSlugs } }, select: { id: true, slug: true } });
+
+            if (members.length) {
+                for (const m of members) {
+                    const role = creatorMemberId && m.id === creatorMemberId ? "CREATOR" : null;
+                    await tx.blogAuthor.upsert({
                         where: { blogId_memberId: { blogId: blog.id, memberId: m.id } },
                         create: { blogId: blog.id, memberId: m.id, role },
                         update: { role },
                     });
-                } catch (err) {
-                    // ignore
                 }
             }
-        }
-    } else if (creatorMemberId) {
-        try {
-            await prisma.blogAuthor.upsert({
+        } else if (creatorMemberId) {
+            await tx.blogAuthor.upsert({
                 where: { blogId_memberId: { blogId: blog.id, memberId: creatorMemberId } },
                 create: { blogId: blog.id, memberId: creatorMemberId, role: "CREATOR" },
                 update: { role: "CREATOR" },
             });
-        } catch (err) {
-            // ignore
         }
-    }
 
-    const projectSlugs = Array.isArray(d.projectSlugs) ? d.projectSlugs : [];
-    if (projectSlugs.length) {
-        const projects = await prisma.project.findMany({ where: { slug: { in: projectSlugs } }, select: { id: true, slug: true } });
-        if (projects.length) {
-            await prisma.projectBlog.createMany({
-                data: projects.map((p) => ({ projectId: p.id, blogId: blog.id })),
-                skipDuplicates: true,
-            });
-        }
-    }
-
-    const eventSlugs = Array.isArray(d.eventSlugs) ? d.eventSlugs : [];
-    if (eventSlugs.length) {
-        const events = await prisma.event.findMany({ where: { slug: { in: eventSlugs } }, select: { id: true, slug: true } });
-        if (events.length) {
-            await prisma.eventBlog.createMany({
-                data: events.map((e) => ({ eventId: e.id, blogId: blog.id })),
-                skipDuplicates: true,
-            });
-        }
-    }
-
-    // -------------- Newsletter sending --------------
-    try {
-        if (prisma.newsletterSubscriber && mailTransporter) {
-            const subscribers = await prisma.newsletterSubscriber.findMany({ where: { unsubscribedAt: null, verifiedAt: { not: null } } });
-
-            if (subscribers.length) {
-                const webBase = WEB_ORIGIN.replace(/\/$/, "");
-                const blogUrl = `${webBase}/blogs/${blog.slug}`;
-
-                for (const sub of subscribers) {
-                    const to = sub.email;
-                    if (!to) continue;
-
-                    const unsubToken = signNewsletterUnsubToken({ id: sub.id, email: sub.email });
-                    const unsubscribeUrl = `${webBase}/newsletter/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
-
-                    const subject = `New blog post on PUM: ${blog.title}`;
-                    const text = `Hi${sub.name ? " " + sub.name : ""}!\n\nWe've just published a new blog post on PUM:\n\nTitle: ${blog.title}\n${blog.summary ? `\n${blog.summary}\n` : "\n"}Read it here:\n${blogUrl}\n\nYou're receiving this because you subscribed to updates from PUM.\nIf you no longer wish to receive these, you can unsubscribe here:\n${unsubscribeUrl}\n`;
-
-                    const html = renderBaseEmailHtml({
-                        title: "New blog post on PUM",
-                        preheader: blog.summary ? blog.summary.slice(0, 150) : `New blog post: ${blog.title}`,
-                        bodyHtml: `<p>Hi${sub.name ? " " + sub.name : ""}!</p><p>We've just published a new blog post on PUM:</p><p><strong>${blog.title}</strong></p>${blog.summary ? `<p>${blog.summary.replace(/\n/g, "<br/>")}</p>` : ""}<p><a href="${blogUrl}">Read the full post</a></p><p>You're receiving this because you subscribed to updates from PUM.</p><p>If you no longer wish to receive these, you can unsubscribe here:<br/><a href="${unsubscribeUrl}">${unsubscribeUrl}</a></p>`,
-                    });
-
-                    await mailTransporter.sendMail({ from: MAIL_FROM, to, subject, text, html });
-                }
+        const projectSlugs = Array.isArray(d.projectSlugs) ? d.projectSlugs : [];
+        if (projectSlugs.length) {
+            const projects = await tx.project.findMany({ where: { slug: { in: projectSlugs } }, select: { id: true, slug: true } });
+            if (projects.length) {
+                await tx.projectBlog.createMany({
+                    data: projects.map((p) => ({ projectId: p.id, blogId: blog.id })),
+                    skipDuplicates: true,
+                });
             }
         }
-    } catch (err) {
-        // ignore
+
+        const eventSlugs = Array.isArray(d.eventSlugs) ? d.eventSlugs : [];
+        if (eventSlugs.length) {
+            const events = await tx.event.findMany({ where: { slug: { in: eventSlugs } }, select: { id: true, slug: true } });
+            if (events.length) {
+                await tx.eventBlog.createMany({
+                    data: events.map((e) => ({ eventId: e.id, blogId: blog.id })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+
+        // Gather subscribers for notification
+        let subscribers = [];
+        try {
+            subscribers = await tx.newsletterSubscriber.findMany({ where: { unsubscribedAt: null, verifiedAt: { not: null } } });
+        } catch {
+            // ignore
+        }
+
+        return { blog, subscribersToNotify: subscribers };
+    });
+
+    // -------------- Newsletter sending --------------
+    if (subscribersToNotify && subscribersToNotify.length && mailTransporter) {
+        const webBase = WEB_ORIGIN.replace(/\/$/, "");
+        const blogUrl = `${webBase}/blogs/${blog.slug}`;
+
+        for (const sub of subscribersToNotify) {
+            const to = sub.email;
+            if (!to) continue;
+
+            const unsubToken = signNewsletterUnsubToken({ id: sub.id, email: sub.email });
+            const unsubscribeUrl = `${webBase}/newsletter/unsubscribe?token=${encodeURIComponent(unsubToken)}`;
+
+            const subject = `New blog post on PUM: ${blog.title}`;
+            const text = `Hi${sub.name ? " " + sub.name : ""}!\n\nWe've just published a new blog post on PUM:\n\nTitle: ${blog.title}\n${blog.summary ? `\n${blog.summary}\n` : "\n"}Read it here:\n${blogUrl}\n\nYou're receiving this because you subscribed to updates from PUM.\nIf you no longer wish to receive these, you can unsubscribe here:\n${unsubscribeUrl}\n`;
+
+            const html = renderBaseEmailHtml({
+                title: "New blog post on PUM",
+                preheader: blog.summary ? blog.summary.slice(0, 150) : `New blog post: ${blog.title}`,
+                bodyHtml: `<p>Hi${sub.name ? " " + sub.name : ""}!</p><p>We've just published a new blog post on PUM:</p><p><strong>${blog.title}</strong></p>${blog.summary ? `<p>${blog.summary.replace(/\n/g, "<br/>")}</p>` : ""}<p><a href="${blogUrl}">Read the full post</a></p><p>You're receiving this because you subscribed to updates from PUM.</p><p>If you no longer wish to receive these, you can unsubscribe here:<br/><a href="${unsubscribeUrl}">${unsubscribeUrl}</a></p>`,
+            });
+
+            // Fire and forget
+            void mailTransporter.sendMail({ from: MAIL_FROM, to, subject, text, html }).catch(() => {});
+        }
     }
 
     logger.info("Blog post created", {
@@ -323,116 +321,115 @@ async function updateBlog(slug, data, user, existingBlog = null) {
     const photos = Array.isArray(d.photos) ? d.photos : Array.isArray(blog.images) ? blog.images : [];
     const coverRel = photos.length ? photos[0] : blog.cover || blog.imageUrl || null;
     const imagesRel = photos;
-
     const publishedAt = d.publishedAt && typeof d.publishedAt === "string" ? new Date(d.publishedAt) : null;
 
-    const updated = await prisma.blog.update({
-        where: { id: blog.id },
-        data: {
-            title: d.title,
-            summary: d.summary || null,
-            content: d.content || null,
-            publishedAt: publishedAt && !Number.isNaN(publishedAt.getTime()) ? publishedAt : null,
-            cover: coverRel,
-            imageUrl: coverRel || blog.imageUrl,
-            images: imagesRel,
-        },
-    });
+    const { updated } = await prisma.$transaction(async (tx) => {
+        const updated = await tx.blog.update({
+            where: { id: blog.id },
+            data: {
+                title: d.title,
+                summary: d.summary || null,
+                content: d.content || null,
+                publishedAt: publishedAt && !Number.isNaN(publishedAt.getTime()) ? publishedAt : null,
+                cover: coverRel,
+                imageUrl: coverRel || blog.imageUrl,
+                images: imagesRel,
+            },
+        });
 
-    if (hasTechStack) {
-        const techNames = Array.isArray(d.techStack) ? d.techStack : [];
-        await prisma.blogTech.deleteMany({ where: { blogId: updated.id } });
-        if (techNames.length) {
-            const techIds = await upsertStringList(techNames, "tech");
-            if (techIds.length) {
-                await prisma.blogTech.createMany({
-                    data: techIds.map((id) => ({ blogId: updated.id, techId: id })),
-                    skipDuplicates: true,
-                });
+        if (hasTechStack) {
+            const techNames = Array.isArray(d.techStack) ? d.techStack : [];
+            await tx.blogTech.deleteMany({ where: { blogId: updated.id } });
+            if (techNames.length) {
+                const techIds = await upsertStringList(techNames, "tech", tx);
+                if (techIds.length) {
+                    await tx.blogTech.createMany({
+                        data: techIds.map((id) => ({ blogId: updated.id, techId: id })),
+                        skipDuplicates: true,
+                    });
+                }
             }
         }
-    }
 
-    if (hasTags) {
-        const tagNames = Array.isArray(d.tags) ? d.tags : [];
-        await prisma.blogTag.deleteMany({ where: { blogId: updated.id } });
-        if (tagNames.length) {
-            const tagIds = await upsertStringList(tagNames, "tag");
-            if (tagIds.length) {
-                await prisma.blogTag.createMany({
-                    data: tagIds.map((id) => ({ blogId: updated.id, tagId: id })),
-                    skipDuplicates: true,
-                });
+        if (hasTags) {
+            const tagNames = Array.isArray(d.tags) ? d.tags : [];
+            await tx.blogTag.deleteMany({ where: { blogId: updated.id } });
+            if (tagNames.length) {
+                const tagIds = await upsertStringList(tagNames, "tag", tx);
+                if (tagIds.length) {
+                    await tx.blogTag.createMany({
+                        data: tagIds.map((id) => ({ blogId: updated.id, tagId: id })),
+                        skipDuplicates: true,
+                    });
+                }
             }
         }
-    }
 
-    if (hasAuthorSlugs) {
-        const existingAuthors = Array.isArray(blog.authors) ? blog.authors : [];
-        const creatorMemberIds = new Set(existingAuthors.filter(a => a && a.memberId && typeof a.role === "string" && a.role === "CREATOR").map(a => a.memberId));
-        const incomingSlugSet = new Set(Array.isArray(d.authorSlugs) ? d.authorSlugs.map(s => String(s || "").trim()).filter(Boolean) : []);
+        if (hasAuthorSlugs) {
+            const existingAuthors = Array.isArray(blog.authors) ? blog.authors : [];
+            const creatorMemberIds = new Set(existingAuthors.filter(a => a && a.memberId && typeof a.role === "string" && a.role === "CREATOR").map(a => a.memberId));
+            const incomingSlugSet = new Set(Array.isArray(d.authorSlugs) ? d.authorSlugs.map(s => String(s || "").trim()).filter(Boolean) : []);
 
-        const creatorSlugs = existingAuthors.filter(a => a && a.member && a.role === "CREATOR").map(a => a.member.slug).filter(Boolean);
-        for (const slug of creatorSlugs) incomingSlugSet.add(slug);
+            const creatorSlugs = existingAuthors.filter(a => a && a.member && a.role === "CREATOR").map(a => a.member.slug).filter(Boolean);
+            for (const slug of creatorSlugs) incomingSlugSet.add(slug);
 
-        const authorSlugs = Array.from(incomingSlugSet);
-        let members = [];
-        if (authorSlugs.length) {
-            members = await prisma.member.findMany({ where: { slug: { in: authorSlugs } }, select: { id: true, slug: true } });
-        }
+            const authorSlugs = Array.from(incomingSlugSet);
+            let members = [];
+            if (authorSlugs.length) {
+                members = await tx.member.findMany({ where: { slug: { in: authorSlugs } }, select: { id: true, slug: true } });
+            }
 
-        const memberIdsToKeep = members.map(m => m.id);
-        if (memberIdsToKeep.length) {
-            await prisma.blogAuthor.deleteMany({ where: { blogId: updated.id, memberId: { notIn: memberIdsToKeep } } });
-        } else {
-            if (creatorMemberIds.size) {
-                await prisma.blogAuthor.deleteMany({ where: { blogId: updated.id, memberId: { notIn: Array.from(creatorMemberIds) } } });
+            const memberIdsToKeep = members.map(m => m.id);
+            if (memberIdsToKeep.length) {
+                await tx.blogAuthor.deleteMany({ where: { blogId: updated.id, memberId: { notIn: memberIdsToKeep } } });
             } else {
-                await prisma.blogAuthor.deleteMany({ where: { blogId: updated.id } });
+                if (creatorMemberIds.size) {
+                    await tx.blogAuthor.deleteMany({ where: { blogId: updated.id, memberId: { notIn: Array.from(creatorMemberIds) } } });
+                } else {
+                    await tx.blogAuthor.deleteMany({ where: { blogId: updated.id } });
+                }
             }
-        }
 
-        for (const m of members) {
-            const role = creatorMemberIds.has(m.id) ? "CREATOR" : null;
-            try {
-                await prisma.blogAuthor.upsert({
+            for (const m of members) {
+                const role = creatorMemberIds.has(m.id) ? "CREATOR" : null;
+                await tx.blogAuthor.upsert({
                     where: { blogId_memberId: { blogId: updated.id, memberId: m.id } },
                     create: { blogId: updated.id, memberId: m.id, role },
                     update: { role },
                 });
-            } catch (err) {
-                // ignore
             }
         }
-    }
 
-    if (hasProjectSlugs) {
-        const projectSlugs = Array.isArray(d.projectSlugs) ? d.projectSlugs : [];
-        await prisma.projectBlog.deleteMany({ where: { blogId: updated.id } });
-        if (projectSlugs.length) {
-            const projects = await prisma.project.findMany({ where: { slug: { in: projectSlugs } }, select: { id: true, slug: true } });
-            if (projects.length) {
-                await prisma.projectBlog.createMany({
-                    data: projects.map((p) => ({ projectId: p.id, blogId: updated.id })),
-                    skipDuplicates: true,
-                });
+        if (hasProjectSlugs) {
+            const projectSlugs = Array.isArray(d.projectSlugs) ? d.projectSlugs : [];
+            await tx.projectBlog.deleteMany({ where: { blogId: updated.id } });
+            if (projectSlugs.length) {
+                const projects = await tx.project.findMany({ where: { slug: { in: projectSlugs } }, select: { id: true, slug: true } });
+                if (projects.length) {
+                    await tx.projectBlog.createMany({
+                        data: projects.map((p) => ({ projectId: p.id, blogId: updated.id })),
+                        skipDuplicates: true,
+                    });
+                }
             }
         }
-    }
 
-    if (hasEventSlugs) {
-        const eventSlugs = Array.isArray(d.eventSlugs) ? d.eventSlugs : [];
-        await prisma.eventBlog.deleteMany({ where: { blogId: updated.id } });
-        if (eventSlugs.length) {
-            const events = await prisma.event.findMany({ where: { slug: { in: eventSlugs } }, select: { id: true, slug: true } });
-            if (events.length) {
-                await prisma.eventBlog.createMany({
-                    data: events.map((e) => ({ eventId: e.id, blogId: updated.id })),
-                    skipDuplicates: true,
-                });
+        if (hasEventSlugs) {
+            const eventSlugs = Array.isArray(d.eventSlugs) ? d.eventSlugs : [];
+            await tx.eventBlog.deleteMany({ where: { blogId: updated.id } });
+            if (eventSlugs.length) {
+                const events = await tx.event.findMany({ where: { slug: { in: eventSlugs } }, select: { id: true, slug: true } });
+                if (events.length) {
+                    await tx.eventBlog.createMany({
+                        data: events.map((e) => ({ eventId: e.id, blogId: updated.id })),
+                        skipDuplicates: true,
+                    });
+                }
             }
         }
-    }
+
+        return { updated };
+    });
 
     logger.info("Blog post updated", {
         userId: user?.id || null,

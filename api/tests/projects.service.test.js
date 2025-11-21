@@ -14,6 +14,18 @@ const mockPrisma = {
         update: jest.fn(),
         delete: jest.fn()
     },
+    projectTech: { createMany: jest.fn(), deleteMany: jest.fn() },
+    projectTag: { createMany: jest.fn(), deleteMany: jest.fn() },
+    projectBlog: { createMany: jest.fn(), deleteMany: jest.fn() },
+    eventProject: { createMany: jest.fn(), deleteMany: jest.fn() },
+    memberProject: { create: jest.fn(), update: jest.fn(), delete: jest.fn(), deleteMany: jest.fn(), findUnique: jest.fn() },
+    projectInvite: { create: jest.fn(), deleteMany: jest.fn() },
+    tech: { upsert: jest.fn() },
+    tag: { upsert: jest.fn() },
+    blog: { findMany: jest.fn() },
+    event: { findMany: jest.fn() },
+    user: { findMany: jest.fn() },
+    // Simulate transaction by executing callback with self (mockPrisma)
     $transaction: jest.fn(async (cb) => cb(mockPrisma))
 };
 
@@ -21,7 +33,7 @@ const mockPrisma = {
 jest.doMock("../src/db", () => ({ prisma: mockPrisma }));
 
 // Import service AFTER mocking
-const { listProjects, getProjectBySlug, createProject } = require("../src/services/projects.service");
+const { listProjects, getProjectBySlug, createProject, updateProject } = require("../src/services/projects.service");
 
 describe("projects.service", () => {
     afterEach(() => {
@@ -48,14 +60,36 @@ describe("projects.service", () => {
     test("createProject creates project and logs", async () => {
         mockPrisma.project.findUnique.mockResolvedValue(null); // for uniqueProjectSlug check
         mockPrisma.project.create.mockResolvedValue({ id: "p1", slug: "new-project", title: "New Project" });
+        mockPrisma.tech.upsert.mockResolvedValue({ id: "tech1" });
 
-        const res = await createProject({ title: "New Project" }, { id: "u1", member: { id: "m1" } });
+        const res = await createProject(
+            { title: "New Project", techStack: ["React"] },
+            { id: "u1", member: { id: "m1" } }
+        );
         expect(res.slug).toBe("new-project");
+        expect(mockPrisma.$transaction).toHaveBeenCalled();
         expect(mockPrisma.project.create).toHaveBeenCalled();
+        expect(mockPrisma.projectTech.createMany).toHaveBeenCalled();
 
         expect(mockLogger.info).toHaveBeenCalledWith("Project created", expect.objectContaining({
             userId: "u1",
             projectSlug: "new-project"
         }));
+    });
+
+    test("updateProject is transactional and idempotent", async () => {
+        const existing = { id: "p1", slug: "proj-1", title: "Old Title", members: [], invites: [] };
+        mockPrisma.project.update.mockResolvedValue({ id: "p1", slug: "proj-1", title: "New Title" });
+        mockPrisma.tech.upsert.mockResolvedValue({ id: "tech1" });
+
+        await updateProject("proj-1", { title: "New Title", techStack: ["Node"] }, { id: "u1" }, existing);
+
+        expect(mockPrisma.$transaction).toHaveBeenCalled();
+        // Check delete-then-insert pattern
+        expect(mockPrisma.projectTech.deleteMany).toHaveBeenCalledWith({ where: { projectId: "p1" } });
+        expect(mockPrisma.projectTech.createMany).toHaveBeenCalledWith({
+            data: [{ projectId: "p1", techId: "tech1" }],
+            skipDuplicates: true
+        });
     });
 });

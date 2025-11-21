@@ -1,11 +1,13 @@
 // api/src/services/members.service.js
+// NOTE: list-like updates for skills and techs must use DB transaction to avoid partial updates.
+
 const fs = require("fs");
 const path = require("path");
 const { prisma } = require("../db");
 const logger = require("../logger");
 const { getPaginationParams, toPagedResponse } = require("../utils/lists");
 const { abs, upsertStringList, CV_DIR } = require("../utils/shared");
-const { NotFoundError } = require("../errors");
+const { NotFoundError, BadRequestError } = require("../errors");
 
 function makeReq(baseUrl) {
     if (!baseUrl) return { protocol: "http", get: () => "localhost" };
@@ -74,7 +76,6 @@ async function listMembers(query, baseUrl) {
 }
 
 async function getMemberBySlug(slug, baseUrl) {
-    // Removed incorrect nested event include
     const include = {
         skills: { include: { skill: true } },
         techs: { include: { tech: true } },
@@ -181,12 +182,6 @@ async function getMemberBySlug(slug, baseUrl) {
 }
 
 async function updateMember(slug, data, user, baseUrl) {
-    // Permission checks are handled by middleware or caller before calling this,
-    // OR we can repeat them here if we pass enough context.
-    // The route handler checks `requireAdminOrModerator`.
-    // We'll assume caller has validated permissions or we re-fetch to be sure?
-    // Let's just do the update logic here.
-
     const member = await prisma.member.findUnique({
         where: { slug },
     });
@@ -222,7 +217,7 @@ async function updateMember(slug, data, user, baseUrl) {
         }
 
         if (skills) {
-            const ids = await upsertStringList(skills, "skill");
+            const ids = await upsertStringList(skills, "skill", tx);
             await tx.memberSkill.deleteMany({
                 where: { memberId: member.id, NOT: { skillId: { in: ids } } },
             });
@@ -236,7 +231,7 @@ async function updateMember(slug, data, user, baseUrl) {
         }
 
         if (techStack) {
-            const ids = await upsertStringList(techStack, "tech");
+            const ids = await upsertStringList(techStack, "tech", tx);
             await tx.memberTech.deleteMany({
                 where: { memberId: member.id, NOT: { techId: { in: ids } } },
             });
@@ -249,8 +244,6 @@ async function updateMember(slug, data, user, baseUrl) {
             }
         }
 
-        // If accessRole provided, we update user roles.
-        // Note: route handler checks isAdmin for this field.
         if (accessRole && usersForMember.length) {
             const userIds = usersForMember.map((u) => u.id);
 
@@ -265,14 +258,13 @@ async function updateMember(slug, data, user, baseUrl) {
         }
     });
 
-    // Re-fetch for response
     const updated = await prisma.member.findUnique({
         where: { id: member.id },
         include: {
             skills: { include: { skill: true } },
             techs: { include: { tech: true } },
             projects: { include: { project: true } },
-            events: { include: { event: { include: { event: true } } } },
+            events: { include: { event: true } },
         },
     });
 

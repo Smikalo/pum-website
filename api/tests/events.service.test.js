@@ -13,13 +13,19 @@ const mockPrisma = {
         update: jest.fn(),
         delete: jest.fn()
     },
-    memberEvent: { upsert: jest.fn() },
+    memberEvent: { upsert: jest.fn(), create: jest.fn(), deleteMany: jest.fn(), update: jest.fn() },
+    eventProject: { createMany: jest.fn(), deleteMany: jest.fn() },
+    eventBlog: { createMany: jest.fn(), deleteMany: jest.fn() },
+    eventInvite: { create: jest.fn(), deleteMany: jest.fn() },
+    project: { findMany: jest.fn() },
+    blog: { findMany: jest.fn() },
+    user: { findMany: jest.fn() },
     $transaction: jest.fn(async (cb) => cb(mockPrisma))
 };
 
 jest.doMock("../src/db", () => ({ prisma: mockPrisma }));
 
-const { listEvents, getEventBySlug, createEvent } = require("../src/services/events.service");
+const { listEvents, getEventBySlug, createEvent, updateEvent } = require("../src/services/events.service");
 
 describe("events.service", () => {
     afterEach(() => {
@@ -55,9 +61,21 @@ describe("events.service", () => {
             { id: "u1", roles: [{ role: "MEMBER" }], member: { id: "m1" } }
         );
         expect(res.slug).toBe("new-event");
+        expect(mockPrisma.$transaction).toHaveBeenCalled();
         expect(mockLogger.info).toHaveBeenCalledWith("Event created", expect.objectContaining({
             userId: "u1",
             eventSlug: "new-event"
         }));
+    });
+
+    test("updateEvent wraps updates in transaction", async () => {
+        const existing = { id: "e1", slug: "ev-1", name: "Old", attendees: [], invites: [] };
+        mockPrisma.event.update.mockResolvedValue({ id: "e1", slug: "ev-1" });
+
+        await updateEvent("ev-1", { name: "New Name" }, { id: "u1", member: { id: "m1" } }, existing);
+
+        expect(mockPrisma.$transaction).toHaveBeenCalled();
+        expect(mockPrisma.memberEvent.deleteMany).toHaveBeenCalled(); // cleanup step
+        expect(mockPrisma.event.update).toHaveBeenCalled();
     });
 });

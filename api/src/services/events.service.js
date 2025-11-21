@@ -1,4 +1,6 @@
 // api/src/services/events.service.js
+// NOTE: list-like updates for tags, attendees, and linked resources must use DB transaction to avoid partial updates.
+
 const slugify = require("slugify");
 const { prisma } = require("../db");
 const logger = require("../logger");
@@ -22,11 +24,11 @@ function makeReq(baseUrl) {
     };
 }
 
-async function uniqueEventSlug(base) {
+async function uniqueEventSlug(base, ctx = prisma) {
     const b = slugify(base || "event", { lower: true, strict: true }) || "event";
     let slug = b;
     let i = 1;
-    while (await prisma.event.findUnique({ where: { slug } })) {
+    while (await ctx.event.findUnique({ where: { slug } })) {
         i += 1;
         slug = `${b}-${i}`;
         if (i > 9999) break;
@@ -209,141 +211,125 @@ async function createEvent(data, user) {
     }
 
     const d = data;
-    const slug = await uniqueEventSlug(d.name);
-    const photos = Array.isArray(d.photos) ? d.photos : [];
-    const imagesRel = photos;
-
     const dateStart = d.dateStart && typeof d.dateStart === "string" ? new Date(d.dateStart) : null;
     const dateEnd = d.dateEnd && typeof d.dateEnd === "string" ? new Date(d.dateEnd) : null;
-
     const creatorMemberId = user && user.member && user.member.id ? user.member.id : null;
 
-    const event = await prisma.event.create({
-        data: {
-            slug,
-            name: d.name,
-            locationName: d.locationName || null,
-            dateStart: dateStart && !Number.isNaN(dateStart.getTime()) ? dateStart : null,
-            dateEnd: dateEnd && !Number.isNaN(dateEnd.getTime()) ? dateEnd : null,
-            lat: typeof d.lat === "number" && Number.isFinite(d.lat) ? d.lat : null,
-            lng: typeof d.lng === "number" && Number.isFinite(d.lng) ? d.lng : null,
-            description: d.description || null,
-            photos: imagesRel,
-        },
-    });
+    // --- Start Transaction ---
+    const { event, invitesToSend } = await prisma.$transaction(async (tx) => {
+        const slug = await uniqueEventSlug(d.name, tx);
+        const photos = Array.isArray(d.photos) ? d.photos : [];
 
-    if (creatorMemberId) {
-        try {
-            await prisma.memberEvent.upsert({
+        const event = await tx.event.create({
+            data: {
+                slug,
+                name: d.name,
+                locationName: d.locationName || null,
+                dateStart: dateStart && !Number.isNaN(dateStart.getTime()) ? dateStart : null,
+                dateEnd: dateEnd && !Number.isNaN(dateEnd.getTime()) ? dateEnd : null,
+                lat: typeof d.lat === "number" && Number.isFinite(d.lat) ? d.lat : null,
+                lng: typeof d.lng === "number" && Number.isFinite(d.lng) ? d.lng : null,
+                description: d.description || null,
+                photos,
+            },
+        });
+
+        if (creatorMemberId) {
+            await tx.memberEvent.upsert({
                 where: { memberId_eventId: { memberId: creatorMemberId, eventId: event.id } },
                 create: { memberId: creatorMemberId, eventId: event.id, role: "CREATOR" },
                 update: { role: "CREATOR" },
             });
-        } catch (err) {
-            // ignore
         }
-    }
 
-    const projectSlugs = Array.isArray(d.projectSlugs) ? d.projectSlugs : [];
-    if (projectSlugs.length) {
-        const projects = await prisma.project.findMany({
-            where: { slug: { in: projectSlugs } },
-            select: { id: true, slug: true },
-        });
-        if (projects.length) {
-            await prisma.eventProject.createMany({
-                data: projects.map((p) => ({ eventId: event.id, projectId: p.id })),
-                skipDuplicates: true,
+        const projectSlugs = Array.isArray(d.projectSlugs) ? d.projectSlugs : [];
+        if (projectSlugs.length) {
+            const projects = await tx.project.findMany({
+                where: { slug: { in: projectSlugs } },
+                select: { id: true },
             });
-        }
-    }
-
-    const blogSlugs = Array.isArray(d.blogSlugs) ? d.blogSlugs : [];
-    if (blogSlugs.length) {
-        const blogs = await prisma.blog.findMany({
-            where: { slug: { in: blogSlugs } },
-            select: { id: true, slug: true },
-        });
-        if (blogs.length) {
-            await prisma.eventBlog.createMany({
-                data: blogs.map((b) => ({ eventId: event.id, blogId: b.id })),
-                skipDuplicates: true,
-            });
-        }
-    }
-
-    const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
-    const attendees = Array.isArray(d.attendees) ? d.attendees : [];
-
-    for (const a of attendees) {
-        if (a.type === "member" && a.memberId) {
-            if (creatorMemberId && a.memberId === creatorMemberId) {
-                continue;
+            if (projects.length) {
+                await tx.eventProject.createMany({
+                    data: projects.map((p) => ({ eventId: event.id, projectId: p.id })),
+                    skipDuplicates: true,
+                });
             }
-            try {
-                await prisma.memberEvent.create({
+        }
+
+        const blogSlugs = Array.isArray(d.blogSlugs) ? d.blogSlugs : [];
+        if (blogSlugs.length) {
+            const blogs = await tx.blog.findMany({
+                where: { slug: { in: blogSlugs } },
+                select: { id: true },
+            });
+            if (blogs.length) {
+                await tx.eventBlog.createMany({
+                    data: blogs.map((b) => ({ eventId: event.id, blogId: b.id })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+
+        const attendees = Array.isArray(d.attendees) ? d.attendees : [];
+        const inviteMap = new Map();
+        const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
+
+        for (const a of attendees) {
+            if (a.type === "member" && a.memberId) {
+                if (creatorMemberId && a.memberId === creatorMemberId) continue;
+                await tx.memberEvent.create({
                     data: { memberId: a.memberId, eventId: event.id, role: null },
                 });
-            } catch (err) {
-                // ignore
+            } else if (a.type === "invite") {
+                const addr = (a.value || a.email || "").trim();
+                if (addr && emailRegex.test(addr)) {
+                    const lower = addr.toLowerCase();
+                    if (!inviteMap.has(lower)) inviteMap.set(lower, { email: lower });
+                }
             }
         }
-    }
 
-    const inviteMap = new Map();
-    for (const a of attendees) {
-        if (a.type !== "invite") continue;
-        let addr = a.value || a.email || "";
-        addr = (addr || "").trim();
-        if (!addr || !emailRegex.test(addr)) continue;
-        const lower = addr.toLowerCase();
-        if (!inviteMap.has(lower)) {
-            inviteMap.set(lower, { email: lower });
-        }
-    }
-
-    const memberIds = attendees.filter((a) => a.type === "member" && a.memberId).map((a) => a.memberId);
-    if (memberIds.length) {
-        const users = await prisma.user.findMany({
-            where: { memberId: { in: memberIds } },
-            select: { email: true },
-        });
-        for (const u of users) {
-            if (!u.email) continue;
-            const lower = u.email.toLowerCase();
-            if (!inviteMap.has(lower)) {
-                inviteMap.set(lower, { email: lower });
+        const memberIds = attendees.filter((a) => a.type === "member" && a.memberId).map((a) => a.memberId);
+        if (memberIds.length) {
+            const users = await tx.user.findMany({
+                where: { memberId: { in: memberIds } },
+                select: { email: true },
+            });
+            for (const u of users) {
+                if (!u.email) continue;
+                const lower = u.email.toLowerCase();
+                if (!inviteMap.has(lower)) inviteMap.set(lower, { email: lower });
             }
         }
-    }
 
-    const creatorEmailLower = (user.email || "").toLowerCase();
-    if (creatorEmailLower) {
-        inviteMap.delete(creatorEmailLower);
-    }
+        const creatorEmailLower = (user.email || "").toLowerCase();
+        if (creatorEmailLower) inviteMap.delete(creatorEmailLower);
 
-    const eventInvites = Array.from(inviteMap.values());
-
-    if (eventInvites.length) {
-        const webBase = WEB_ORIGIN.replace(/\/$/, "");
-        const eventUrl = `${webBase}/events/${event.slug}`;
-
-        for (const inv of eventInvites) {
-            const email = inv.email;
+        const invitesToReturn = [];
+        for (const inv of inviteMap.values()) {
             const { raw, hash } = genInviteToken();
-
-            await prisma.eventInvite.create({
+            await tx.eventInvite.create({
                 data: {
                     eventId: event.id,
-                    email,
+                    email: inv.email,
                     tokenHash: hash,
                     status: "PENDING",
                     expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
                 },
             });
+            invitesToReturn.push({ email: inv.email, token: raw });
+        }
 
-            const acceptUrl = `${webBase}/accept-invite?token=${raw}`;
+        return { event, invitesToSend: invitesToReturn };
+    });
 
+    // Side effects (Emails)
+    if (invitesToSend.length) {
+        const webBase = WEB_ORIGIN.replace(/\/$/, "");
+        const eventUrl = `${webBase}/events/${event.slug}`;
+
+        for (const inv of invitesToSend) {
+            const acceptUrl = `${webBase}/accept-invite?token=${inv.token}`;
             const subject = `You've been invited to event: ${event.name}`;
             const text = `Hi,
 
@@ -356,7 +342,6 @@ Event page: ${eventUrl}
 
 This invite was sent from ${MAIL_FROM}.
 `;
-
             const html = renderBaseEmailHtml({
                 title: "Event invite",
                 preheader: `You've been invited to "${event.name}" on PUM.`,
@@ -367,7 +352,7 @@ This invite was sent from ${MAIL_FROM}.
 <p>This invite was sent from ${MAIL_FROM}.</p>`,
             });
 
-            void sendInviteEmail(email, subject, text, html);
+            void sendInviteEmail(inv.email, subject, text, html);
         }
     }
 
@@ -397,148 +382,143 @@ async function updateEvent(slug, data, user, existingEvent = null) {
 
     const d = data;
     const photos = Array.isArray(d.photos) ? d.photos : Array.isArray(event.photos) ? event.photos : [];
-    const imagesRel = photos;
-
     const dateStart = d.dateStart && typeof d.dateStart === "string" ? new Date(d.dateStart) : null;
     const dateEnd = d.dateEnd && typeof d.dateEnd === "string" ? new Date(d.dateEnd) : null;
 
-    const updated = await prisma.event.update({
-        where: { id: event.id },
-        data: {
-            name: d.name,
-            locationName: d.locationName || null,
-            dateStart: dateStart && !Number.isNaN(dateStart.getTime()) ? dateStart : null,
-            dateEnd: dateEnd && !Number.isNaN(dateEnd.getTime()) ? dateEnd : null,
-            lat: typeof d.lat === "number" && Number.isFinite(d.lat) ? d.lat : null,
-            lng: typeof d.lng === "number" && Number.isFinite(d.lng) ? d.lng : null,
-            description: d.description || null,
-            photos: imagesRel,
-        },
-    });
-
-    const projectSlugs = Array.isArray(d.projectSlugs) ? d.projectSlugs : [];
-    await prisma.eventProject.deleteMany({ where: { eventId: updated.id } });
-    if (projectSlugs.length) {
-        const projects = await prisma.project.findMany({
-            where: { slug: { in: projectSlugs } },
-            select: { id: true, slug: true },
+    // --- Start Transaction ---
+    const { updated, invitesToSend } = await prisma.$transaction(async (tx) => {
+        const updated = await tx.event.update({
+            where: { id: event.id },
+            data: {
+                name: d.name,
+                locationName: d.locationName || null,
+                dateStart: dateStart && !Number.isNaN(dateStart.getTime()) ? dateStart : null,
+                dateEnd: dateEnd && !Number.isNaN(dateEnd.getTime()) ? dateEnd : null,
+                lat: typeof d.lat === "number" && Number.isFinite(d.lat) ? d.lat : null,
+                lng: typeof d.lng === "number" && Number.isFinite(d.lng) ? d.lng : null,
+                description: d.description || null,
+                photos,
+            },
         });
-        if (projects.length) {
-            await prisma.eventProject.createMany({
-                data: projects.map((p) => ({ eventId: updated.id, projectId: p.id })),
-                skipDuplicates: true,
+
+        const projectSlugs = Array.isArray(d.projectSlugs) ? d.projectSlugs : [];
+        await tx.eventProject.deleteMany({ where: { eventId: updated.id } });
+        if (projectSlugs.length) {
+            const projects = await tx.project.findMany({
+                where: { slug: { in: projectSlugs } },
+                select: { id: true },
             });
+            if (projects.length) {
+                await tx.eventProject.createMany({
+                    data: projects.map((p) => ({ eventId: updated.id, projectId: p.id })),
+                    skipDuplicates: true,
+                });
+            }
         }
-    }
 
-    const blogSlugs = Array.isArray(d.blogSlugs) ? d.blogSlugs : [];
-    await prisma.eventBlog.deleteMany({ where: { eventId: updated.id } });
-    if (blogSlugs.length) {
-        const blogs = await prisma.blog.findMany({
-            where: { slug: { in: blogSlugs } },
-            select: { id: true, slug: true },
-        });
-        if (blogs.length) {
-            await prisma.eventBlog.createMany({
-                data: blogs.map((b) => ({ eventId: updated.id, blogId: b.id })),
-                skipDuplicates: true,
+        const blogSlugs = Array.isArray(d.blogSlugs) ? d.blogSlugs : [];
+        await tx.eventBlog.deleteMany({ where: { eventId: updated.id } });
+        if (blogSlugs.length) {
+            const blogs = await tx.blog.findMany({
+                where: { slug: { in: blogSlugs } },
+                select: { id: true },
             });
+            if (blogs.length) {
+                await tx.eventBlog.createMany({
+                    data: blogs.map((b) => ({ eventId: updated.id, blogId: b.id })),
+                    skipDuplicates: true,
+                });
+            }
         }
-    }
 
-    const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
-    const attendees = Array.isArray(d.attendees) ? d.attendees : [];
-    const existingInvites = new Set((event.invites || []).map(i => (i.email || "").toLowerCase()).filter(Boolean));
-    const existingAttendees = Array.isArray(event.attendees) ? event.attendees : [];
+        const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/i;
+        const attendees = Array.isArray(d.attendees) ? d.attendees : [];
+        const existingInvites = new Set((event.invites || []).map(i => (i.email || "").toLowerCase()).filter(Boolean));
+        const existingAttendees = Array.isArray(event.attendees) ? event.attendees : [];
 
-    const creatorMemberIdSet = new Set(existingAttendees.filter(a => a && a.memberId && typeof a.role === "string" && a.role === "CREATOR").map(a => a.memberId));
+        const creatorMemberIdSet = new Set(existingAttendees.filter(a => a && a.memberId && typeof a.role === "string" && a.role === "CREATOR").map(a => a.memberId));
 
-    if (creatorMemberIdSet.size === 0 && user && user.member && user.member.id) {
-        const userMemberId = user.member.id;
-        const isUserAttendee = existingAttendees.some(a => a && a.memberId === userMemberId);
-        if (isUserAttendee) {
-            try {
-                await prisma.memberEvent.update({
+        if (creatorMemberIdSet.size === 0 && user && user.member && user.member.id) {
+            const userMemberId = user.member.id;
+            const isUserAttendee = existingAttendees.some(a => a && a.memberId === userMemberId);
+            if (isUserAttendee) {
+                await tx.memberEvent.update({
                     where: { memberId_eventId: { memberId: userMemberId, eventId: event.id } },
                     data: { role: "CREATOR" },
                 });
                 creatorMemberIdSet.add(userMemberId);
-            } catch (err) {
-                // ignore
             }
         }
-    }
 
-    if (creatorMemberIdSet.size > 0) {
-        await prisma.memberEvent.deleteMany({
-            where: { eventId: updated.id, memberId: { notIn: Array.from(creatorMemberIdSet) } },
-        });
-    } else {
-        await prisma.memberEvent.deleteMany({ where: { eventId: updated.id } });
-    }
+        if (creatorMemberIdSet.size > 0) {
+            await tx.memberEvent.deleteMany({
+                where: { eventId: updated.id, memberId: { notIn: Array.from(creatorMemberIdSet) } },
+            });
+        } else {
+            await tx.memberEvent.deleteMany({ where: { eventId: updated.id } });
+        }
 
-    for (const a of attendees) {
-        if (a.type === "member" && a.memberId) {
-            if (creatorMemberIdSet.has(a.memberId)) continue;
-            try {
-                await prisma.memberEvent.create({
+        for (const a of attendees) {
+            if (a.type === "member" && a.memberId) {
+                if (creatorMemberIdSet.has(a.memberId)) continue;
+                await tx.memberEvent.create({
                     data: { memberId: a.memberId, eventId: updated.id, role: null },
                 });
-            } catch (err) {
-                // ignore
             }
         }
-    }
 
-    const inviteMap = new Map();
-    for (const a of attendees) {
-        if (a.type !== "invite") continue;
-        let addr = a.value || a.email || "";
-        addr = (addr || "").trim();
-        if (!addr || !emailRegex.test(addr)) continue;
-        const lower = addr.toLowerCase();
-        if (existingInvites.has(lower)) continue;
-        if (!inviteMap.has(lower)) inviteMap.set(lower, { email: lower });
-    }
-
-    const memberIds2 = attendees.filter((a) => a.type === "member" && a.memberId).map((a) => a.memberId);
-    if (memberIds2.length) {
-        const users = await prisma.user.findMany({
-            where: { memberId: { in: memberIds2 } },
-            select: { email: true },
-        });
-        for (const u of users) {
-            if (!u.email) continue;
-            const lower = u.email.toLowerCase();
+        const inviteMap = new Map();
+        for (const a of attendees) {
+            if (a.type !== "invite") continue;
+            let addr = (a.value || a.email || "").trim();
+            if (!addr || !emailRegex.test(addr)) continue;
+            const lower = addr.toLowerCase();
             if (existingInvites.has(lower)) continue;
             if (!inviteMap.has(lower)) inviteMap.set(lower, { email: lower });
         }
-    }
 
-    const editorEmailLower = (user.email || "").toLowerCase();
-    if (editorEmailLower) inviteMap.delete(editorEmailLower);
+        const memberIds2 = attendees.filter((a) => a.type === "member" && a.memberId).map((a) => a.memberId);
+        if (memberIds2.length) {
+            const users = await tx.user.findMany({
+                where: { memberId: { in: memberIds2 } },
+                select: { email: true },
+            });
+            for (const u of users) {
+                if (!u.email) continue;
+                const lower = u.email.toLowerCase();
+                if (existingInvites.has(lower)) continue;
+                if (!inviteMap.has(lower)) inviteMap.set(lower, { email: lower });
+            }
+        }
 
-    const newInvites = Array.from(inviteMap.values());
+        const editorEmailLower = (user.email || "").toLowerCase();
+        if (editorEmailLower) inviteMap.delete(editorEmailLower);
 
-    if (newInvites.length) {
-        const webBase = WEB_ORIGIN.replace(/\/$/, "");
-        const eventUrl = `${webBase}/events/${updated.slug}`;
-
-        for (const inv of newInvites) {
-            const email = inv.email;
+        const invitesToReturn = [];
+        for (const inv of inviteMap.values()) {
             const { raw, hash } = genInviteToken();
-
-            await prisma.eventInvite.create({
+            await tx.eventInvite.create({
                 data: {
                     eventId: updated.id,
-                    email,
+                    email: inv.email,
                     tokenHash: hash,
                     status: "PENDING",
                     expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
                 },
             });
+            invitesToReturn.push({ email: inv.email, token: raw });
+        }
 
-            const acceptUrl = `${webBase}/accept-invite?token=${raw}`;
+        return { updated, invitesToSend: invitesToReturn };
+    });
+
+    // Side effects (Emails)
+    if (invitesToSend.length) {
+        const webBase = WEB_ORIGIN.replace(/\/$/, "");
+        const eventUrl = `${webBase}/events/${updated.slug}`;
+
+        for (const inv of invitesToSend) {
+            const acceptUrl = `${webBase}/accept-invite?token=${inv.token}`;
             const subject = `You've been invited to event: ${updated.name}`;
             const text = `Hi,
 
@@ -551,7 +531,6 @@ Event page: ${eventUrl}
 
 This invite was sent from ${MAIL_FROM}.
 `;
-
             const html = renderBaseEmailHtml({
                 title: "Event invite",
                 preheader: `You've been invited to "${updated.name}" on PUM.`,
@@ -562,7 +541,7 @@ This invite was sent from ${MAIL_FROM}.
 <p>This invite was sent from ${MAIL_FROM}.</p>`,
             });
 
-            void sendInviteEmail(email, subject, text, html);
+            void sendInviteEmail(inv.email, subject, text, html);
         }
     }
 

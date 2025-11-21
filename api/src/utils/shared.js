@@ -55,13 +55,13 @@ function abs(u, req) {
     return `${base}${rel}`;
 }
 
-async function upsertStringList(list, modelName) {
+async function upsertStringList(list, modelName, ctx = prisma) {
     const out = [];
     if (!Array.isArray(list)) return out;
     for (const nameRaw of list) {
         const name = String(nameRaw || "").trim();
         if (!name) continue;
-        const row = await prisma[modelName].upsert({
+        const row = await ctx[modelName].upsert({
             where: { name },
             create: { name },
             update: {},

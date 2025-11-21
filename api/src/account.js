@@ -103,12 +103,12 @@ router.put("/profile", asyncHandler(async (req, res) => {
     await prisma.$transaction(async (tx) => {
         if (Object.keys(data).length) await tx.member.update({ where: { id: member.id }, data });
         if (skills) {
-            const ids = await upsertStringList(skills, "skill");
+            const ids = await upsertStringList(skills, "skill", tx);
             await tx.memberSkill.deleteMany({ where: { memberId: member.id, NOT: { skillId: { in: ids } } } });
             for (const sid of ids) await tx.memberSkill.upsert({ where: { memberId_skillId: { memberId: member.id, skillId: sid } }, update: {}, create: { memberId: member.id, skillId: sid } });
         }
         if (techStack) {
-            const ids = await upsertStringList(techStack, "tech");
+            const ids = await upsertStringList(techStack, "tech", tx);
             await tx.memberTech.deleteMany({ where: { memberId: member.id, NOT: { techId: { in: ids } } } });
             for (const tid of ids) await tx.memberTech.upsert({ where: { memberId_techId: { memberId: member.id, techId: tid } }, update: {}, create: { memberId: member.id, techId: tid } });
         }
