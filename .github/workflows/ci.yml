@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  api:
+    name: API – lint & test
+    runs-on: ubuntu-latest
+    env:
+      # Prisma generate (postinstall) often needs a DATABASE_URL env var,
+      # even if it doesn't connect during generation.
+      DATABASE_URL: "postgresql://postgres:password@localhost:5432/pum?schema=public"
+      # Provide defaults for other env vars used in config to prevent runtime crashes during tests
+      JWT_ACCESS_SECRET: "ci-secret"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install dependencies (api)
+        working-directory: api
+        run: npm ci
+
+      - name: Lint (api)
+        working-directory: api
+        run: npm run lint
+
+      - name: Test (api)
+        working-directory: api
+        run: npm test
+
+  web:
+    name: Web – lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies (web)
+        working-directory: web
+        run: npm ci
+
+      - name: Lint (web)
+        working-directory: web
+        run: npm run lint
+
+      - name: Test (web)
+        working-directory: web
+        run: npm test
