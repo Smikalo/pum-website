@@ -1,8 +1,10 @@
 const fs = require("fs");
+const fsp = fs.promises;
 const path = require("path");
 const https = require("https");
 const { prisma } = require("./db");
 const PImage = require("pureimage");
+const logger = require("./logger");
 
 // Shared upload root (matches other modules)
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "uploads");
@@ -12,11 +14,22 @@ const EVENT_HEADER_DIR = path.join(UPLOAD_ROOT, "events");
 const PROJECT_HEADER_DIR = path.join(UPLOAD_ROOT, "projects");
 const BLOG_HEADER_DIR = path.join(UPLOAD_ROOT, "blogs");
 
-// Ensure directories exist
+// Ensure directories exist (Sync is acceptable here for initialization)
 fs.mkdirSync(AVATAR_DIR, { recursive: true });
 fs.mkdirSync(EVENT_HEADER_DIR, { recursive: true });
 fs.mkdirSync(PROJECT_HEADER_DIR, { recursive: true });
 fs.mkdirSync(BLOG_HEADER_DIR, { recursive: true });
+
+/* ----------------- Helpers ----------------- */
+
+async function fileExists(p) {
+    try {
+        await fsp.access(p);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 // --- DiceBear thumbs avatar generation (dark grey gradient + colored facial features) ---
 
@@ -56,37 +69,23 @@ function fetchBinary(url) {
  */
 function buildDiceBearThumbUrl(seed) {
     const params = new URLSearchParams();
-
     params.set("seed", String(seed || "member"));
     params.set("size", "160");
-
-    // Dark grey gradient background for the website's dark theme
     params.set("backgroundColor", "020617,0f172a");
     params.set("backgroundType", "gradientLinear");
     params.set("backgroundRotation", "320,360");
-
-    // Overall shapes in grey-ish tones
     params.set("shapeColor", "111827,1f2937,020617");
-
-    // Distinguishably colored facial features
     params.set("eyesColor", "22c55e,3b82f6,f97316,ec4899,a855f7");
     params.set("mouthColor", "e5e7eb,fbbf24,22c55e,38bdf8");
-
-    // Slight rounding
     params.set("radius", "10");
-
     return `${DICEBEAR_BASE}?${params.toString()}`;
 }
 
 /**
  * Ensure a member has a generated avatar saved to /uploads/avatars and persisted in DB.
- * - Deterministic per member (based on slug or id)
- * - Only writes if avatar is missing
  */
 async function ensureMemberAvatar(member) {
     if (!member || !member.id) return member;
-
-    // If avatar already set, nothing to do
     if (member.avatarUrl) {
         return member;
     }
@@ -97,8 +96,7 @@ async function ensureMemberAvatar(member) {
     const rel = `/uploads/avatars/${filename}`;
     const filePath = path.join(AVATAR_DIR, filename);
 
-    // If file exists but DB doesn't point there yet, just update DB
-    if (fs.existsSync(filePath)) {
+    if (await fileExists(filePath)) {
         if (member.avatarUrl !== rel) {
             await prisma.member.update({
                 where: { id: member.id },
@@ -113,16 +111,14 @@ async function ensureMemberAvatar(member) {
         const url = buildDiceBearThumbUrl(seed);
         const buf = await fetchBinary(url);
 
-        fs.writeFileSync(filePath, buf);
+        await fsp.writeFile(filePath, buf);
         await prisma.member.update({
             where: { id: member.id },
             data: { avatarUrl: rel },
         });
         member.avatarUrl = rel;
     } catch (err) {
-        // Best-effort: on failure, just keep going without blocking user flows
-        // You could plug this into a real logger if you have one.
-        // console.error("Failed to generate member avatar", err);
+        logger.warn("Failed to generate member avatar", { error: err.message, memberId: member.id });
     }
 
     return member;
@@ -171,7 +167,6 @@ function headerDirForKind(kind) {
 
 /**
  * Generates (if needed) and returns a dark grey gradient header image path for events, projects, blogs.
- * Returns the *relative* URL (e.g. "/uploads/events/default-event-my-slug.png").
  */
 async function ensureDefaultHeaderImage(kind, slugOrId) {
     const { dir, subdir } = headerDirForKind(kind);
@@ -182,7 +177,7 @@ async function ensureDefaultHeaderImage(kind, slugOrId) {
     const filePath = path.join(dir, filename);
     const rel = `/uploads/${subdir}/${filename}`;
 
-    if (fs.existsSync(filePath)) {
+    if (await fileExists(filePath)) {
         return rel;
     }
 
@@ -192,9 +187,8 @@ async function ensureDefaultHeaderImage(kind, slugOrId) {
     const img = PImage.make(width, height);
     const ctx = img.getContext("2d");
 
-    // Vertical dark gradient: top slightly lighter, bottom slightly darker
-    const topHex = "020617"; // near black / slate-950
-    const bottomHex = "111827"; // slate-900-ish
+    const topHex = "020617";
+    const bottomHex = "111827";
 
     for (let y = 0; y < height; y++) {
         const t = y / (height - 1);
@@ -203,30 +197,31 @@ async function ensureDefaultHeaderImage(kind, slugOrId) {
         ctx.fillRect(0, y, width, 1);
     }
 
-    // Subtle diagonal accent band for a bit of visual interest
     ctx.globalAlpha = 0.25;
-    ctx.fillStyle = "rgb(30, 64, 175)"; // very dark blue-ish
+    ctx.fillStyle = "rgb(30, 64, 175)";
     const bandHeight = Math.round(height * 0.18);
     ctx.translate(0, height * 0.35);
     ctx.rotate((-12 * Math.PI) / 180);
     ctx.fillRect(-width, 0, width * 3, bandHeight);
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
 
-    // Encode to PNG on disk
-    await new Promise((resolve, reject) => {
-        const out = fs.createWriteStream(filePath);
-        PImage.encodePNGToStream(img, out)
-            .then(() => resolve())
-            .catch((err) => {
-                try {
-                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-                } catch {
-                    // ignore
-                }
-                reject(err);
-            });
-    });
+    try {
+        await new Promise((resolve, reject) => {
+            const out = fs.createWriteStream(filePath);
+            out.on('error', reject);
+            PImage.encodePNGToStream(img, out)
+                .then(() => resolve())
+                .catch(reject);
+        });
+    } catch (err) {
+        try {
+            if (await fileExists(filePath)) await fsp.unlink(filePath);
+        } catch {
+            // ignore
+        }
+        throw err;
+    }
 
     return rel;
 }

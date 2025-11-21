@@ -56,12 +56,12 @@ describe("Uploads Service", () => {
         try { if (fs.existsSync(latest)) fs.unlinkSync(latest); } catch {}
     });
 
-    test('looksLikePdf detects PDF header', () => {
+    test('looksLikePdf detects PDF header (async)', async () => {
         const pdf = track(createTempFile("%PDF-1.4 content", "test.pdf", "application/pdf"));
-        expect(looksLikePdf(pdf.path)).toBe(true);
+        await expect(looksLikePdf(pdf.path)).resolves.toBe(true);
 
         const txt = track(createTempFile("NOTPDF", "fake.pdf", "application/pdf"));
-        expect(looksLikePdf(txt.path)).toBe(false);
+        await expect(looksLikePdf(txt.path)).resolves.toBe(false);
     });
 
     test('processCvUpload validates MIME', async () => {

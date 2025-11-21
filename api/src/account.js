@@ -6,9 +6,10 @@ const { prisma } = require("./db");
 const slugify = require("slugify");
 const { nanoid } = require("nanoid");
 const fs = require("fs");
+const fsp = fs.promises;
 const { ensureMemberAvatar } = require("./imageDefaults");
 const { sendOk, sendCreated, asyncHandler } = require("./utils/http");
-const { upsertStringList, abs, CV_DIR } = require("./utils/shared");
+const { upsertStringList, abs, fileExists } = require("./utils/shared");
 const {
     avatarUploadMiddleware,
     cvUploadMiddleware,
@@ -19,6 +20,7 @@ const {
 } = require("./services/uploads.service");
 const { UnauthorizedError, BadRequestError } = require("./errors");
 const { JWT_ACCESS_SECRET } = require("./config");
+const logger = require("./logger");
 
 function authRequired(req, res, next) {
     const auth = req.get("authorization") || "";
@@ -66,7 +68,8 @@ router.get("/profile", asyncHandler(async (req, res) => {
         prisma.memberTech.findMany({ where: { memberId: member.id }, include: { tech: true } }),
     ]);
     const cvPath = cvLatestPath(req.userId);
-    const cvUrl = fs.existsSync(cvPath) ? abs(cvLatestUrl(req.userId), req) : null;
+    const hasCv = await fileExists(cvPath);
+    const cvUrl = hasCv ? abs(cvLatestUrl(req.userId), req) : null;
     sendOk(res, { ok: true, profile: { ...presentMember(member, skills.map((s) => s.skill.name), techs.map((t) => t.tech.name), req), cvUrl } });
 }));
 
@@ -120,14 +123,15 @@ router.put("/profile", asyncHandler(async (req, res) => {
         prisma.memberTech.findMany({ where: { memberId: member.id }, include: { tech: true } }),
     ]);
     const cvPath = cvLatestPath(req.userId);
-    const cvUrl = fs.existsSync(cvPath) ? abs(cvLatestUrl(req.userId), req) : null;
+    const hasCv = await fileExists(cvPath);
+    const cvUrl = hasCv ? abs(cvLatestUrl(req.userId), req) : null;
     sendOk(res, { ok: true, profile: { ...presentMember(updated, skillsOut.map((s) => s.skill.name), techsOut.map((t) => t.tech.name), req), cvUrl } });
 }));
 
 router.post("/avatar", avatarUploadMiddleware.single("avatar"), asyncHandler(async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
     if (!user || !user.memberId) {
-        try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
+        try { if(req.file?.path) await fsp.unlink(req.file.path); } catch (err) { logger.warn("Failed to unlink avatar temp file", { error: err.message }); }
         throw new UnauthorizedError("Unknown user");
     }
 
@@ -142,7 +146,7 @@ router.post("/avatar", avatarUploadMiddleware.single("avatar"), asyncHandler(asy
 router.post("/cv", cvUploadMiddleware.single("cv"), asyncHandler(async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, include: { member: true } });
     if (!user || !user.memberId) {
-        try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
+        try { if(req.file?.path) await fsp.unlink(req.file.path); } catch (err) { logger.warn("Failed to unlink cv temp file", { error: err.message }); }
         throw new UnauthorizedError("Unknown user");
     }
 

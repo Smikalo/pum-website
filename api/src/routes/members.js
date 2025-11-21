@@ -2,6 +2,7 @@
 const express = require("express");
 const z = require("zod");
 const fs = require("fs");
+const fsp = fs.promises;
 const { prisma } = require("../db");
 const {
     sendOk,
@@ -32,6 +33,7 @@ const {
     updateMember,
     deleteMember
 } = require("../services/members.service");
+const logger = require("../logger");
 
 const router = express.Router();
 
@@ -172,12 +174,12 @@ router.post(
             (u.roles || []).some((r) => r.role === "ADMIN"),
         );
         if (isAdminMember) {
-            try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
+            try { if(req.file?.path) await fsp.unlink(req.file.path); } catch (err) { logger.warn("Failed to unlink admin cv temp", { error: err.message }); }
             throw new ForbiddenError("Cannot modify admin member from this page");
         }
 
         if (!usersForMember.length) {
-            try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
+            try { if(req.file?.path) await fsp.unlink(req.file.path); } catch (err) { logger.warn("Failed to unlink no-user cv temp", { error: err.message }); }
             throw new BadRequestError("No user account linked to this member");
         }
 
@@ -218,7 +220,7 @@ router.post(
             (u.roles || []).some((r) => r.role === "ADMIN"),
         );
         if (isAdminMember) {
-            try { if(req.file?.path) fs.unlinkSync(req.file.path); } catch {}
+            try { if(req.file?.path) await fsp.unlink(req.file.path); } catch (err) { logger.warn("Failed to unlink admin avatar temp", { error: err.message }); }
             throw new ForbiddenError("Cannot modify admin member from this page");
         }
 

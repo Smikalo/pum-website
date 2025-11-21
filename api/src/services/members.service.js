@@ -1,12 +1,11 @@
 // api/src/services/members.service.js
 // NOTE: list-like updates for skills and techs must use DB transaction to avoid partial updates.
 
-const fs = require("fs");
 const path = require("path");
 const { prisma } = require("../db");
 const logger = require("../logger");
 const { getPaginationParams, toPagedResponse } = require("../utils/lists");
-const { abs, upsertStringList, CV_DIR } = require("../utils/shared");
+const { abs, upsertStringList, CV_DIR, fileExists } = require("../utils/shared");
 const { NotFoundError, BadRequestError } = require("../errors");
 
 function makeReq(baseUrl) {
@@ -129,7 +128,7 @@ async function getMemberBySlug(slug, baseUrl) {
 
         for (const u of usersForMember) {
             const p = path.join(CV_DIR, `${u.id}-latest.pdf`);
-            if (fs.existsSync(p)) {
+            if (await fileExists(p)) {
                 cvUrl = abs(`/uploads/cv/${u.id}-latest.pdf`, req);
                 break;
             }
@@ -283,7 +282,7 @@ async function updateMember(slug, data, user, baseUrl) {
         }
         if (!cvUrl) {
             const p = path.join(CV_DIR, `${u.id}-latest.pdf`);
-            if (fs.existsSync(p)) {
+            if (await fileExists(p)) {
                 cvUrl = abs(`/uploads/cv/${u.id}-latest.pdf`, req);
             }
         }

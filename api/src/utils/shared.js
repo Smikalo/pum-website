@@ -19,7 +19,7 @@ const {
 } = config;
 
 const UPLOAD_ROOT = path.resolve(__dirname, "..", "..", "uploads");
-// Ensure root exists
+// Ensure root exists (Sync is acceptable for startup initialization)
 if (!fs.existsSync(UPLOAD_ROOT)) {
     fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
 }
@@ -151,6 +151,18 @@ function signNewsletterUnsubToken(subscriber) {
     );
 }
 
+/**
+ * Async helper to check if a file exists using fs.promises.access
+ */
+async function fileExists(filePath) {
+    try {
+        await fs.promises.access(filePath, fs.constants.F_OK);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 module.exports = {
     WEB_ORIGIN,
     PUBLIC_API_BASE,
@@ -169,5 +181,6 @@ module.exports = {
     sendInviteEmail,
     genInviteToken,
     signNewsletterVerifyToken,
-    signNewsletterUnsubToken
+    signNewsletterUnsubToken,
+    fileExists
 };

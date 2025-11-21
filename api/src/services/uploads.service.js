@@ -1,11 +1,13 @@
 // api/src/services/uploads.service.js
 const fs = require("fs");
+const fsp = fs.promises;
 const path = require("path");
 const multer = require("multer");
 const mime = require("mime-types");
 const pdfParse = require("pdf-parse");
 const crypto = require("crypto");
 const { prisma } = require("../db");
+const logger = require("../logger");
 const {
     CV_DIR,
     AVATAR_DIR,
@@ -16,25 +18,8 @@ const {
 const { BadRequestError } = require("../errors");
 
 /* -------------------------------------------------------------------------
- *  Step 15: Centralized Upload Rules & Policy
+ *  Centralized Upload Rules & Policy
  * -------------------------------------------------------------------------
- *
- * 1. CVs:
- *    - Types: application/pdf only
- *    - Extension: .pdf
- *    - Max Size: 16 MB
- *    - Storage: /uploads/cv (renamed to {userId}-latest.pdf)
- *    - Validation: MIME check + Extension check + Magic Byte check (%PDF-)
- *
- * 2. Avatars:
- *    - Types: image/jpeg, image/png, image/webp, image/gif
- *    - Max Size: 8 MB
- *    - Storage: /uploads/avatars
- *
- * 3. Content Images (Events/Projects/Blogs):
- *    - Types: Same as Avatar
- *    - Max Size: 8 MB
- *    - Storage: /uploads/{events|projects|blogs}
  */
 
 const UPLOAD_RULES = {
@@ -60,10 +45,6 @@ const UPLOAD_RULES = {
 
 /* ----------------- Validation Helpers ----------------- */
 
-/**
- * Validates a file object (from Multer) against a specific rule set.
- * Checks: Existence, Size, MIME type, File Extension.
- */
 function validateFile(file, ruleType) {
     const rules = UPLOAD_RULES[ruleType];
     if (!rules) throw new Error(`Unknown upload rule type: ${ruleType}`);
@@ -72,22 +53,17 @@ function validateFile(file, ruleType) {
         throw new BadRequestError("Missing file");
     }
 
-    // 1. Size Check
     if (file.size > rules.maxBytes) {
         throw new BadRequestError("File too large");
     }
 
-    // 2. MIME Check
     if (!rules.allowedMime.includes(file.mimetype)) {
         throw new BadRequestError(rules.errorMsg);
     }
 
-    // 3. Extension Check
-    // We trust originalname extension to match the mimetype, but verify it's allowed.
     if (file.originalname) {
         const ext = path.extname(file.originalname).toLowerCase();
         if (!rules.allowedExtensions.includes(ext)) {
-            // If the extension doesn't match the allowed list for this category
             throw new BadRequestError(rules.errorMsg);
         }
     }
@@ -96,22 +72,23 @@ function validateFile(file, ruleType) {
 /**
  * Content Sniffing for PDF
  * Reads the first 5 bytes to check for "%PDF-".
+ * Converted to async.
  */
-function looksLikePdf(filePath) {
+async function looksLikePdf(filePath) {
+    let fh = null;
     try {
-        const fd = fs.openSync(filePath, "r");
+        fh = await fsp.open(filePath, "r");
         const buf = Buffer.alloc(5);
-        fs.readSync(fd, buf, 0, 5, 0);
-        fs.closeSync(fd);
+        await fh.read(buf, 0, 5, 0);
         return buf.toString() === "%PDF-";
-    } catch {
+    } catch (err) {
+        logger.debug("looksLikePdf check failed", { error: err.message, path: filePath });
         return false;
+    } finally {
+        if (fh) await fh.close();
     }
 }
 
-/**
- * Helpers for CV paths
- */
 function cvLatestPath(userId) {
     return path.join(CV_DIR, `${userId}-latest.pdf`);
 }
@@ -121,7 +98,6 @@ function cvLatestUrl(userId) {
 
 /* ----------------- Multer Configs ----------------- */
 
-// CV Storage
 const cvStorage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, CV_DIR),
     filename: (req, _file, cb) => {
@@ -134,7 +110,6 @@ const cvUploadMiddleware = multer({
     storage: cvStorage,
     limits: { fileSize: UPLOAD_RULES.cv.maxBytes },
     fileFilter: (_req, file, cb) => {
-        // Fail fast if MIME is wrong
         if (UPLOAD_RULES.cv.allowedMime.includes(file.mimetype)) {
             cb(null, true);
         } else {
@@ -143,7 +118,6 @@ const cvUploadMiddleware = multer({
     },
 });
 
-// Avatar Storage
 const avatarStorage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, AVATAR_DIR),
     filename: (req, file, cb) => {
@@ -165,7 +139,6 @@ const avatarUploadMiddleware = multer({
     },
 });
 
-// Generic Image Storage Generator
 function createImageMiddleware(destDir) {
     return multer({
         storage: multer.diskStorage({
@@ -192,46 +165,36 @@ const blogPhotoMiddleware = createImageMiddleware(blogsDir);
 
 /* ----------------- Service Logic ----------------- */
 
-/**
- * Process a CV upload:
- * 1. Validate against rules (PDF, size).
- * 2. Verify content signature (%PDF-).
- * 3. Move to user-specific "latest" path.
- * 4. Update Member record if applicable.
- * 5. Extract keywords (Skills/Tech).
- */
 async function processCvUpload({ userId, memberId, file }) {
-    // 1. Centralized Validation
     validateFile(file, "cv");
 
-    // 2. Content Signature Check
-    if (!looksLikePdf(file.path)) {
+    const isPdf = await looksLikePdf(file.path);
+    if (!isPdf) {
         try {
-            fs.unlinkSync(file.path);
-        } catch {
-            /* ignore cleanup error */
+            await fsp.unlink(file.path);
+        } catch (err) {
+            logger.warn("Failed to cleanup invalid CV file", { path: file.path, error: err.message });
         }
         throw new BadRequestError("Invalid PDF file");
     }
 
-    // 3. Move/Rename
     const latest = cvLatestPath(userId);
     try {
-        // Rename is atomic on same filesystem
-        fs.renameSync(file.path, latest);
-    } catch {
-        // Fallback for cross-device
-        fs.copyFileSync(file.path, latest);
+        // Atomic rename if possible
+        await fsp.rename(file.path, latest);
+    } catch (err) {
+        // Fallback if cross-device
         try {
-            fs.unlinkSync(file.path);
-        } catch {
-            /* ignore */
+            await fsp.copyFile(file.path, latest);
+            await fsp.unlink(file.path);
+        } catch (copyErr) {
+            logger.error("Failed to move CV file", { error: copyErr.message, src: file.path, dest: latest });
+            throw new Error("File save failed");
         }
     }
 
     const publicUrl = cvLatestUrl(userId);
 
-    // 4. Update Member
     if (memberId) {
         const member = await prisma.member.findUnique({
             where: { id: memberId },
@@ -245,7 +208,6 @@ async function processCvUpload({ userId, memberId, file }) {
         }
     }
 
-    // 5. Keyword Extraction
     const extracted = await parsePdfForKeywords(latest);
 
     return {
@@ -255,12 +217,6 @@ async function processCvUpload({ userId, memberId, file }) {
     };
 }
 
-/**
- * Process an Avatar upload:
- * 1. Validate against rules.
- * 2. Remove old local avatar if exists.
- * 3. Update Member record.
- */
 async function processAvatarUpload({ userId, memberId, file }) {
     validateFile(file, "avatar");
 
@@ -270,7 +226,7 @@ async function processAvatarUpload({ userId, memberId, file }) {
         const member = await prisma.member.findUnique({
             where: { id: memberId },
         });
-        // Cleanup old avatar if it was a local file
+
         if (
             member &&
             member.avatarUrl &&
@@ -278,12 +234,15 @@ async function processAvatarUpload({ userId, memberId, file }) {
         ) {
             const oldName = member.avatarUrl.split("/").pop();
             const oldPath = path.join(AVATAR_DIR, oldName);
-            // Don't delete the file we just wrote if names somehow collide
-            if (oldPath !== file.path && fs.existsSync(oldPath)) {
+            // Ensure we don't delete what we just uploaded
+            if (oldPath !== file.path) {
                 try {
-                    fs.unlinkSync(oldPath);
-                } catch {
-                    /* ignore */
+                    await fsp.unlink(oldPath);
+                } catch (err) {
+                    // Ignore ENOENT (file missing), warn on others
+                    if (err.code !== "ENOENT") {
+                        logger.warn("Failed to delete old avatar", { path: oldPath, error: err.message });
+                    }
                 }
             }
         }
@@ -297,11 +256,6 @@ async function processAvatarUpload({ userId, memberId, file }) {
     return { url: rel };
 }
 
-/**
- * Process generic image upload (Events, Projects, Blogs):
- * 1. Validate against rules.
- * 2. Return relative URL.
- */
 async function processImageUpload({ file, subDir }) {
     validateFile(file, "image");
     const relPath = `/uploads/${subDir}/${file.filename}`;
@@ -313,11 +267,14 @@ async function processImageUpload({ file, subDir }) {
 async function parsePdfForKeywords(filePath) {
     let text = "";
     try {
-        const data = await pdfParse(fs.readFileSync(filePath));
+        const buffer = await fsp.readFile(filePath);
+        const data = await pdfParse(buffer);
         text = String(data.text || "");
-    } catch {
+    } catch (err) {
+        logger.warn("PDF parsing failed for keywords", { path: filePath, error: err.message });
         text = "";
     }
+
     const norm = (s) => s.toLowerCase();
     const hay = norm(text);
     const [skills, techs] = await Promise.all([
