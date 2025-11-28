@@ -4,7 +4,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useSafeAuth, getRoles } from "@/lib/auth-helpers";
+import { useSafeAuth } from "@/lib/auth-helpers";
 import * as api from "@/lib/api";
 import type { AccountProfileApi } from "@/lib/api";
 import { toImageSrc } from "@/lib/images";

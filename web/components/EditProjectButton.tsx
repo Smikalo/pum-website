@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import { useSafeAuth, getRoles } from "@/lib/auth-helpers";
 import { tClient } from "@/lib/i18n-client";
+import TopRightButton from "@/components/TopRightButton";
 
 type EditProjectButtonProps = {
     slug: string;
@@ -30,11 +30,11 @@ export default function EditProjectButton({
     if (!isAdmin && !isModerator && !isCreator) return null;
 
     return (
-        <Link
+        <TopRightButton
             href={`/projects/${slug}/edit`}
             className="btn-secondary text-sm"
         >
             {tClient("projects.actions.edit")}
-        </Link>
+        </TopRightButton>
     );
 }

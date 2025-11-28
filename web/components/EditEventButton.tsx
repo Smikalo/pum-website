@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import { useSafeAuth, getRoles } from "@/lib/auth-helpers";
 import { tClient } from "@/lib/i18n-client";
+import TopRightButton from "@/components/TopRightButton";
 
 type EditEventButtonProps = {
     slug: string;
@@ -29,8 +29,11 @@ export default function EditEventButton({
     }
 
     return (
-        <Link href={`/events/${slug}/edit`} className="btn-secondary text-sm">
+        <TopRightButton
+            href={`/events/${slug}/edit`}
+            className="btn-secondary text-sm"
+        >
             {tClient("events.actions.edit")}
-        </Link>
+        </TopRightButton>
     );
 }

@@ -1,16 +1,16 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import { useSafeAuth } from "@/lib/auth-helpers";
 import { tClient } from "@/lib/i18n-client";
+import TopRightButton from "@/components/TopRightButton";
 
 export default function NewEventButton() {
     const { user } = useSafeAuth();
     if (!user) return null;
 
     return (
-        <Link
+        <TopRightButton
             href="/events/new"
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg ring-1 ring-white/10 bg-white/10 hover:bg-white/20 transition text-sm"
             title={tClient("events.actions.new.title")}
@@ -19,6 +19,6 @@ export default function NewEventButton() {
                 +
             </span>
             <span>{tClient("events.actions.new.label")}</span>
-        </Link>
+        </TopRightButton>
     );
 }

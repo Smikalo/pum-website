@@ -1,5 +1,5 @@
 import React from "react";
-// eslint-disable-next-line @next/next/no-img-element
+import Image from "next/image";
 
 export interface LinkedResourcePickerOption {
     id: string;
@@ -85,7 +85,7 @@ export default function LinkedResourcePicker({
                             <div className="min-w-0 flex-1">
                                 <div className="text-sm font-medium text-white/90 group-hover:text-white flex items-center gap-2">
                                     {opt.cover && (
-                                        <img src={opt.cover} alt="" className="w-4 h-4 rounded object-cover bg-white/10" />
+                                        <Image src={opt.cover} alt="" width={16} height={16} className="w-4 h-4 rounded object-cover bg-white/10" />
                                     )}
                                     {opt.label}
                                 </div>

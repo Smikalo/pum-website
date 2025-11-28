@@ -1,5 +1,6 @@
 import { useAuth } from "@/context/AuthProvider";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AuthUserLike = any;
 
 /**

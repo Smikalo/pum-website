@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useSafeAuth, getRoles } from "@/lib/auth-helpers";
 import { tClient } from "@/lib/i18n-client";
+import TopRightButton from "@/components/TopRightButton";
 
 type Props = {
     slug: string;
@@ -46,7 +46,7 @@ export function EditBlogButton({ slug, authorSlugs, className }: Props) {
     };
 
     return (
-        <Link
+        <TopRightButton
             href={`/blog/${slug}/edit`}
             onClick={handleClick}
             className={
@@ -55,6 +55,6 @@ export function EditBlogButton({ slug, authorSlugs, className }: Props) {
             }
         >
             {tClient("common.edit")}
-        </Link>
+        </TopRightButton>
     );
 }
