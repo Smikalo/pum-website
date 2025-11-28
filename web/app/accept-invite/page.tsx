@@ -4,25 +4,7 @@ import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { API_BASE } from "@/lib/config";
 import { useI18n } from "@/context/I18nProvider";
-
-function readCookie(name: string): string | null {
-    if (typeof document === "undefined") return null;
-    const matches = document.cookie.match(
-        new RegExp(
-            "(?:^|; )" +
-            name.replace(/([.$?*|{}()[\]\\/+^])/g, "\\$1") +
-            "=([^;]*)",
-        ),
-    );
-    return matches ? decodeURIComponent(matches[1]) : null;
-}
-
-async function ensureCsrf(): Promise<void> {
-    await fetch(`${API_BASE}/api/auth/csrf`, {
-        method: "GET",
-        credentials: "include",
-    });
-}
+import { getCsrfToken } from "@/lib/csrf";
 
 type ProjectEventSlugs = {
     eventSlug?: string | null;
@@ -104,8 +86,7 @@ function AcceptInviteInner() {
         (async () => {
             try {
                 setError(null);
-                await ensureCsrf();
-                const csrf = readCookie("XSRF-TOKEN");
+                const csrf = await getCsrfToken();
 
                 const res = await fetch(
                     `${API_BASE}/api/auth/invite/consume`,
@@ -114,7 +95,7 @@ function AcceptInviteInner() {
                         credentials: "include",
                         headers: {
                             "Content-Type": "application/json",
-                            "X-CSRF-Token": csrf ?? "",
+                            "X-CSRF-Token": csrf,
                         },
                         body: JSON.stringify({ token }),
                     },
@@ -175,8 +156,7 @@ function AcceptInviteInner() {
         setError(null);
 
         try {
-            await ensureCsrf();
-            const csrf = readCookie("XSRF-TOKEN");
+            const csrf = await getCsrfToken();
 
             const res = await fetch(
                 `${API_BASE}/api/auth/invite/consume`,
@@ -185,7 +165,7 @@ function AcceptInviteInner() {
                     credentials: "include",
                     headers: {
                         "Content-Type": "application/json",
-                        "X-CSRF-Token": csrf ?? "",
+                        "X-CSRF-Token": csrf,
                     },
                     body: JSON.stringify({
                         token,

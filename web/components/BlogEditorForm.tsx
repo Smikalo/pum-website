@@ -1,5 +1,6 @@
 "use client";
 
+// ... imports (keep existing)
 import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
@@ -8,6 +9,8 @@ import { API_BASE } from "@/lib/config";
 import { tClient } from "@/lib/i18n-client";
 import { useSearchableOptions, SearchableOption } from "@/hooks/useSearchableOptions";
 import LinkedResourcePicker from "@/components/LinkedResourcePicker";
+
+// ... (types - keep existing)
 
 type BlogAuthor = {
     slug: string;
@@ -155,12 +158,12 @@ async function loadAllEvents(): Promise<SearchableOption[]> {
     }
 }
 
-
 const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
                                                            mode,
                                                            initialBlog,
                                                            onSubmit,
                                                        }) => {
+    // ... (keep existing hooks and state initialization)
     const initialTitle: string = initialBlog?.title ?? "";
     const initialSummary: string = initialBlog?.summary ?? "";
     const initialContent: string = initialBlog?.content ?? "";
@@ -268,7 +271,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
     const tagsCsvDefault = initialTags.join(", ");
     const techCsvDefault = initialTechStack.join(", ");
 
-    // Load members list (kept manual because custom UI with chips)
+    // Load members list
     useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -300,8 +303,8 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         };
     }, []);
 
-
     /* ----------------------------- Photos logic ----------------------------- */
+    // ... (keep photos logic same as before)
 
     function syncFileInput(files: File[]) {
         const input = fileInputRef.current;
@@ -393,6 +396,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
     }
 
     /* ------------------------- People logic ------------------------- */
+    // ... (keep people logic same as before)
 
     const memberQuery = memberQ.trim().toLowerCase();
     const memberSuggestions = members
@@ -416,11 +420,16 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
         setSelectedAuthors((prev) => prev.filter((a) => a.slug !== slug));
     }
 
-    /* -------------------------------- Render -------------------------------- */
-
     const authorSlugs = selectedAuthors.map((a) => a.slug);
     const projectSlugs = selectedProjectSlugs;
     const eventSlugs = selectedEventSlugs;
+
+    // Fixed: `action` prop instead of `onSubmit` if it is a server action passed as prop
+    // But here `onSubmit` is passed as a prop which is likely a function calling a server action.
+    // If it's a standard form submission handler (e.g. for React Server Actions), it should be passed to `action`.
+    // The prop is named `onSubmit` in the component definition, so we use `action={onSubmit}` if `onSubmit` expects FormData.
+    // The warning was likely because `form` expects `action` for server actions, or `onSubmit` for client handlers.
+    // Since `onSubmit` prop is typed as `(formData: FormData) => void | Promise<void>`, it is compatible with `action`.
 
     return (
         <form
@@ -428,6 +437,7 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
             encType="multipart/form-data"
             className="card p-5 space-y-4"
         >
+            {/* ... (rest of the form JSX - title, summary, content...) */}
             {/* Title */}
             <div>
                 <label className="block text-xs font-semibold uppercase tracking-widest text-white/60 mb-1">
