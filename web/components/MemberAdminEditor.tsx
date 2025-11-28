@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { API_BASE } from "@/lib/config";
-import { useAuth } from "@/context/AuthProvider";
+import { useSafeAuth, getRoles } from "@/lib/auth-helpers";
 import * as api from "@/lib/api";
 import { tClient } from "@/lib/i18n-client";
 
@@ -164,7 +164,7 @@ export default function MemberAdminEditor({
                                               onClose,
                                           }: MemberAdminEditorProps) {
     const router = useRouter();
-    const { accessToken, user } = useAuth();
+    const { accessToken, user } = useSafeAuth();
 
     const [loading, setLoading] = React.useState(true);
     const [saving, setSaving] = React.useState(false);
@@ -203,7 +203,8 @@ export default function MemberAdminEditor({
     const [error, setError] = React.useState<string | null>(null);
     const [hint, setHint] = React.useState<string | null>(null);
 
-    const isAdmin = !!user?.roles?.includes("ADMIN");
+    const roles = getRoles(user);
+    const isAdmin = roles.includes("ADMIN");
 
     const inputCls = (field?: string) =>
         [

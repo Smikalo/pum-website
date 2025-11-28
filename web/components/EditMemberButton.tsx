@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@/context/AuthProvider";
+import { useSafeAuth, getRoles } from "@/lib/auth-helpers";
 import MemberAdminEditor from "@/components/MemberAdminEditor";
 import { tClient } from "@/lib/i18n-client";
 
@@ -15,12 +15,12 @@ export default function EditMemberButton({
                                              slug,
                                              isAdminMember,
                                          }: EditMemberButtonProps) {
-    const { user } = useAuth();
+    const { user } = useSafeAuth();
     const [open, setOpen] = React.useState(false);
 
     if (!user) return null;
 
-    const roles = user.roles || [];
+    const roles = getRoles(user);
     const isAdmin = roles.includes("ADMIN");
     const isModerator = roles.includes("MODERATOR");
 

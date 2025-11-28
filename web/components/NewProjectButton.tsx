@@ -2,11 +2,11 @@
 
 import React from "react";
 import Link from "next/link";
-import { useAuth } from "@/context/AuthProvider";
+import { useSafeAuth } from "@/lib/auth-helpers";
 import { tClient } from "@/lib/i18n-client";
 
 export default function NewProjectButton() {
-    const { user } = useAuth();
+    const { user } = useSafeAuth();
     if (!user) return null;
 
     return (

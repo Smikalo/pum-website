@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useAuth } from "@/context/AuthProvider";
+import { useSafeAuth, getRoles } from "@/lib/auth-helpers";
 import { tClient } from "@/lib/i18n-client";
 
 type Props = {
@@ -11,14 +11,14 @@ type Props = {
 };
 
 export function EditBlogButton({ slug, authorSlugs, className }: Props) {
-    const { user } = useAuth();
+    const { user } = useSafeAuth();
 
     if (!user) {
         return null;
     }
 
-    const rawRoles = Array.isArray(user.roles) ? user.roles : [];
-    const upperRoles = rawRoles
+    const roles = getRoles(user);
+    const upperRoles = roles
         .filter((r): r is string => typeof r === "string")
         .map((r) => r.toUpperCase());
 

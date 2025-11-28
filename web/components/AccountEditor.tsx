@@ -4,7 +4,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useAuth } from "@/context/AuthProvider";
+import { useSafeAuth, getRoles } from "@/lib/auth-helpers";
 import * as api from "@/lib/api";
 import type { AccountProfileApi } from "@/lib/api";
 import { toImageSrc } from "@/lib/images";
@@ -133,7 +133,7 @@ function normalizeProfile(apiProfile: AccountProfileApi): Profile {
 }
 
 export default function AccountEditor() {
-    const { user, accessToken } = useAuth();
+    const { user, accessToken } = useSafeAuth();
     const [loading, setLoading] = React.useState(true);
     const [saving, setSaving] = React.useState(false);
     const [justSaved, setJustSaved] = React.useState(false);

@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { useAuth } from "@/context/AuthProvider";
+import { useSafeAuth, getRoles } from "@/lib/auth-helpers";
 import { tClient } from "@/lib/i18n-client";
 
 type EditProjectButtonProps = {
@@ -14,18 +14,11 @@ export default function EditProjectButton({
                                               slug,
                                               creatorSlug,
                                           }: EditProjectButtonProps) {
-    // useAuth must be called unconditionally (no try/catch / conditionals)
-    const ctx = useAuth();
-    const user = ctx?.user ?? null;
+    const { user } = useSafeAuth();
 
     if (!user) return null;
 
-    const roles: string[] = Array.isArray(user.roles)
-        ? user.roles
-        : Array.isArray(user.roleNames)
-            ? user.roleNames
-            : [];
-
+    const roles = getRoles(user);
     const isAdmin = roles.includes("ADMIN");
     const isModerator = roles.includes("MODERATOR");
     const currentMemberSlug = user.member?.slug ?? null;

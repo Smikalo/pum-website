@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { useAuth } from "@/context/AuthProvider";
+import { useSafeAuth, getRoles } from "@/lib/auth-helpers";
 import { tClient } from "@/lib/i18n-client";
 
 type EditEventButtonProps = {
@@ -14,11 +14,11 @@ export default function EditEventButton({
                                             slug,
                                             creatorSlug,
                                         }: EditEventButtonProps) {
-    const { user } = useAuth();
+    const { user } = useSafeAuth();
 
     if (!user) return null;
 
-    const roles = user.roles || [];
+    const roles = getRoles(user);
     const isAdmin = roles.includes("ADMIN");
     const isModerator = roles.includes("MODERATOR");
     const currentMemberSlug = user.member?.slug ?? null;
