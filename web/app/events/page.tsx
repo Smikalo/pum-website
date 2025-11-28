@@ -189,8 +189,8 @@ export default async function EventsPage({
             <PageCtaCard
                 kicker={tServer("events.list.kicker")}
                 title={tServer("events.list.title")}
-                subtitle={tServer("events.list.subtitle")}
-                action={<NewEventButton />}
+                description={tServer("events.list.subtitle")}
+                cta={<NewEventButton />}
             />
 
             {/* Controls */}

@@ -141,8 +141,8 @@ export default async function ProjectsPage({
             <PageCtaCard
                 kicker={tServer("projects.list.kicker")}
                 title={tServer("projects.list.title")}
-                subtitle={tServer("projects.list.subtitle")}
-                action={<NewProjectButton />}
+                description={tServer("projects.list.subtitle")}
+                cta={<NewProjectButton />}
             />
 
             {/* Controls */}

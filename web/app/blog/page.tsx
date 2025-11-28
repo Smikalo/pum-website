@@ -146,8 +146,8 @@ export default async function BlogsPage({
             <PageCtaCard
                 kicker={tServer("blog.list.kicker")}
                 title={tServer("blog.list.title")}
-                subtitle={tServer("blog.list.subtitle")}
-                action={<NewBlogButton />}
+                description={tServer("blog.list.subtitle")}
+                cta={<NewBlogButton />}
             />
 
             <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">

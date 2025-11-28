@@ -316,7 +316,7 @@ export default async function MembersPage({
             <PageCtaCard
                 kicker={tServer("members.list.kicker")}
                 title={tServer("members.list.title")}
-                subtitle={tServer("members.list.subtitle")}
+                description={tServer("members.list.subtitle")}
             />
 
             {/* Controls */}

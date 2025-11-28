@@ -1,26 +1,33 @@
 import React from "react";
 
-type PageCtaCardProps = {
+export interface PageCtaCardProps {
     kicker?: string;
-    title: React.ReactNode;
-    subtitle?: string;
-    action?: React.ReactNode;
-};
+    title: string | React.ReactNode;
+    description?: string;
+    cta?: React.ReactNode;
+    className?: string;
+}
 
-export default function PageCtaCard({ kicker, title, subtitle, action }: PageCtaCardProps) {
+export default function PageCtaCard({
+                                        kicker,
+                                        title,
+                                        description,
+                                        cta,
+                                        className = "",
+                                    }: PageCtaCardProps) {
     return (
-        <header className="mb-6">
-            {kicker && <p className="kicker">{kicker}</p>}
+        <header className={`mb-6 ${className}`}>
             <div className="flex items-start justify-between gap-3">
                 <div>
+                    {kicker && <p className="kicker">{kicker}</p>}
                     <h1 className="display">{title}</h1>
-                    {subtitle && (
+                    {description && (
                         <p className="mt-3 text-white/70 max-w-2xl">
-                            {subtitle}
+                            {description}
                         </p>
                     )}
                 </div>
-                {action}
+                {cta}
             </div>
         </header>
     );
