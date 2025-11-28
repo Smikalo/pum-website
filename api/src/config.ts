@@ -1,5 +1,8 @@
-// api/src/config.ts
+// api/src/config.js
+// Backend-only configuration module.
+// Do NOT import this into client-side code.
 
+// Destructure the relevant env vars
 const {
     PORT,
     NODE_ENV,
@@ -23,33 +26,24 @@ const {
     SMTP_PASS
 } = process.env;
 
-export interface Config {
-    PORT: number;
-    NODE_ENV: string;
-    DATABASE_URL?: string;
-    JWT_ACCESS_SECRET: string;
-    JWT_ACCESS_TTL_SEC: number;
-    JWT_REFRESH_TTL_DAYS: number;
-    REFRESH_COOKIE_NAME: string;
-    CSRF_COOKIE_NAME: string;
-    COOKIE_SECURE: boolean;
-    COOKIE_SAMESITE: string;
-    COOKIE_DOMAIN?: string;
-    COOKIE_PATH: string;
-    PUBLIC_API_BASE?: string;
-    WEB_ORIGIN: string;
-    MAIL_FROM: string;
-    NEWSLETTER_SECRET: string;
-    SMTP_HOST?: string;
-    SMTP_PORT: number;
-    SMTP_USER?: string;
-    SMTP_PASS?: string;
+// Normalize env first
+const EFFECTIVE_NODE_ENV = NODE_ENV || "development";
+
+// ✅ Security guard: in production, required secrets must be present
+if (EFFECTIVE_NODE_ENV === "production") {
+    if (!JWT_ACCESS_SECRET) {
+        throw new Error("Missing JWT_ACCESS_SECRET in production");
+    }
+    if (!DATABASE_URL) {
+        throw new Error("Missing DATABASE_URL in production");
+    }
 }
 
-const config: Config = {
+// Build the config object
+const config = {
     PORT: Number(PORT || 3001),
-    NODE_ENV: NODE_ENV || 'development',
-    DATABASE_URL: DATABASE_URL,
+    NODE_ENV: EFFECTIVE_NODE_ENV,
+    DATABASE_URL,
 
     JWT_ACCESS_SECRET: JWT_ACCESS_SECRET || "dev-only-change-me",
     JWT_ACCESS_TTL_SEC: Number(JWT_ACCESS_TTL_SEC || 15 * 60),
@@ -66,12 +60,13 @@ const config: Config = {
     WEB_ORIGIN: WEB_ORIGIN || "http://localhost:3000",
 
     MAIL_FROM: MAIL_FROM || "contact@the-pum.com",
-    NEWSLETTER_SECRET: NEWSLETTER_SECRET || "dev-only-newsletter-secret",
+    NEWSLETTER_SECRET:
+        NEWSLETTER_SECRET || "dev-only-newsletter-secret",
 
-    SMTP_HOST: SMTP_HOST,
+    SMTP_HOST,
     SMTP_PORT: Number(SMTP_PORT || 587),
     SMTP_USER: SMTP_USER || undefined,
     SMTP_PASS: SMTP_PASS || undefined
 };
 
-export default config;
+module.exports = config;

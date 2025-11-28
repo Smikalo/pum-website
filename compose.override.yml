@@ -1,4 +1,3 @@
-# compose.override.yml
 services:
   web:
     build:
@@ -6,10 +5,19 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_MAP_STYLE_URL: ${NEXT_PUBLIC_MAP_STYLE_URL}
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:3001}
     environment:
       NEXT_PUBLIC_MAP_STYLE_URL: ${NEXT_PUBLIC_MAP_STYLE_URL}
-      API_BASE: http://api:3001
-    ports: ["3000:3000"]
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:3001}
+
+      # Internal API base for SSR in Docker (see web/lib/config.ts)
+      API_BASE_INTERNAL: ${API_BASE_INTERNAL:-http://api:3001}
+      API_BASE: ${API_BASE:-http://api:3001}
+
+      # Secret for /api/revalidate – set in your real .env, not here
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET}
+    ports:
+      - "3000:3000"
     depends_on:
       api:
         condition: service_started
@@ -19,16 +27,38 @@ services:
       context: ./api
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+      # Dev-friendly defaults; override via real env on server
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${API_PORT:-3001}
+
+      POSTGRES_DB: ${POSTGRES_DB:-pum}
+      POSTGRES_USER: ${POSTGRES_USER:-pum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpass}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-pum}:${POSTGRES_PASSWORD:-devpass}@db:5432/${POSTGRES_DB:-pum}?schema=public}
+
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      PUBLIC_API_BASE: ${PUBLIC_API_BASE:-http://localhost:3001}
+
+      MAIL_FROM: ${MAIL_FROM:-contact@example.com}
       SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT}
+      SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
-      MAIL_FROM: ${MAIL_FROM}
-    ports: ["3001:3001"]
+
+      # same non-secret rate limiting defaults as compose.yml
+      LOGIN_RATE_WINDOW_MS: ${LOGIN_RATE_WINDOW_MS:-600000}
+      LOGIN_RATE_MAX: ${LOGIN_RATE_MAX:-10}
+      PUBLIC_RATE_WINDOW_MS: ${PUBLIC_RATE_WINDOW_MS:-60000}
+      PUBLIC_RATE_MAX: ${PUBLIC_RATE_MAX:-100}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-200}
+
+      # JWT_ACCESS_SECRET, REVALIDATE_SECRET, etc. come from real envs only.
+    ports:
+      - "3001:3001"
     depends_on:
       db:
         condition: service_healthy
 
   db:
-    ports: ["5432:5432"]
+    ports:
+      - "5432:5432"

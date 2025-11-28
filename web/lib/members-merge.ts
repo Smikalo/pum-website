@@ -1,3 +1,4 @@
+// web/lib/members-merge.ts
 import { SEED_MEMBERS, type Member as SeedMember } from "@/data/members.seed";
 import { API_BASE } from "@/lib/config";
 
@@ -19,10 +20,7 @@ export type MemberLite = {
     [key: string]: unknown;
 };
 
-type LegacyMembersResponse =
-    | MemberLite[]
-    | { items?: unknown }
-    | Record<string, unknown>;
+type LegacyMembersResponse = MemberLite[] | { items?: unknown } | Record<string, unknown>;
 
 /** Utility: safely coerce to string. */
 function asString(value: unknown): string | undefined {
@@ -97,29 +95,64 @@ function normalizeEvents(value: unknown): MemberLite["events"] {
 
 /** Try to fetch members from your existing backend (if present). */
 async function fetchLegacyMembers(): Promise<unknown[]> {
+    const url = new URL("/api/members?size=999", API_BASE).toString();
+
     try {
-        const url = new URL("/api/members?size=999", API_BASE).toString();
+        // eslint-disable-next-line no-console
+        console.log("[members-merge] fetching legacy members", {
+            apiBase: API_BASE,
+            url,
+        });
+
         const res = await fetch(url, { cache: "no-store" });
 
-        if (!res.ok) return [];
+        if (!res.ok) {
+            const body = await res.text().catch(() => "");
+            // eslint-disable-next-line no-console
+            console.error("[members-merge] legacy /api/members failed", {
+                status: res.status,
+                statusText: res.statusText,
+                bodySnippet: body.slice(0, 500),
+                apiBase: API_BASE,
+                url,
+            });
+            return [];
+        }
 
         const json: LegacyMembersResponse = await res.json();
 
         if (Array.isArray(json)) {
+            // eslint-disable-next-line no-console
+            console.log("[members-merge] legacy members array response", {
+                count: json.length,
+            });
             return json;
         }
 
-        if (
-            json &&
-            typeof json === "object" &&
-            "items" in json &&
-            Array.isArray((json as { items?: unknown }).items)
-        ) {
-            return (json as { items: unknown[] }).items ?? [];
+        if (json && typeof json === "object" && "items" in json) {
+            const items = (json as { items?: unknown }).items;
+            if (Array.isArray(items)) {
+                // eslint-disable-next-line no-console
+                console.log("[members-merge] legacy members wrapped response", {
+                    count: items.length,
+                });
+                return items;
+            }
         }
 
+        // eslint-disable-next-line no-console
+        console.warn("[members-merge] unexpected legacy members response shape", {
+            json,
+        });
+
         return [];
-    } catch {
+    } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[members-merge] error while fetching legacy members", {
+            error: err,
+            apiBase: API_BASE,
+            url,
+        });
         return [];
     }
 }
@@ -138,11 +171,7 @@ function normalize(raw: unknown): MemberLite {
         ...asStringArray(obj["expertises"]),
     ]);
 
-    const tags = uniqueStrings([
-        ...asStringArray(obj["tags"]),
-        ...skills,
-        ...expertise,
-    ]);
+    const tags = uniqueStrings([...asStringArray(obj["tags"]), ...skills, ...expertise]);
 
     const id =
         asString(obj["id"]) ??
@@ -210,5 +239,14 @@ export async function getAllMembersMerged(): Promise<MemberLite[]> {
         }
     }
 
-    return Array.from(map.values());
+    const result = Array.from(map.values());
+
+    // eslint-disable-next-line no-console
+    console.log("[members-merge] merged members", {
+        legacyCount: legacyRaw.length,
+        seedCount: seeds.length,
+        mergedCount: result.length,
+    });
+
+    return result;
 }

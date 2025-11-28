@@ -1,11 +1,17 @@
-// ./web/app/blog/page.tsx
+// web/app/blog/page.tsx
 import React from "react";
 import Link from "next/link";
 import MembersSearchBar from "@/components/MembersSearchBar";
 import NewBlogButton from "@/components/NewBlogButton";
 import { API_BASE } from "@/lib/config";
 import { tServer } from "@/lib/i18n-server";
-import { uniq, parseMulti, includesAll, checkMatches, highlight } from "@/lib/list-utils";
+import {
+    uniq,
+    parseMulti,
+    includesAll,
+    checkMatches,
+    highlight,
+} from "@/lib/list-utils";
 import MultiFilterChips from "@/components/MultiFilterChips";
 import PageCtaCard from "@/components/PageCtaCard";
 
@@ -49,51 +55,56 @@ type RawBlogListItem = {
     }[];
 };
 
-type BlogListResponse =
-    | RawBlogListItem[]
-    | {
-    items?: RawBlogListItem[];
-};
+type BlogListResponse = RawBlogListItem[] | { items?: RawBlogListItem[] };
 
 function matchesQuery(b: BlogCard, q: string): boolean {
     return checkMatches(q, [
         b.title || "",
         b.summary || "",
         ...(b.tags || []),
-        ...(b.techStack || [])
+        ...(b.techStack || []),
     ]);
 }
 
 async function fetchApiBlogs(): Promise<BlogCard[]> {
+    const url = `${API_BASE}/api/blogs?size=999`;
+
     try {
-        const res = await fetch(`${API_BASE}/api/blogs?size=999`, {
+
+        const res = await fetch(url, {
             cache: "no-store",
         });
-        if (!res.ok) return [];
+        if (!res.ok) {
+            return [];
+        }
+
         const json = (await res.json()) as BlogListResponse;
-        const items: RawBlogListItem[] = Array.isArray(json)
-            ? json
-            : json.items ?? [];
-        return items.map((b): BlogCard => ({
-            id: b.id,
-            slug: b.slug ?? "",
-            title: b.title ?? "",
-            summary: b.summary,
-            cover: b.cover ?? b.imageUrl ?? null,
-            imageUrl: b.imageUrl ?? null,
-            publishedAt: b.publishedAt ?? null,
-            tags: b.tags ?? [],
-            techStack: b.techStack ?? [],
-            authors:
-                b.authors?.map((a) => ({
-                    slug: a.slug ?? "",
-                    name: a.name ?? "",
-                    avatarUrl: a.avatarUrl ?? null,
-                    headline: a.headline ?? null,
-                    role: a.role ?? null,
-                })) ?? [],
-        }));
-    } catch {
+        const items: RawBlogListItem[] = Array.isArray(json) ? json : json.items ?? [];
+
+        const result = items.map(
+            (b): BlogCard => ({
+                id: b.id,
+                slug: b.slug ?? "",
+                title: b.title ?? "",
+                summary: b.summary,
+                cover: b.cover ?? b.imageUrl ?? null,
+                imageUrl: b.imageUrl ?? null,
+                publishedAt: b.publishedAt ?? null,
+                tags: b.tags ?? [],
+                techStack: b.techStack ?? [],
+                authors:
+                    b.authors?.map((a) => ({
+                        slug: a.slug ?? "",
+                        name: a.name ?? "",
+                        avatarUrl: a.avatarUrl ?? null,
+                        headline: a.headline ?? null,
+                        role: a.role ?? null,
+                    })) ?? [],
+            }),
+        );
+
+        return result;
+    } catch (err) {
         return [];
     }
 }
@@ -116,29 +127,17 @@ export default async function BlogsPage({
     const all = await fetchApiBlogs();
 
     const allTags = uniq(all.flatMap((b) => b.tags || [])).sort();
-    const allTech = uniq(
-        all.flatMap((b) => b.techStack || []),
-    ).sort();
+    const allTech = uniq(all.flatMap((b) => b.techStack || [])).sort();
 
     const filtered = all
         .filter((b) => matchesQuery(b, q))
         .filter((b) => includesAll(b.tags, tagsSel))
         .filter((b) => includesAll(b.techStack, techSel))
         .sort((a, b) => {
-            if (sort === "az")
-                return (a.title || "").localeCompare(
-                    b.title || "",
-                );
-            const ad = a.publishedAt
-                ? +new Date(a.publishedAt)
-                : 0;
-            const bd = b.publishedAt
-                ? +new Date(b.publishedAt)
-                : 0;
-            if (ad === bd)
-                return (a.title || "").localeCompare(
-                    b.title || "",
-                );
+            if (sort === "az") return (a.title || "").localeCompare(b.title || "");
+            const ad = a.publishedAt ? +new Date(a.publishedAt) : 0;
+            const bd = b.publishedAt ? +new Date(b.publishedAt) : 0;
+            if (ad === bd) return (a.title || "").localeCompare(b.title || "");
             return bd - ad;
         });
 
@@ -154,9 +153,7 @@ export default async function BlogsPage({
             <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
                 <div className="flex-1">
                     <MembersSearchBar
-                        placeholder={tServer(
-                            "blog.list.search.placeholder",
-                        )}
+                        placeholder={tServer("blog.list.search.placeholder")}
                         paramKey="q"
                     />
                 </div>
@@ -164,25 +161,19 @@ export default async function BlogsPage({
                     {(["newest", "az"] as const).map((s) => {
                         const p = new URLSearchParams();
                         if (searchParams) {
-                            Object.entries(searchParams).forEach(
-                                ([key, value]) => {
-                                    if (value) {
-                                        p.set(key, value);
-                                    }
-                                },
-                            );
+                            Object.entries(searchParams).forEach(([key, value]) => {
+                                if (value) {
+                                    p.set(key, value);
+                                }
+                            });
                         }
                         p.set("sort", s);
                         const href = `/blog?${p.toString()}`;
                         const active = sort === s;
                         const label =
                             s === "az"
-                                ? tServer(
-                                    "blog.list.sort.az",
-                                )
-                                : tServer(
-                                    "blog.list.sort.newest",
-                                );
+                                ? tServer("blog.list.sort.az")
+                                : tServer("blog.list.sort.newest");
                         return (
                             <Link
                                 key={s}
@@ -259,22 +250,19 @@ export default async function BlogsPage({
                         )}
                         <div className="flex flex-wrap items-center gap-1 text-xs text-white/60">
                             {b.publishedAt
-                                ? new Date(
-                                    b.publishedAt,
-                                ).toLocaleDateString()
+                                ? new Date(b.publishedAt).toLocaleDateString()
                                 : ""}
-                            {b.authors &&
-                                b.authors.length > 0 && (
-                                    <>
-                                        <span>•</span>
-                                        <span className="truncate">
-                                            {b.authors
-                                                .map((a) => a.name)
-                                                .filter(Boolean)
-                                                .join(", ")}
-                                        </span>
-                                    </>
-                                )}
+                            {b.authors && b.authors.length > 0 && (
+                                <>
+                                    <span>•</span>
+                                    <span className="truncate">
+                                        {b.authors
+                                            .map((a) => a.name)
+                                            .filter(Boolean)
+                                            .join(", ")}
+                                    </span>
+                                </>
+                            )}
                         </div>
                         <div className="mt-0.5 line-clamp-2 text-lg font-semibold">
                             {highlight(b.title, q)}

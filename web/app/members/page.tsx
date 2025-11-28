@@ -1,12 +1,12 @@
 /* eslint-disable @next/next/no-img-element */
 import React from "react";
 import Link from "next/link";
-import { API_BASE } from "@/lib/config";
+import {API_BASE} from "@/lib/config";
 import MembersGraph from "@/components/MembersGraph";
 import MembersSearchBar from "@/components/MembersSearchBar";
-import { toImageSrc } from "@/lib/images";
-import { tServer } from "@/lib/i18n-server";
-import { uniq, parseMulti, includesAll, checkMatches, highlight } from "@/lib/list-utils";
+import {toImageSrc} from "@/lib/images";
+import {tServer} from "@/lib/i18n-server";
+import {checkMatches, highlight, includesAll, parseMulti, uniq,} from "@/lib/list-utils";
 import MultiFilterChips from "@/components/MultiFilterChips";
 import PageCtaCard from "@/components/PageCtaCard";
 
@@ -121,14 +121,34 @@ function skillsWithFocusFirst(focus: string | undefined, skills: string[]): stri
 }
 
 /** ------------------------------------------------------------
- *  Fetchers
+ *  Fetchers (with logging)
  *  ------------------------------------------------------------ */
 async function fetchAllMembers(): Promise<{ items: UiMember[]; total: number }> {
+    const url = new URL("/api/members", API_BASE);
+    url.searchParams.set("size", "999");
+    const urlStr = url.toString();
+
     try {
-        const url = new URL("/api/members", API_BASE);
-        url.searchParams.set("size", "999");
-        const res = await fetch(url.toString(), { cache: "no-store" });
-        if (!res.ok) return { items: [], total: 0 };
+        // eslint-disable-next-line no-console
+        console.log("[members/page] fetching members", {
+            apiBase: API_BASE,
+            url: urlStr,
+        });
+
+        const res = await fetch(urlStr, { cache: "no-store" });
+
+        if (!res.ok) {
+            const body = await res.text().catch(() => "");
+            // eslint-disable-next-line no-console
+            console.error("[members/page] /api/members failed", {
+                status: res.status,
+                statusText: res.statusText,
+                bodySnippet: body.slice(0, 500),
+                apiBase: API_BASE,
+                url: urlStr,
+            });
+            return { items: [], total: 0 };
+        }
 
         const json = (await res.json()) as { items?: ApiListMember[]; total?: number };
         const rawItems: ApiListMember[] = Array.isArray(json.items) ? json.items : [];
@@ -149,8 +169,20 @@ async function fetchAllMembers(): Promise<{ items: UiMember[]; total: number }> 
             };
         });
 
+        // eslint-disable-next-line no-console
+        console.log("[members/page] fetched members OK", {
+            count: items.length,
+            total: json.total ?? items.length,
+        });
+
         return { items, total: json.total ?? items.length };
-    } catch {
+    } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[members/page] unexpected error while fetching /api/members", {
+            error: err,
+            apiBase: API_BASE,
+            url: urlStr,
+        });
         return { items: [], total: 0 };
     }
 }
@@ -184,13 +216,25 @@ function normalizeProject(p: ApiProject): UiProject {
 }
 
 async function fetchApiProjects(): Promise<UiProject[]> {
+    const url = new URL("/api/projects", API_BASE);
+    url.searchParams.set("size", "999");
+    const urlStr = url.toString();
+
     try {
-        const res = await fetch(`${API_BASE}/api/projects?size=999`, { cache: "no-store" });
-        if (!res.ok) return [];
+
+        const res = await fetch(urlStr, { cache: "no-store" });
+        if (!res.ok) {
+            return [];
+        }
         const json = (await res.json()) as { items?: ApiProject[] } | ApiProject[];
-        const items: ApiProject[] = Array.isArray(json) ? json : json.items ?? [];
+        const items: ApiProject[] = Array.isArray(json)
+            ? json
+            : Array.isArray(json.items)
+                ? json.items
+                : [];
+
         return items.map(normalizeProject);
-    } catch {
+    } catch (err) {
         return [];
     }
 }
@@ -208,18 +252,12 @@ export default async function MembersPage({
     const techFilter = parseMulti(searchParams?.tech);
     const view = (searchParams?.view || "list") as "list" | "graph" | "groups";
 
-    const [membersRes, apiProjects] = await Promise.all([
-        fetchAllMembers(),
-        fetchApiProjects(),
-    ]);
+    const [membersRes, apiProjects] = await Promise.all([fetchAllMembers(), fetchApiProjects()]);
+
     const allMembers = membersRes.items;
 
-    const allFocusAreas = uniq(
-        allMembers.map((m) => m.focusArea).filter(isString),
-    ).sort();
-    const allTech = uniq(
-        allMembers.flatMap((m) => m.techStack),
-    ).sort();
+    const allFocusAreas = uniq(allMembers.map((m) => m.focusArea).filter(isString)).sort();
+    const allTech = uniq(allMembers.flatMap((m) => m.techStack)).sort();
 
     const filteredMembers = allMembers.filter(
         (m) =>
@@ -258,21 +296,20 @@ export default async function MembersPage({
         },
     );
 
-    const graphProjects: MembersGraphProps["projects"] =
-        filteredProjects.map(
-            (p): GraphProject => ({
-                id: p.id,
-                slug: p.slug,
-                title: p.title,
-                members: (p.members ?? []).map((m) => ({
-                    memberId: m.memberId,
-                    memberSlug: m.memberSlug,
-                })),
-                techStack: p.techStack,
-                tags: p.tags,
-                imageUrl: p.imageUrl,
-            }),
-        );
+    const graphProjects: MembersGraphProps["projects"] = filteredProjects.map(
+        (p): GraphProject => ({
+            id: p.id,
+            slug: p.slug,
+            title: p.title,
+            members: (p.members ?? []).map((m) => ({
+                memberId: m.memberId,
+                memberSlug: m.memberSlug,
+            })),
+            techStack: p.techStack,
+            tags: p.tags,
+            imageUrl: p.imageUrl,
+        }),
+    );
 
     return (
         <section className="section">
@@ -286,9 +323,7 @@ export default async function MembersPage({
             <div className="mb-6 flex flex-col md:flex-row md:items-center gap-3">
                 <div className="flex-1">
                     <MembersSearchBar
-                        placeholder={tServer(
-                            "members.list.search.placeholder",
-                        )}
+                        placeholder={tServer("members.list.search.placeholder")}
                         paramKey="q"
                     />
                 </div>
@@ -358,11 +393,7 @@ export default async function MembersPage({
 
             {/* Content */}
             {view === "graph" ? (
-                <MembersGraph
-                    members={graphMembers}
-                    projects={graphProjects}
-                    query={q}
-                />
+                <MembersGraph members={graphMembers} projects={graphProjects} query={q} />
             ) : view === "groups" ? (
                 <GroupsView members={filteredMembers} q={q} />
             ) : (
@@ -440,7 +471,9 @@ function ListView({ members, total, q }: { members: UiMember[]; total: number; q
                         <div className="flex items-start gap-3">
                             <Avatar name={m.name} src={m.avatarUrl} size={44} />
                             <div className="min-w-0">
-                                <div className="font-semibold text-lg">{highlight(m.name, q)}</div>
+                                <div className="font-semibold text-lg">
+                                    {highlight(m.name, q)}
+                                </div>
                                 {m.focusArea && (
                                     <div className="mt-1">
                                         <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
@@ -483,9 +516,7 @@ function GroupsView({
         if (!buckets[key]) buckets[key] = [];
         buckets[key].push(m);
     }
-    const groups = Object.entries(buckets).sort(([a], [b]) =>
-        a.localeCompare(b),
-    );
+    const groups = Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b));
     return (
         <div className="space-y-8">
             {groups.map(([focus, arr]) => (
@@ -501,7 +532,9 @@ function GroupsView({
                                 <div className="flex items-center gap-3">
                                     <Avatar name={m.name} src={m.avatarUrl} size={36} />
                                     <div>
-                                        <div className="font-semibold">{highlight(m.name, q)}</div>
+                                        <div className="font-semibold">
+                                            {highlight(m.name, q)}
+                                        </div>
                                         <div className="text-xs text-white/60 line-clamp-2">
                                             {highlight(m.shortBio, q)}
                                         </div>

@@ -21,7 +21,7 @@ const marketingRouter = require("./routes/marketing");
 
 const {
     sendOk,
-    sendNotFound, // Import this
+    sendNotFound, // currently unused; kept for potential future use
 } = require("./utils/http");
 const {
     upsertStringList,
@@ -29,7 +29,32 @@ const {
     WEB_ORIGIN
 } = require("./utils/shared");
 const { AppError, NotFoundError } = require("./errors");
-const { NODE_ENV } = require("./config");
+const config = require("./config");
+
+// Environment / config
+const { NODE_ENV } = config;
+
+// Rate limiting configuration (non-secret). Prefer values from config if present,
+// otherwise fall back to environment variables with safe defaults.
+const LOGIN_RATE_WINDOW_MS =
+    typeof config.LOGIN_RATE_WINDOW_MS === "number" && !Number.isNaN(config.LOGIN_RATE_WINDOW_MS)
+        ? config.LOGIN_RATE_WINDOW_MS
+        : Number(process.env.LOGIN_RATE_WINDOW_MS || 10 * 60 * 1000); // 10 minutes
+
+const LOGIN_RATE_MAX =
+    typeof config.LOGIN_RATE_MAX === "number" && !Number.isNaN(config.LOGIN_RATE_MAX)
+        ? config.LOGIN_RATE_MAX
+        : Number(process.env.LOGIN_RATE_MAX || 10); // 10 attempts per window per IP
+
+const PUBLIC_RATE_WINDOW_MS =
+    typeof config.PUBLIC_RATE_WINDOW_MS === "number" && !Number.isNaN(config.PUBLIC_RATE_WINDOW_MS)
+        ? config.PUBLIC_RATE_WINDOW_MS
+        : Number(process.env.PUBLIC_RATE_WINDOW_MS || 60 * 1000); // 1 minute
+
+const PUBLIC_RATE_MAX =
+    typeof config.PUBLIC_RATE_MAX === "number" && !Number.isNaN(config.PUBLIC_RATE_MAX)
+        ? config.PUBLIC_RATE_MAX
+        : Number(process.env.PUBLIC_RATE_MAX || 100); // 100 requests per minute per IP
 
 const app = express();
 
@@ -59,18 +84,39 @@ app.use(
     }),
 );
 
-const limiter = rateLimit({ windowMs: 60_000, max: 300 });
-app.use(limiter);
+// Rate limiting
+// Public, non-authenticated endpoints
+const publicLimiter = rateLimit({
+    windowMs: PUBLIC_RATE_WINDOW_MS,
+    max: PUBLIC_RATE_MAX,
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+// Stricter limiter for authentication / invite endpoints
+const authLimiter = rateLimit({
+    windowMs: LOGIN_RATE_WINDOW_MS,
+    max: LOGIN_RATE_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res, _next) => {
+        // Keep error shape consistent with existing API error pattern.
+        return res.status(429).json({
+            ok: false,
+            error: "Too many attempts, please try again later."
+        });
+    }
+});
 
 // Request logging middleware
 app.use((req, res, next) => {
     const start = Date.now();
 
-    res.on('finish', () => {
+    res.on("finish", () => {
         const durationMs = Date.now() - start;
         const userId = req.user?.id || req.userId || null;
 
-        logger.info('HTTP request', {
+        logger.info("HTTP request", {
             method: req.method,
             url: req.originalUrl || req.url,
             statusCode: res.statusCode,
@@ -113,6 +159,19 @@ app.get("/healthz", async (_req, res) => {
 });
 
 /* ------------------------------ Routers ------------------------------ */
+// Apply rate limiting to abuse-prone auth endpoints.
+// These must be registered before the auth router so that the limiter runs first.
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/invite/consume", authLimiter);
+
+// Apply a conservative public limiter to high-traffic public endpoints.
+// These limits are intentionally moderate and configurable via environment.
+app.use("/api/members", publicLimiter);
+app.use("/api/projects", publicLimiter);
+app.use("/api/events", publicLimiter);
+app.use("/api/blog", publicLimiter);
+app.use("/api/blogs", publicLimiter);
+
 app.use("/api/auth", authRouter);
 app.use("/api/account", accountRouter);
 
@@ -164,8 +223,8 @@ app.use((err, req, res, _next) => {
             payload = { ok: false, error: message };
         } else {
             statusCode = 500;
-            const msg = NODE_ENV === 'production'
-                ? 'Internal server error'
+            const msg = NODE_ENV === "production"
+                ? "Internal server error"
                 : message;
             payload = { ok: false, error: msg };
         }
@@ -175,7 +234,7 @@ app.use((err, req, res, _next) => {
 
     // Log the error server-side (skip 404 logging if preferred, but keeping for now)
     if (statusCode !== 404) {
-        logger.error('Unhandled error', {
+        logger.error("Unhandled error", {
             message: err.message,
             name: err.name,
             statusCode,

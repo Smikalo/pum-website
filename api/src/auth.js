@@ -6,7 +6,6 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const cookie = require("cookie");
 const slugify = require("slugify");
-const rateLimit = require("express-rate-limit");
 
 const { prisma } = require("./db");
 const { ensureMemberAvatar } = require("./imageDefaults");
@@ -94,7 +93,11 @@ router.get("/csrf", (req, res) => {
     const cookies = parseCookies(req);
     if (!cookies[CSRF_COOKIE_NAME]) {
         res.cookie(CSRF_COOKIE_NAME, crypto.randomBytes(20).toString("base64url"), {
-            httpOnly: false, secure: COOKIE_SECURE, sameSite: COOKIE_SAMESITE, domain: COOKIE_DOMAIN, path: "/",
+            httpOnly: false,
+            secure: COOKIE_SECURE,
+            sameSite: COOKIE_SAMESITE,
+            domain: COOKIE_DOMAIN,
+            path: "/",
         });
     }
     sendOk(res, { ok: true });
@@ -105,13 +108,7 @@ const loginSchema = z.object({
     password: z.string().min(8).max(200),
 });
 
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    message: { ok: false, error: "Too many attempts. Try again later." },
-});
-
-router.post("/login", authLimiter, ensureCsrf, asyncHandler(async (req, res) => {
+router.post("/login", ensureCsrf, asyncHandler(async (req, res) => {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) throw new BadRequestError("Invalid input");
     const { email, password } = parsed.data;
@@ -179,7 +176,7 @@ router.post("/logout", ensureCsrf, asyncHandler(async (req, res) => {
     sendOk(res, { ok: true });
 }));
 
-router.post("/invite/consume", authLimiter, ensureCsrf, asyncHandler(async (req, res) => {
+router.post("/invite/consume", ensureCsrf, asyncHandler(async (req, res) => {
     const schema = z.object({
         token: z.string().min(20),
         name: z.string().min(2).max(200).optional(),
