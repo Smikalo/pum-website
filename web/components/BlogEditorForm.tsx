@@ -422,14 +422,6 @@ const BlogEditorForm: React.FC<BlogEditorFormProps> = ({
     const projectSlugs = selectedProjectSlugs;
     const eventSlugs = selectedEventSlugs;
 
-    // Determine if onSubmit is a Server Action or a client-side function
-    // If it's a Jest mock or client function, use onSubmit prop.
-    // If it looks like a Server Action (bound function), use action prop.
-    // Since we can't reliably detect, we use a workaround for tests:
-    // Tests pass `jest.fn()`, which triggers the warning when passed to `action`.
-    // We can use a condition: if running in test (process.env.NODE_ENV === 'test'), use onSubmit.
-    // Otherwise use action.
-
     const isTest = process.env.NODE_ENV === 'test';
 
     return (

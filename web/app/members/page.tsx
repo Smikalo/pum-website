@@ -9,6 +9,8 @@ import {tServer} from "@/lib/i18n-server";
 import {checkMatches, highlight, includesAll, parseMulti, uniq,} from "@/lib/list-utils";
 import MultiFilterChips from "@/components/MultiFilterChips";
 import PageCtaCard from "@/components/PageCtaCard";
+import Avatar from "@/components/Avatar";
+import TagChip from "@/components/TagChip";
 
 export const dynamic = "force-dynamic";
 
@@ -429,31 +431,6 @@ export default async function MembersPage({
 /** ------------------------------------------------------------
  *  Presentational helpers
  *  ------------------------------------------------------------ */
-function Avatar({ name, src, size = 40 }: { name: string; src?: string; size?: number }) {
-    const initials = name
-        .split(" ")
-        .map((s) => s[0])
-        .slice(0, 2)
-        .join("")
-        .toUpperCase();
-
-    return src ? (
-        <img
-            src={src}
-            alt={name}
-            className="rounded-full object-cover ring-1 ring-white/10"
-            style={{ width: size, height: size }}
-        />
-    ) : (
-        <div
-            className="rounded-full grid place-items-center bg-white/10 ring-1 ring-white/10 text-white/80"
-            style={{ width: size, height: size }}
-            aria-hidden
-        >
-            <span className="text-xs">{initials}</span>
-        </div>
-    );
-}
 
 function ListView({ members, total, q }: { members: UiMember[]; total: number; q: string }) {
     return (
@@ -476,9 +453,9 @@ function ListView({ members, total, q }: { members: UiMember[]; total: number; q
                                 </div>
                                 {m.focusArea && (
                                     <div className="mt-1">
-                                        <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10">
+                                        <TagChip>
                                             {m.focusArea}
-                                        </span>
+                                        </TagChip>
                                     </div>
                                 )}
                                 {m.shortBio ? (

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { tClient } from "@/lib/i18n-client";
+import Avatar from "@/components/Avatar";
 
 type Member = {
     id: string;
@@ -508,10 +509,7 @@ export default function MembersGraph({
                 >
                     <div className="rounded-xl px-3 py-2 text-sm bg-black/80 ring-1 ring-white/20 backdrop-blur pointer-events-auto max-w-xs">
                         <div className="flex items-center gap-2">
-                            <Thumb
-                                name={hoverNode.label}
-                                src={hoverNode.imageUrl}
-                            />
+                            <Avatar name={hoverNode.label} src={hoverNode.imageUrl} size={40} className="ring-1 ring-white/10" />
                             <div className="min-w-0">
                                 <div className="font-semibold truncate">
                                     {highlight(hoverNode.label, query)}
@@ -538,40 +536,6 @@ export default function MembersGraph({
                     </div>
                 </div>
             )}
-        </div>
-    );
-}
-
-function Thumb({
-                   name,
-                   src,
-                   size = 40,
-               }: {
-    name: string;
-    src?: string;
-    size?: number;
-}) {
-    const initials = name
-        .split(" ")
-        .map((s) => s[0])
-        .slice(0, 2)
-        .join("")
-        .toUpperCase();
-    return src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-            src={src}
-            alt={name}
-            className="rounded-md object-cover ring-1 ring-white/10"
-            style={{ width: size, height: size }}
-        />
-    ) : (
-        <div
-            className="rounded-md grid place-items-center bg-white/10 ring-1 ring-white/10 text-white/80"
-            style={{ width: size, height: size }}
-            aria-hidden
-        >
-            <span className="text-xs">{initials}</span>
         </div>
     );
 }

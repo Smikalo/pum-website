@@ -15,325 +15,9 @@ import { API_BASE } from "@/lib/config";
 import EventsMap from "@/components/EventsMap";
 import EditEventButton from "@/components/EditEventButton";
 import { tServer } from "@/lib/i18n-server";
-
-/* ----------------------- Tiny Markdown renderer ----------------------- */
-
-function MarkdownPreview({ markdown }: { markdown: string }) {
-    const src = (markdown || "").replace(/\r\n/g, "\n");
-
-    type FencedSegment =
-        | { type: "text"; content: string }
-        | { type: "code"; content: string; lang?: string };
-
-    function splitFenced(input: string): FencedSegment[] {
-        const out: FencedSegment[] = [];
-        const fence = /```(\w+)?\n([\s\S]*?)```/g;
-        let lastIndex = 0;
-        let m: RegExpExecArray | null;
-        while ((m = fence.exec(input))) {
-            if (m.index > lastIndex) {
-                out.push({
-                    type: "text",
-                    content: input.slice(lastIndex, m.index),
-                });
-            }
-            out.push({
-                type: "code",
-                content: m[2].replace(/\n$/, ""),
-                lang: m[1],
-            });
-            lastIndex = fence.lastIndex;
-        }
-        if (lastIndex < input.length) {
-            out.push({
-                type: "text",
-                content: input.slice(lastIndex),
-            });
-        }
-        return out;
-    }
-
-    type InlineSegment = string | { code: string };
-
-    function splitInline(
-        text: string,
-        re: RegExp,
-    ): InlineSegment[] {
-        const out: InlineSegment[] = [];
-        let last = 0;
-        let m: RegExpExecArray | null;
-        const rx = new RegExp(re.source, "g");
-        while ((m = rx.exec(text))) {
-            if (m.index > last)
-                out.push(text.slice(last, m.index));
-            out.push({ code: m[1] });
-            last = rx.lastIndex;
-        }
-        if (last < text.length) out.push(text.slice(last));
-        return out;
-    }
-
-    type LinkSegment =
-        | string
-        | { label: string; href: string };
-
-    function splitLinks(text: string): LinkSegment[] {
-        const out: LinkSegment[] = [];
-        const re = /\[([^\]]+)\]\(([^)]+)\)/g;
-        let last = 0;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(text))) {
-            if (m.index > last)
-                out.push(text.slice(last, m.index));
-            out.push({ label: m[1], href: m[2] });
-            last = re.lastIndex;
-        }
-        if (last < text.length) out.push(text.slice(last));
-        return out;
-    }
-
-    function normalizeHref(href: string): string {
-        if (
-            /^https?:\/\//i.test(href) ||
-            href.startsWith("mailto:")
-        )
-            return href;
-        return `https://${href}`;
-    }
-
-    function inline(text: string): React.ReactNode[] {
-        if (!text) return [];
-        const segments = splitInline(text, /`([^`]+)`/);
-        return segments.flatMap((seg, idx) => {
-            if (typeof seg !== "string") {
-                return (
-                    <code
-                        key={`code-${idx}`}
-                        className="px-1 rounded bg-white/10 text-white/90"
-                    >
-                        {seg.code}
-                    </code>
-                );
-            }
-            // links
-            const withLinks = splitLinks(seg).flatMap(
-                (s, j) => {
-                    if (typeof s !== "string") {
-                        const href = normalizeHref(s.href);
-                        return (
-                            <a
-                                key={`a-${idx}-${j}`}
-                                href={href}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="underline underline-offset-4"
-                            >
-                                {s.label}
-                            </a>
-                        );
-                    }
-                    return s;
-                },
-            );
-            // bold
-            const bolded = withLinks.flatMap((s, j) => {
-                if (typeof s !== "string") return s;
-                const parts = splitInline(
-                    s,
-                    /\*\*([^*]+)\*\*/,
-                );
-                return parts.map((p, k) =>
-                    typeof p === "string" ? (
-                        p
-                    ) : (
-                        <strong
-                            key={`b-${idx}-${j}-${k}`}
-                            className="text-white"
-                        >
-                            {p.code}
-                        </strong>
-                    ),
-                );
-            });
-            // italic
-            const italicized = bolded.flatMap((s, j) => {
-                if (typeof s !== "string") return s;
-                const parts = splitInline(
-                    s,
-                    /\*([^*]+)\*/,
-                );
-                return parts.map((p, k) =>
-                    typeof p === "string" ? (
-                        p
-                    ) : (
-                        <em
-                            key={`i-${idx}-${j}-${k}`}
-                            className="italic"
-                        >
-                            {p.code}
-                        </em>
-                    ),
-                );
-            });
-            return italicized;
-        });
-    }
-
-    function BlockText({ text }: { text: string }) {
-        const lines = text.split("\n");
-        const blocks: React.ReactNode[] = [];
-        let i = 0;
-        while (i < lines.length) {
-            const line = lines[i];
-            if (!line.trim()) {
-                i++;
-                continue;
-            }
-            const h = /^(#{1,3})\s+(.*)$/.exec(line);
-            if (h) {
-                const level = h[1].length;
-                const content = h[2];
-                blocks.push(
-                    level === 1 ? (
-                        <h3
-                            key={`h-${i}`}
-                            className="text-2xl font-bold text-white mt-3"
-                        >
-                            {inline(content)}
-                        </h3>
-                    ) : level === 2 ? (
-                        <h4
-                            key={`h-${i}`}
-                            className="text-xl font-semibold text-white mt-2"
-                        >
-                            {inline(content)}
-                        </h4>
-                    ) : (
-                        <h5
-                            key={`h-${i}`}
-                            className="text-lg font-semibold text-white mt-2"
-                        >
-                            {inline(content)}
-                        </h5>
-                    ),
-                );
-                i++;
-                continue;
-            }
-            if (/^\s*\d+\.\s+/.test(line)) {
-                const items: React.ReactNode[] = [];
-                while (
-                    i < lines.length &&
-                    /^\s*\d+\.\s+/.test(lines[i])
-                    ) {
-                    const item = lines[i].replace(
-                        /^\s*\d+\.\s+/,
-                        "",
-                    );
-                    items.push(
-                        <li
-                            key={`ol-${i}`}
-                            className="ml-4"
-                        >
-                            {inline(item)}
-                        </li>,
-                    );
-                    i++;
-                }
-                blocks.push(
-                    <ol
-                        key={`ol-block-${i}`}
-                        className="list-decimal pl-5 space-y-1"
-                    >
-                        {items}
-                    </ol>,
-                );
-                continue;
-            }
-            if (/^\s*([-*+])\s+/.test(line)) {
-                const items: React.ReactNode[] = [];
-                while (
-                    i < lines.length &&
-                    /^\s*([-*+])\s+/.test(lines[i])
-                    ) {
-                    const item = lines[i].replace(
-                        /^\s*([-*+])\s+/,
-                        "",
-                    );
-                    items.push(
-                        <li
-                            key={`ul-${i}`}
-                            className="ml-4"
-                        >
-                            {inline(item)}
-                        </li>,
-                    );
-                    i++;
-                }
-                blocks.push(
-                    <ul
-                        key={`ul-block-${i}`}
-                        className="list-disc pl-5 space-y-1"
-                    >
-                        {items}
-                    </ul>,
-                );
-                continue;
-            }
-            const paras: string[] = [];
-            while (
-                i < lines.length &&
-                lines[i].trim() &&
-                !/^(#{1,3})\s+/.test(lines[i]) &&
-                !/^\s*\d+\.\s+/.test(lines[i]) &&
-                !/^\s*([-*+])\s+/.test(lines[i])
-                ) {
-                paras.push(lines[i]);
-                i++;
-            }
-            const paraText = paras.join(" ");
-            blocks.push(
-                <p
-                    key={`p-${i}`}
-                    className="text-white/85"
-                >
-                    {inline(paraText)}
-                </p>,
-            );
-        }
-        return <>{blocks}</>;
-    }
-
-    const segments = splitFenced(src);
-    return (
-        <div className="space-y-3 leading-relaxed text-white/90">
-            {segments.map((seg, i) =>
-                seg.type === "code" ? (
-                    <pre
-                        key={`code-${i}`}
-                        className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
-                        aria-label={
-                            seg.lang
-                                ? tServer(
-                                    "events.edit.markdown.codeBlockWithLang",
-                                ).replace("{lang}", seg.lang)
-                                : tServer(
-                                    "events.edit.markdown.codeBlock",
-                                )
-                        }
-                    >
-                        <code>{seg.content}</code>
-                    </pre>
-                ) : (
-                    <BlockText
-                        key={`txt-${i}`}
-                        text={seg.content}
-                    />
-                ),
-            )}
-        </div>
-    );
-}
+import Avatar from "@/components/Avatar";
+import TagChip from "@/components/TagChip";
+import SimpleMarkdown from "@/components/SimpleMarkdown";
 
 /* ----------------------------- Types & helpers ---------------------------- */
 
@@ -1204,7 +888,7 @@ export default async function EventDetailPage({
                             }
                         </h2>
                         {baseEvent.description ? (
-                            <MarkdownPreview
+                            <SimpleMarkdown
                                 markdown={
                                     baseEvent.description
                                 }
@@ -1226,12 +910,9 @@ export default async function EventDetailPage({
                                     {baseEvent.tags
                                         .slice(0, 12)
                                         .map((t) => (
-                                            <span
-                                                key={t}
-                                                className="text-[11px] px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10"
-                                            >
+                                            <TagChip key={t}>
                                                 {t}
-                                            </span>
+                                            </TagChip>
                                         ))}
                                 </div>
                             )}
@@ -1339,18 +1020,7 @@ export default async function EventDetailPage({
                                                                                     key={`${slug}-${i}`}
                                                                                     className="inline-block"
                                                                                 >
-                                                                                <img
-                                                                                    src={
-                                                                                        avatarSrc
-                                                                                    }
-                                                                                    alt={
-                                                                                        title
-                                                                                    }
-                                                                                    title={
-                                                                                        title
-                                                                                    }
-                                                                                    className="w-7 h-7 rounded-full object-cover ring-1 ring-white/10"
-                                                                                />
+                                                                                <Avatar name={title || ""} src={avatarSrc} size={28} className="ring-1 ring-white/10" />
                                                                             </span>
                                                                             );
                                                                         },
@@ -1373,16 +1043,9 @@ export default async function EventDetailPage({
                                                                         (
                                                                             t,
                                                                         ) => (
-                                                                            <span
-                                                                                key={
-                                                                                    t
-                                                                                }
-                                                                                className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
-                                                                            >
-                                                                            {
-                                                                                t
-                                                                            }
-                                                                        </span>
+                                                                            <TagChip key={t}>
+                                                                                {t}
+                                                                            </TagChip>
                                                                         ),
                                                                     )}
                                                             </div>
@@ -1461,16 +1124,9 @@ export default async function EventDetailPage({
                                                                         (
                                                                             t,
                                                                         ) => (
-                                                                            <span
-                                                                                key={
-                                                                                    t
-                                                                                }
-                                                                                className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10"
-                                                                            >
-                                                                            {
-                                                                                t
-                                                                            }
-                                                                        </span>
+                                                                            <TagChip key={t}>
+                                                                                {t}
+                                                                            </TagChip>
                                                                         ),
                                                                     )}
                                                             </div>
@@ -1562,7 +1218,7 @@ export default async function EventDetailPage({
                                         const avatar =
                                             m.avatarUrl ??
                                             m.avatar ??
-                                            "/avatars/default.png";
+                                            undefined;
                                         return (
                                             <li
                                                 key={
@@ -1570,15 +1226,7 @@ export default async function EventDetailPage({
                                                 }
                                                 className="flex items-center gap-3"
                                             >
-                                                <img
-                                                    src={
-                                                        avatar
-                                                    }
-                                                    alt={
-                                                        displayName
-                                                    }
-                                                    className="w-10 h-10 rounded-full object-cover ring-1 ring-white/10"
-                                                />
+                                                <Avatar name={displayName || ""} src={avatar} size={40} />
                                                 <div className="min-w-0">
                                                     {m.slug ? (
                                                         <Link

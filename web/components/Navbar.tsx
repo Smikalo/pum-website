@@ -4,11 +4,11 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import Image from "next/image";
 import React from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { toImageSrc } from "@/lib/images";
 import { useI18n } from "@/context/I18nProvider";
+import Avatar from "@/components/Avatar";
 
 type NavKey =
     | "home"
@@ -198,7 +198,7 @@ export default function Navbar() {
                                         aria-label="Open account menu"
                                     >
                                         <Avatar
-                                            label={
+                                            name={
                                                 user.member?.name ||
                                                 user.email ||
                                                 "Profile"
@@ -212,6 +212,8 @@ export default function Navbar() {
                                                     )
                                                     : undefined
                                             }
+                                            size={32}
+                                            className="w-full h-full"
                                         />
                                     </button>
                                 </DropdownMenu.Trigger>
@@ -489,31 +491,6 @@ function LoginForm({ mode, onSuccess }: LoginFormProps) {
                 </button>
             </div>
         </form>
-    );
-}
-
-function Avatar({ label, src }: { label: string; src?: string | null }) {
-    const initials = React.useMemo(() => {
-        const parts = label.split(" ").filter(Boolean);
-        const s = (parts[0]?.[0] || "") + (parts[1]?.[0] || "");
-        return s.toUpperCase() || "U";
-    }, [label]);
-
-    return (
-        <div className="grid h-8 w-8 place-items-center overflow-hidden rounded-full bg-white text-xs font-bold text-black">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            {src ? (
-                <Image
-                    src={src}
-                    alt={label}
-                    width={32}
-                    height={32}
-                    className="h-full w-full object-cover"
-                />
-            ) : (
-                initials
-            )}
-        </div>
     );
 }
 

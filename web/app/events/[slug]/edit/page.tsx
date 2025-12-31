@@ -10,294 +10,9 @@ import * as api from "@/lib/api";
 import EventsMap from "@/components/EventsMap";
 import { API_BASE } from "@/lib/config";
 import { tClient } from "@/lib/i18n-client";
+import SimpleMarkdown from "@/components/SimpleMarkdown";
 
-/* ----------------------- Tiny Markdown renderer ----------------------- */
-
-function MarkdownPreview({ markdown }: { markdown: string }) {
-    const src = (markdown || "").replace(/\r\n/g, "\n");
-
-    function splitFenced(
-        input: string,
-    ): Array<{ type: "text" | "code"; content: string; lang?: string }> {
-        const out: Array<{ type: "text" | "code"; content: string; lang?: string }> = [];
-        const fence = /```(\w+)?\n([\s\S]*?)```/g;
-        let lastIndex = 0;
-        let m: RegExpExecArray | null;
-        while ((m = fence.exec(input))) {
-            if (m.index > lastIndex) {
-                out.push({ type: "text", content: input.slice(lastIndex, m.index) });
-            }
-            out.push({
-                type: "code",
-                content: m[2].replace(/\n$/, ""),
-                lang: m[1],
-            });
-            lastIndex = fence.lastIndex;
-        }
-        if (lastIndex < input.length) {
-            out.push({ type: "text", content: input.slice(lastIndex) });
-        }
-        return out;
-    }
-
-    function splitInline(
-        text: string,
-        re: RegExp,
-    ): Array<string | { code: string }> {
-        const out: Array<string | { code: string }> = [];
-        let last = 0;
-        let m: RegExpExecArray | null;
-        const rx = new RegExp(re.source, "g");
-        while ((m = rx.exec(text))) {
-            if (m.index > last) out.push(text.slice(last, m.index));
-            out.push({ code: m[1] });
-            last = rx.lastIndex;
-        }
-        if (last < text.length) out.push(text.slice(last));
-        return out;
-    }
-
-    function splitLinks(
-        text: string,
-    ): Array<string | { label: string; href: string }> {
-        const out: Array<string | { label: string; href: string }> = [];
-        const re = /\[([^\]]+)\]\(([^)]+)\)/g;
-        let last = 0;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(text))) {
-            if (m.index > last) out.push(text.slice(last, m.index));
-            out.push({ label: m[1], href: m[2] });
-            last = re.lastIndex;
-        }
-        if (last < text.length) out.push(text.slice(last));
-        return out;
-    }
-
-    function normalizeHref(href: string): string {
-        if (/^https?:\/\//i.test(href) || href.startsWith("mailto:")) return href;
-        return `https://${href}`;
-    }
-
-    function inline(text: string): React.ReactNode[] {
-        if (!text) return [];
-        const segments = splitInline(text, /`([^`]+)`/);
-        return segments.flatMap((seg, idx) => {
-            if (typeof seg !== "string") {
-                return (
-                    <code
-                        key={`code-${idx}`}
-                        className="px-1 rounded bg-white/10 text-white/90"
-                    >
-                        {seg.code}
-                    </code>
-                );
-            }
-            // links
-            const withLinks = splitLinks(seg).flatMap((s, j) => {
-                if (typeof s !== "string") {
-                    const href = normalizeHref(s.href);
-                    return (
-                        <a
-                            key={`a-${idx}-${j}`}
-                            href={href}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="underline underline-offset-4"
-                        >
-                            {s.label}
-                        </a>
-                    );
-                }
-                return s;
-            });
-            // bold
-            const bolded = withLinks.flatMap((s, j) => {
-                if (typeof s !== "string") return s;
-                const parts = splitInline(s, /\*\*([^*]+)\*\*/);
-                return parts.map((p, k) =>
-                    typeof p === "string" ? (
-                        p
-                    ) : (
-                        <strong
-                            key={`b-${idx}-${j}-${k}`}
-                            className="text-white"
-                        >
-                            {p.code}
-                        </strong>
-                    ),
-                );
-            });
-            // italic
-            const italicized = bolded.flatMap((s, j) => {
-                if (typeof s !== "string") return s;
-                const parts = splitInline(s, /\*([^*]+)\*/);
-                return parts.map((p, k) =>
-                    typeof p === "string" ? (
-                        p
-                    ) : (
-                        <em
-                            key={`i-${idx}-${j}-${k}`}
-                            className="italic"
-                        >
-                            {p.code}
-                        </em>
-                    ),
-                );
-            });
-            return italicized;
-        });
-    }
-
-    function BlockText({ text }: { text: string }) {
-        const lines = text.split("\n");
-        const blocks: React.ReactNode[] = [];
-        let i = 0;
-        while (i < lines.length) {
-            const line = lines[i];
-            if (!line.trim()) {
-                i++;
-                continue;
-            }
-            const h = /^(#{1,3})\s+(.*)$/.exec(line);
-            if (h) {
-                const level = h[1].length;
-                const content = h[2];
-                blocks.push(
-                    level === 1 ? (
-                        <h3
-                            key={`h-${i}`}
-                            className="text-2xl font-bold text-white mt-3"
-                        >
-                            {inline(content)}
-                        </h3>
-                    ) : level === 2 ? (
-                        <h4
-                            key={`h-${i}`}
-                            className="text-xl font-semibold text-white mt-2"
-                        >
-                            {inline(content)}
-                        </h4>
-                    ) : (
-                        <h5
-                            key={`h-${i}`}
-                            className="text-lg font-semibold text-white mt-2"
-                        >
-                            {inline(content)}
-                        </h5>
-                    ),
-                );
-                i++;
-                continue;
-            }
-            if (/^\s*\d+\.\s+/.test(line)) {
-                const items: React.ReactNode[] = [];
-                while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-                    const item = lines[i].replace(/^\s*\d+\.\s+/, "");
-                    items.push(
-                        <li
-                            key={`ol-${i}`}
-                            className="ml-4"
-                        >
-                            {inline(item)}
-                        </li>,
-                    );
-                    i++;
-                }
-                blocks.push(
-                    <ol
-                        key={`ol-block-${i}`}
-                        className="list-decimal pl-5 space-y-1"
-                    >
-                        {items}
-                    </ol>,
-                );
-                continue;
-            }
-            if (/^\s*([-*+])\s+/.test(line)) {
-                const items: React.ReactNode[] = [];
-                while (i < lines.length && /^\s*([-*+])\s+/.test(lines[i])) {
-                    const item = lines[i].replace(/^\s*([-*+])\s+/, "");
-                    items.push(
-                        <li
-                            key={`ul-${i}`}
-                            className="ml-4"
-                        >
-                            {inline(item)}
-                        </li>,
-                    );
-                    i++;
-                }
-                blocks.push(
-                    <ul
-                        key={`ul-block-${i}`}
-                        className="list-disc pl-5 space-y-1"
-                    >
-                        {items}
-                    </ul>,
-                );
-                continue;
-            }
-            const paras: string[] = [];
-            while (
-                i < lines.length &&
-                lines[i].trim() &&
-                !/^(#{1,3})\s+/.test(lines[i]) &&
-                !/^\s*\d+\.\s+/.test(lines[i]) &&
-                !/^\s*([-*+])\s+/.test(lines[i])
-                ) {
-                paras.push(lines[i]);
-                i++;
-            }
-            const paraText = paras.join(" ");
-            blocks.push(
-                <p
-                    key={`p-${i}`}
-                    className="text-white/85"
-                >
-                    {inline(paraText)}
-                </p>,
-            );
-        }
-        return <>{blocks}</>;
-    }
-
-    const segments = splitFenced(src);
-    if (!src.trim()) {
-        return (
-            <p className="text-white/50 text-sm">
-                {tClient("events.edit.markdown.empty")}
-            </p>
-        );
-    }
-    return (
-        <div className="space-y-3 leading-relaxed text-white/90">
-            {segments.map((seg, i) =>
-                seg.type === "code" ? (
-                    <pre
-                        key={`code-${i}`}
-                        className="overflow-x-auto rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-[13px] leading-relaxed"
-                        aria-label={
-                            seg.lang
-                                ? tClient(
-                                    "events.edit.markdown.codeBlockWithLang",
-                                ).replace("{lang}", seg.lang)
-                                : tClient("events.edit.markdown.codeBlock")
-                        }
-                    >
-                        <code>{seg.content}</code>
-                    </pre>
-                ) : (
-                    <BlockText
-                        key={`txt-${i}`}
-                        text={seg.content}
-                    />
-                ),
-            )}
-        </div>
-    );
-}
-
-/* ----------------------------- Geocoding ----------------------------- */
+/* ------------------- OpenStreetMap Nominatim search ------------------- */
 
 type SearchHit = {
     display_name: string;
@@ -310,12 +25,13 @@ async function geocode(
     signal?: AbortSignal,
 ): Promise<SearchHit[]> {
     if (!q.trim()) return [];
-    const url = new URL("https://nominatim.openstreetmap.org/search");
+    const url = new URL(
+        "https://nominatim.openstreetmap.org/search",
+    );
     url.searchParams.set("q", q);
     url.searchParams.set("format", "jsonv2");
     url.searchParams.set("limit", "5");
     url.searchParams.set("email", "noreply@pum.local");
-
     const res = await fetch(url.toString(), {
         headers: { Accept: "application/json" },
         signal,
@@ -324,19 +40,21 @@ async function geocode(
     return (await res.json()) as SearchHit[];
 }
 
-/* ----------------------------- Form types ---------------------------- */
+/* --------------------------- Form & domain types --------------------------- */
 
 type FormState = {
     name: string;
     locationName: string;
-    dateStart: string;
+    dateStart: string; // datetime-local
     dateEnd: string;
     lat: string;
     lng: string;
-    description: string;
+    description: string; // markdown
 };
 
-type Errors = Partial<Record<keyof FormState | "photos", string>>;
+type Errors = Partial<
+    Record<keyof FormState | "photos", string>
+>;
 
 type Member = {
     id: string;
@@ -368,92 +86,7 @@ type BlogRef = {
     publishedAt?: string | null;
 };
 
-/* --------------------------- Raw API types --------------------------- */
-
-type RawMember = {
-    id?: string;
-    slug?: string;
-    name?: string;
-    avatarUrl?: string | null;
-    avatar?: string | null;
-    photo?: string | null;
-    image?: string | null;
-    headline?: string | null;
-    shortBio?: string | null;
-    email?: string | null;
-};
-
-type MembersResponse = RawMember[] | { items?: RawMember[] };
-
-type RawProject = {
-    id?: string;
-    slug?: string;
-    title?: string;
-    cover?: string | null;
-    imageUrl?: string | null;
-    year?: number | string | null;
-    summary?: string | null;
-};
-
-type ProjectsResponse = RawProject[] | { items?: RawProject[] };
-
-type RawBlogSummary = {
-    id?: string | number;
-    slug?: string | number;
-    title?: string;
-    name?: string;
-    summary?: string | null;
-    cover?: string | null;
-    imageUrl?: string | null;
-    images?: string[];
-    photos?: string[];
-    publishedAt?: string | null;
-    date?: string | null;
-    createdAt?: string | null;
-};
-
-type BlogsResponse = RawBlogSummary[] | { items?: RawBlogSummary[] };
-
-type RawEventAttendee = {
-    pending?: boolean;
-    email?: string | null;
-    slug?: string | null;
-    memberSlug?: string | null;
-    memberId?: string | null;
-    id?: string | null;
-    name?: string | null;
-    displayName?: string | null;
-    avatarUrl?: string | null;
-    avatar?: string | null;
-    photo?: string | null;
-    headline?: string | null;
-    title?: string | null;
-    role?: string | null;
-};
-
-type RawEventProjectRef = {
-    slug?: string | null;
-};
-
-type RawEventBlogRef = {
-    slug?: string | null;
-};
-
-type RawEvent = {
-    name?: string | null;
-    locationName?: string | null;
-    dateStart?: string | null;
-    dateEnd?: string | null;
-    lat?: number | string | null;
-    lng?: number | string | null;
-    description?: string | null;
-    photos?: string[];
-    attendees?: RawEventAttendee[];
-    projects?: RawEventProjectRef[];
-    blogs?: RawEventBlogRef[];
-};
-
-/* ---------------------------- Map preview ---------------------------- */
+/* ----------------------------- Map preview ----------------------------- */
 
 function MapPreview({
                         name,
@@ -469,11 +102,14 @@ function MapPreview({
     lng: string;
 }) {
     const hasCoords =
-        !!lat && !!lng && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng));
+        !!lat &&
+        !!lng &&
+        !Number.isNaN(Number(lat)) &&
+        !Number.isNaN(Number(lng));
 
     if (!hasCoords) {
         return (
-            <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-xs text-white/60">
+            <div className="rounded-md bg:white/5 ring-1 ring-white/10 p-3 text-xs text-white/60">
                 {tClient("events.edit.map.noCoords")}
             </div>
         );
@@ -483,14 +119,21 @@ function MapPreview({
     const lngNum = Number(lng);
 
     const previewEvent = {
-        id: "event-preview",
-        slug: "event-preview",
-        name: name || tClient("events.edit.map.previewFallbackName"),
-        locationName: locationName || undefined,
+        id: "new-event-preview",
+        slug: "new-event-preview",
+        name:
+            name ||
+            tClient(
+                "events.new.preview.fallbackName",
+            ),
+        locationName:
+            locationName || undefined,
         dateStart: dateStart || undefined,
         lat: latNum,
         lng: lngNum,
-        description: undefined,
+        description: undefined as
+            | string
+            | undefined,
         photos: [] as string[],
         tags: [] as string[],
     };
@@ -502,7 +145,7 @@ function MapPreview({
     );
 }
 
-/* ------------------------------ Page ------------------------------ */
+/* --------------------------------- Page --------------------------------- */
 
 type Props = { params: { slug: string } };
 
@@ -1499,7 +1142,7 @@ export default function EditEventPage({ params }: Props) {
                                     </span>
                                 </div>
                                 <div className="rounded-md bg-white/5 ring-1 ring-white/10 p-3 min-h-[160px] text-sm">
-                                    <MarkdownPreview markdown={state.description} />
+                                    <SimpleMarkdown markdown={state.description} />
                                 </div>
                             </div>
                         </div>
@@ -1665,7 +1308,8 @@ export default function EditEventPage({ params }: Props) {
                                                         key={`new-${i}`}
                                                         className={`relative group rounded-md bg-white/5 p-1 ${
                                                             headerNewIndex === i &&
-                                                            headerExistingIndex == null
+                                                            headerExistingIndex ==
+                                                            null
                                                                 ? "ring-emerald-400/70 ring-2"
                                                                 : "ring-1 ring-white/10"
                                                         }`}
