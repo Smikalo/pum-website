@@ -1,0 +1,107 @@
+[
+  {
+    "id": "event-1",
+    "title": "Road to STARTHACK 2023",
+    "description": "STARTHACK - where it all started... to hack",
+    "startDate": "2023-12-16",
+    "endDate": "2023-12-17"
+  },
+  {
+    "id": "event-2",
+    "title": "Google Solution Challenge Ideathon",
+    "description": "72 hours of caffeine and Flutter apps to solve global problems",
+    "startDate": "2024-01-12",
+    "endDate": "2024-01-14"
+  },
+  {
+    "id": "event-3",
+    "title": "First Exam Period",
+    "description": "My body is a machine that turns Klausurfragen in 4.0",
+    "startDate": "2024-01-24",
+    "endDate": "2024-02-26"
+  },
+  {
+    "id": "event-4",
+    "title": "Hackaburg 2024",
+    "description": "Kein Regen in Regensburg, aber coole Hacks!",
+    "startDate": "2024-05-23",
+    "endDate": "2024-05-25"
+  },
+  {
+    "id": "event-5",
+    "title": "Hackathon Vienna 2024",
+    "description": "Schnitzel und Code – Wien rockt!",
+    "startDate": "2024-07-04",
+    "endDate": "2024-07-05"
+  },
+  {
+    "id": "event-6",
+    "title": "Second Exam Period",
+    "description": "Seidel after Indus, Klausur after Klausur",
+    "startDate": "2024-07-15",
+    "endDate": "2024-08-07"
+  },
+  {
+    "id": "event-7",
+    "title": "Hackfestival 2024",
+    "description": "Mag Spezi, mag Bier, mag Klausuren nicht hier",
+    "startDate": "2024-09-06",
+    "endDate": "2024-09-08"
+  },
+  {
+    "id": "event-8",
+    "title": "HackaTUM 2024",
+    "description": "Endlich real challenge",
+    "startDate": "2024-11-22",
+    "endDate": "2024-11-24"
+  },
+  {
+    "id": "event-9",
+    "title": "Berlin Hackathon 2024",
+    "description": "Research worked!",
+    "startDate": "2024-11-27",
+    "endDate": "2024-11-29"
+  },
+  {
+    "id": "event-10",
+    "title": "Road to STARTHACK 2024",
+    "description": "Oh, shit, here we go again!",
+    "startDate": "2024-12-07",
+    "endDate": "2024-12-08"
+  },
+  {
+    "id": "event-11",
+    "title": "Third Exam Period",
+    "description": "GBS != Death (?)",
+    "startDate": "2024-12-27",
+    "endDate": "2025-02-28"
+  },
+  {
+    "id": "event-12",
+    "title": "TUM.ai Makeathon 2025",
+    "description": "AI will replace us... Eventually",
+    "startDate": "2025-04-25",
+    "endDate": "2025-04-27"
+  },
+  {
+    "id": "event-13",
+    "title": "Fourth Exam Period",
+    "description": "THEO IS HERE",
+    "startDate": "2025-07-08",
+    "endDate": "2025-08-06"
+  },
+  {
+    "id": "event-14",
+    "title": "HackaTUM 2025",
+    "description": "Nice try, HFT algorithms, but we can buy ETFs ourselves",
+    "startDate": "2025-11-21",
+    "endDate": "2025-11-23"
+  },
+  {
+    "id": "event-15",
+    "title": "Road to STARTHACK 2025",
+    "description": "Third time is the charm?",
+    "startDate": "2025-11-29",
+    "endDate": "2025-11-30"
+  }
+]

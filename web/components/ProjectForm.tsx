@@ -93,10 +93,6 @@ interface ProjectApiMember {
     isCreator?: boolean;
 }
 
-interface ProjectApiEvent {
-    slug?: string;
-}
-
 interface ProjectApiBlog {
     slug?: string;
 }
@@ -381,7 +377,13 @@ export default function ProjectForm({ mode, slug }: ProjectFormProps) {
 
                 // Events
                 if (Array.isArray(p.events)) {
-                    const slugs = p.events.map((e: any) => typeof e.slug === 'string' ? e.slug : undefined).filter((s): s is string => !!s);
+                    const slugs = p.events
+                        .map((e) => {
+                            if (!e || typeof e !== "object") return undefined;
+                            const evt = e as { slug?: unknown };
+                            return typeof evt.slug === "string" ? evt.slug : undefined;
+                        })
+                        .filter((s): s is string => !!s);
                     setSelectedEventSlugs(slugs);
                 }
 

@@ -86,6 +86,91 @@ type BlogRef = {
     publishedAt?: string | null;
 };
 
+/* ----------------------------- API Response Types ----------------------------- */
+
+type RawMember = {
+    id?: string | number;
+    slug?: string;
+    name?: string;
+    avatarUrl?: string | null;
+    avatar?: string | null;
+    photo?: string | null;
+    image?: string | null;
+    headline?: string | null;
+    shortBio?: string | null;
+    email?: string | null;
+};
+
+type MembersResponse = RawMember[] | { items?: RawMember[] };
+
+type RawProject = {
+    id?: string | number;
+    slug?: string;
+    title?: string;
+    cover?: string | null;
+    imageUrl?: string | null;
+    year?: number | string | null;
+    summary?: string | null;
+};
+
+type ProjectsResponse = RawProject[] | { items?: RawProject[] };
+
+type RawBlogSummary = {
+    slug?: string | number;
+    id?: string | number;
+    title?: string;
+    name?: string;
+    cover?: string | null;
+    imageUrl?: string | null;
+    images?: string[];
+    photos?: string[];
+    summary?: string | null;
+    publishedAt?: string | null;
+    date?: string | null;
+    createdAt?: string | null;
+};
+
+type BlogsResponse = RawBlogSummary[] | { items?: RawBlogSummary[] };
+
+type RawEventAttendee = {
+    memberId?: string | null;
+    id?: string | null;
+    slug?: string | null;
+    memberSlug?: string | null;
+    name?: string | null;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    avatar?: string | null;
+    photo?: string | null;
+    headline?: string | null;
+    title?: string | null;
+    email?: string | null;
+    pending?: boolean | null;
+    role?: string | null;
+};
+
+type RawProjectRef = {
+    slug?: string | null;
+};
+
+type RawBlogRef = {
+    slug?: string | null;
+};
+
+type RawEvent = {
+    name?: string | null;
+    locationName?: string | null;
+    dateStart?: string | null;
+    dateEnd?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+    description?: string | null;
+    photos?: string[] | null;
+    attendees?: RawEventAttendee[] | null;
+    projects?: RawProjectRef[] | null;
+    blogs?: RawBlogRef[] | null;
+};
+
 /* ----------------------------- Map preview ----------------------------- */
 
 function MapPreview({
